@@ -1,4 +1,6 @@
+import io
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -151,6 +153,33 @@ def test_phrase_scored_on_fewer_entrances_cannot_be_best(fake_io):
     assert out["rates"]["entrance steps"] == 1.0
     assert out["counts"]["stairs"]["scored"] == 3
     assert out["best_phrase"] == "stairs"
+
+
+def test_cp949_console_does_not_crash_the_run(fake_io, monkeypatch):
+    # A piped stdout on this machine is cp949; 'Café' used to raise UnicodeEncodeError mid-run.
+    fake_stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp949")
+    monkeypatch.setattr(sys, "stdout", fake_stdout)
+    monkeypatch.setattr(rss, "load_truth", lambda: [ClipTruth(
+        file="a.mp4",
+        entrances=[Entrance(t=10.0, name="Café ⚪", step_count=2, has_ramp=False, door_type="swing")],
+        tactile_ranges=[], obstacles=[])])
+
+    rss.main()
+
+    fake_stdout.flush()
+    assert "Café ⚪" in fake_stdout.buffer.getvalue().decode("utf-8")
+    assert read_out()["rows"][0]["phrases"]["stairs"]["detected"] is True
+
+
+def test_results_are_saved_before_each_entrance_is_printed(fake_io, monkeypatch):
+    printed_rows = []
+
+    def fake_print(*args, **kwargs):
+        printed_rows.append(len(read_out()["rows"]))  # the file already holds the row being printed
+
+    monkeypatch.setattr("builtins.print", fake_print)
+    rss.main()
+    assert printed_rows[:3] == [1, 2, 3]
 
 
 def test_no_stepped_entrance_scored_gives_none_and_message(fake_io, capsys):

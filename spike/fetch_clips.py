@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from spike import config, mapillary, video
+from spike.console import utf8_stdout
 
 SINCE = "2020-01-01"
 # Busy shopping streets, about 0.9 km x 0.9 km each (bbox = minLon, minLat, maxLon, maxLat).
@@ -157,6 +158,7 @@ def build(name: str, sequence_id: str, start: int, count: int) -> None:
 
 
 def main() -> None:
+    utf8_stdout()
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("coverage")

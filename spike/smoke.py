@@ -10,6 +10,7 @@ import meta_sam_parser as msp
 
 from spike import config
 from spike import meta_client as mc
+from spike.console import utf8_stdout
 from spike.sam_parse import parse_sam_output
 
 SCHEMA = {
@@ -55,6 +56,7 @@ def describe(obj, depth: int = 0):
 
 
 def main() -> None:
+    utf8_stdout()
     parser_args = argparse.ArgumentParser(description="Day-1 Meta API smoke test.")
     parser_args.add_argument("--image", type=Path, default=None,
                              help="local photo to send to SAM; skips the Wikimedia download")

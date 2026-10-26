@@ -16,6 +16,7 @@ from pathlib import Path
 
 from spike import config, video
 from spike import meta_client as mc
+from spike.console import utf8_stdout
 from spike.sam_parse import Detection, boxes_intersect, confident, parse_sam_output
 from spike.truth import ClipTruth, in_ranges, load_truth
 
@@ -153,6 +154,7 @@ def obstacle_labels(clip: ClipTruth, spark: dict) -> list[str]:
 
 
 def main() -> None:
+    utf8_stdout()
     tmp = config.OUT / "tmp"
     tmp.mkdir(exist_ok=True)
     spark_path = config.OUT / "spark_entrances.json"

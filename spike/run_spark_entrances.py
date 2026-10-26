@@ -4,6 +4,7 @@ from pathlib import Path
 
 from spike import config, video
 from spike import meta_client as mc
+from spike.console import utf8_stdout
 from spike.truth import load_truth, match_times
 
 CHUNK_S = 60.0  # 60 photos per request at 1 fps
@@ -73,6 +74,7 @@ def run_clip(path: Path) -> dict:
 
 
 def main() -> None:
+    utf8_stdout()
     report = {}
     out_path = config.OUT / "spark_entrances.json"
     for clip in load_truth():
@@ -82,10 +84,11 @@ def main() -> None:
         )
         result.update(hits=hits, misses=misses, false_positives=false_pos, truth_count=len(clip.entrances))
         report[clip.file] = result
+        # save before printing, so a console problem can never lose a paid result
+        out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"{clip.file}: hits {hits}/{len(clip.entrances)}, false positives {false_pos}, "
               f"obstacle types {result['obstacle_types']}, chunk errors {len(result['errors'])}, "
               f"out of range {result['out_of_range']}")
-        out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

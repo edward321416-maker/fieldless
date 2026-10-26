@@ -126,6 +126,24 @@ def test_correct_is_exact_match_with_truth(io, predicted, expected):
     assert saved["rows"][0]["truth_steps"] == 2
 
 
+def test_print_failure_cannot_turn_a_scored_row_into_an_error_row(io, monkeypatch):
+    _write_sam([_row(0)], best_phrase=None)
+    io["entrances"] = [(10.0, 2)]
+    io["spark_steps"] = {1: 2}
+    monkeypatch.setattr(rsc, "SAVE_EVERY", 1)
+
+    def broken_print(*args, **kwargs):
+        raise UnicodeEncodeError("cp949", "Café", 3, 4, "illegal multibyte sequence")
+
+    monkeypatch.setattr("builtins.print", broken_print)
+    with pytest.raises(UnicodeEncodeError):
+        rsc.main()  # the console failure surfaces instead of being recorded as the row's error
+
+    saved = json.loads((config.OUT / "step_count.json").read_text(encoding="utf-8"))
+    assert "error" not in saved["rows"][0]
+    assert saved["rows"][0]["correct"] is True and saved["scored"] == 1
+
+
 def test_frames_json_selects_photo_by_t(io, monkeypatch):
     frames = {"frames": [{"id": f"img{i}"} for i in range(40)]}
     (config.CLIPS / "a" / "frames.json").write_text(json.dumps(frames), encoding="utf-8")

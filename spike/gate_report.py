@@ -8,6 +8,7 @@ import json
 from dataclasses import dataclass
 
 from spike import config
+from spike.console import utf8_stdout
 
 THRESHOLDS = {
     "kr_recent_pedestrian_photos": 300,
@@ -216,6 +217,7 @@ def build_report(metrics: dict, extras: dict) -> str:
 
 
 def main() -> None:
+    utf8_stdout()
     metrics, extras = collect_metrics()
     report = build_report(metrics, extras)
     (config.OUT / "gate_report.md").write_text(report + "\n", encoding="utf-8")

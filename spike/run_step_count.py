@@ -4,6 +4,7 @@ from pathlib import Path
 
 from spike import config, mapillary, video
 from spike import meta_client as mc
+from spike.console import utf8_stdout
 from spike.truth import load_truth
 
 SCHEMA = {
@@ -56,6 +57,7 @@ def write_results(rows: list[dict]) -> float:
 
 
 def main() -> None:
+    utf8_stdout()
     stairs = json.loads((config.OUT / "sam_stairs.json").read_text(encoding="utf-8"))
     best_phrase = stairs["best_phrase"]
     truth = {(c.file, i): e for c in load_truth() for i, e in enumerate(c.entrances)}
@@ -74,14 +76,16 @@ def main() -> None:
             result = mc.spark_json([mc.text_part(PROMPT), mc.image_part(image)], "entrance_read", SCHEMA)
             row.update({k: result[k] for k in RESULT_KEYS})
             row["correct"] = result["step_count"] == entrance.step_count
-            print(entrance.name, "truth", entrance.step_count, "pred", result["step_count"],
-                  "conf", result["confidence"])
         except Exception as exc:  # one entrance must not abort the run
             row["error"] = _err(exc)
-            print(entrance.name, "error", row["error"])
         rows.append(row)
         if n % SAVE_EVERY == 0:
             write_results(rows)
+        # printed outside the try, so a console failure can never turn a scored row into an error row
+        if "error" in row:
+            print(entrance.name, "error", row["error"])
+        else:
+            print(entrance.name, "truth", entrance.step_count, "pred", row["step_count"], "conf", row["confidence"])
     accuracy = write_results(rows)
     print("accuracy", accuracy)
 
