@@ -1,0 +1,16 @@
+# secrets
+.env
+# raw media and spike outputs
+spike/clips/
+spike/out/*
+!spike/out/gate_report.md
+*.mp4
+*.mov
+*.webm
+# python
+__pycache__/
+.venv/
+.pytest_cache/
+
+# local tool state
+.omc/
