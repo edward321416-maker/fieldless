@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Truth Labeler</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  video { width: 720px; max-width: 100%; background: #000; }
+  fieldset { margin: 8px 0; }
+  li button { margin-left: 8px; }
+  .open { color: #b00; font-weight: 600; }
+  kbd { border: 1px solid #999; border-radius: 3px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<h1>Truth Labeler</h1>
+<p>Load a clip, then label while it plays. Clips built from photo sequences show one photo per second.
+Keys: <kbd>Space</kbd> play/pause, <kbd>←</kbd>/<kbd>→</kbd> ±1 s (one photo),
+<kbd>,</kbd>/<kbd>.</kbd> ±0.1 s, <kbd>E</kbd> add entrance, <kbd>T</kbd> tactile start/end, <kbd>O</kbd> obstacle start/end.
+Keys are ignored while a text field has focus. Labeling time is counted while a clip is loaded and this tab is visible.</p>
+<div class="row">
+  <div>
+    <label>Clip <input type="file" id="clip" accept="video/*"></label>
+    <label>Import truth.json <input type="file" id="import" accept="application/json"></label>
+    <div><video id="video" controls></video></div>
+    <div>Time: <strong id="now">0.0</strong> s (photo <strong id="photo">0</strong>), clip: <strong id="clipName">none</strong>,
+      labeling time: <strong id="elapsed">0</strong> s</div>
+  </div>
+  <div>
+    <fieldset><legend>Entrance</legend>
+      <label>Name <input id="eName"></label><br>
+      <label>Steps <input id="eSteps" type="number" min="0" value="0" style="width:4em"></label>
+      <label><input id="eRamp" type="checkbox"> ramp</label>
+      <label>Door <select id="eDoor">
+        <option>swing</option><option>sliding</option><option>automatic</option><option>revolving</option><option>none_visible</option>
+      </select></label><br>
+      <button id="addEntrance">Add entrance at current time (E)</button>
+    </fieldset>
+    <fieldset><legend>Tactile paving</legend>
+      <button id="tactile">Tactile start/end (T)</button> <span id="tactileOpen" class="open"></span>
+    </fieldset>
+    <fieldset><legend>Obstacle</legend>
+      <label>Label <input id="oLabel" list="labels" value="electric scooter"></label>
+      <datalist id="labels">
+        <option>electric scooter</option><option>bicycle</option><option>sandwich board sign</option><option>stacked boxes</option>
+      </datalist>
+      <label><input id="oOnTactile" type="checkbox" checked> on tactile paving</label><br>
+      <button id="obstacle">Obstacle start/end (O)</button> <span id="obstacleOpen" class="open"></span>
+    </fieldset>
+    <button id="export">Export truth.json</button>
+  </div>
+</div>
+<h2>Labels for this clip</h2>
+<ul id="list"></ul>
+<script>
+const $ = (id) => document.getElementById(id);
+const video = $("video");
+let truth = { clips: {} };
+let clipName = null;
+let tactileStart = null;
+let obstacleStart = null;
+
+try { const saved = localStorage.getItem("truth-labeler"); if (saved) truth = JSON.parse(saved); } catch (e) {}
+
+function save() { try { localStorage.setItem("truth-labeler", JSON.stringify(truth)); } catch (e) {} }
+function currentClip() {
+  if (!clipName) { alert("Load a clip first."); return null; }
+  return truth.clips[clipName] ||= { entrances: [], tactile_ranges: [], obstacles: [] };
+}
+const now = () => Math.round(video.currentTime * 10) / 10;
+
+function render() {
+  const list = $("list");
+  list.innerHTML = "";
+  const c = clipName && truth.clips[clipName];
+  if (!c) return;
+  const items = [
+    ...c.entrances.map((e, i) => ({ t: e.t, text: `Entrance ${e.name || "(no name)"}: ${e.step_count} steps, ramp ${e.has_ramp}, ${e.door_type}`, del: () => c.entrances.splice(i, 1) })),
+    ...c.tactile_ranges.map((r, i) => ({ t: r[0], text: `Tactile ${r[0]}–${r[1]} s`, del: () => c.tactile_ranges.splice(i, 1) })),
+    ...c.obstacles.map((o, i) => ({ t: o.t_start, text: `Obstacle ${o.label} ${o.t_start}–${o.t_end} s, on tactile ${o.on_tactile}`, del: () => c.obstacles.splice(i, 1) })),
+  ].sort((a, b) => a.t - b.t);
+  for (const item of items) {
+    const li = document.createElement("li");
+    const seek = document.createElement("button");
+    seek.textContent = `${item.t.toFixed(1)} s`;
+    seek.onclick = () => { video.currentTime = item.t; };
+    const del = document.createElement("button");
+    del.textContent = "delete";
+    del.onclick = () => { item.del(); save(); render(); };
+    li.append(seek, " ", item.text, del);
+    list.append(li);
+  }
+}
+
+function addEntrance() {
+  const c = currentClip(); if (!c) return;
+  c.entrances.push({ t: now(), name: $("eName").value.trim(), step_count: Number($("eSteps").value) || 0,
+                     has_ramp: $("eRamp").checked, door_type: $("eDoor").value });
+  $("eName").value = "";
+  save(); render();
+}
+function toggleTactile() {
+  const c = currentClip(); if (!c) return;
+  if (tactileStart === null) { tactileStart = now(); $("tactileOpen").textContent = `open since ${tactileStart} s`; return; }
+  c.tactile_ranges.push([Math.min(tactileStart, now()), Math.max(tactileStart, now())]);
+  tactileStart = null; $("tactileOpen").textContent = "";
+  save(); render();
+}
+function toggleObstacle() {
+  const c = currentClip(); if (!c) return;
+  if (obstacleStart === null) { obstacleStart = now(); $("obstacleOpen").textContent = `open since ${obstacleStart} s`; return; }
+  c.obstacles.push({ t_start: Math.min(obstacleStart, now()), t_end: Math.max(obstacleStart, now()),
+                     label: $("oLabel").value.trim() || "obstacle", on_tactile: $("oOnTactile").checked });
+  obstacleStart = null; $("obstacleOpen").textContent = "";
+  save(); render();
+}
+
+$("clip").onchange = (ev) => {
+  const file = ev.target.files[0]; if (!file) return;
+  clipName = file.name; $("clipName").textContent = clipName;
+  video.src = URL.createObjectURL(file);
+  tactileStart = obstacleStart = null;
+  render();
+};
+$("import").onchange = async (ev) => {
+  const file = ev.target.files[0]; if (!file) return;
+  truth = JSON.parse(await file.text());
+  save(); render();
+};
+$("addEntrance").onclick = addEntrance;
+$("tactile").onclick = toggleTactile;
+$("obstacle").onclick = toggleObstacle;
+$("export").onclick = () => {
+  const blob = new Blob([JSON.stringify(truth, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "truth.json"; a.click();
+};
+video.ontimeupdate = () => {
+  $("now").textContent = video.currentTime.toFixed(1);
+  $("photo").textContent = Math.floor(video.currentTime + 1e-6);
+};
+let ticks = 0;
+setInterval(() => {
+  if (!clipName || document.visibilityState !== "visible") return;
+  const c = truth.clips[clipName] ||= { entrances: [], tactile_ranges: [], obstacles: [] };
+  c.labeling_seconds = (c.labeling_seconds || 0) + 1;
+  $("elapsed").textContent = c.labeling_seconds;
+  if (++ticks % 10 === 0) save();
+}, 1000);
+document.addEventListener("keydown", (ev) => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+  const k = ev.key.toLowerCase();
+  if (k === " ") { ev.preventDefault(); video.paused ? video.play() : video.pause(); }
+  else if (k === "arrowleft") video.currentTime -= 1;
+  else if (k === "arrowright") video.currentTime += 1;
+  else if (k === ",") { video.pause(); video.currentTime -= 0.1; }
+  else if (k === ".") { video.pause(); video.currentTime += 0.1; }
+  else if (k === "e") addEntrance();
+  else if (k === "t") toggleTactile();
+  else if (k === "o") toggleObstacle();
+});
+</script>
+</body>
+</html>
