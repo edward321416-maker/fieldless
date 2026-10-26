@@ -16,7 +16,11 @@ class VideoInfo:
 
 
 def _run(args: list[str]) -> None:
-    subprocess.run(args, check=True, capture_output=True)
+    try:
+        subprocess.run(args, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        tail = "\n".join(e.stderr.decode(errors="replace").splitlines()[-20:])
+        raise RuntimeError(f"{args[0]} failed (exit {e.returncode}):\n{tail}") from e
 
 
 def _encode_args(dst: Path) -> list[str]:
@@ -46,7 +50,7 @@ def normalize(src: Path, dst: Path, max_seconds: float | None = None, fps: float
     if max_seconds:
         args += ["-t", f"{max_seconds:.2f}"]
     filters = [f"fps={fps}"] if fps else []
-    filters.append("scale='min(1280,iw)':-2")
+    filters.append("scale=trunc(min(1280\\,iw)/2)*2:-2")
     args += ["-vf", ",".join(filters)]
     _run(args + _encode_args(dst))
     return Path(dst)
