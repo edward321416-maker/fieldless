@@ -122,6 +122,17 @@ def test_error_message_includes_body_and_never_token(monkeypatch, no_sleep):
     assert "SECRET123" not in message
 
 
+def test_token_straddling_the_300_char_cut_does_not_leak_a_prefix(monkeypatch, no_sleep):
+    monkeypatch.setenv("MAPILLARY_TOKEN", "SECRET123")
+    body = "x" * 295 + "SECRET123" + "y" * 20  # the token spans characters 295..303
+    monkeypatch.setattr(mly.httpx, "get", lambda url, **kw: httpx.Response(400, text=body))
+    with pytest.raises(RuntimeError) as exc:
+        mly._get("images", {})
+    message = str(exc.value)
+    assert "SECRE" not in message  # truncating first would have kept "SECRE"
+    assert "x" * 295 + "<reda" in message
+
+
 def test_download_retries_transport_error_then_succeeds(monkeypatch, tmp_path, no_sleep):
     calls = []
 

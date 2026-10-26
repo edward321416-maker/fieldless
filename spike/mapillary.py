@@ -70,7 +70,9 @@ def _get(path: str, params: dict) -> dict:
     except httpx.HTTPError as e:
         raise RuntimeError(_scrub(f"Mapillary request {path} failed: {type(e).__name__}: {e}", token)) from None
     if resp.status_code >= 400:
-        raise RuntimeError(_scrub(f"Mapillary HTTP {resp.status_code} for {path}: {resp.text[:300]}", token))
+        # scrub before truncating: a token straddling the cut would otherwise leave its prefix in the message
+        body = _scrub(resp.text, token)[:300]
+        raise RuntimeError(_scrub(f"Mapillary HTTP {resp.status_code} for {path}: {body}", token))
     return resp.json()
 
 

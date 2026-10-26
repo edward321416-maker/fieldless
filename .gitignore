@@ -1,5 +1,5 @@
-# secrets
-.env
+# secrets (.env, .env.local, ...)
+.env*
 # raw media and spike outputs
 spike/clips/
 spike/out/*
@@ -7,6 +7,10 @@ spike/out/*
 *.mp4
 *.mov
 *.webm
+# downloaded photos anywhere under spike/ (images elsewhere, e.g. docs, stay allowed)
+spike/**/*.jpg
+spike/**/*.jpeg
+spike/**/*.png
 # python
 __pycache__/
 .venv/
