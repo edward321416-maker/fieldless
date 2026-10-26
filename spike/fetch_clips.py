@@ -5,6 +5,8 @@
 """
 import argparse
 import json
+import sys
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -28,6 +30,7 @@ AREAS = {
 KR_AREAS = {name for name in AREAS if name.split("_")[0] in {"daejeon", "seoul", "busan"}}
 TOP_SEQUENCES = 3
 SHEET_PHOTOS = 12
+MAX_FAILED_SHARE = 0.05  # build exits non-zero when more than this share of photos cannot be downloaded
 
 
 def contact_sheet(paths, labels, dst, cols=4, tile=(320, 240)) -> None:
@@ -43,6 +46,47 @@ def contact_sheet(paths, labels, dst, cols=4, tile=(320, 240)) -> None:
     cv2.imwrite(str(dst), np.vstack(rows))
 
 
+def _kr_best(report: dict) -> dict | None:
+    candidates = [(v["summary"]["recent_on_foot_flat"], k)
+                  for k, v in report["areas"].items() if v["kr"] and "summary" in v]
+    if not candidates:
+        return None
+    count, area = max(candidates)
+    summary = report["areas"][area]["summary"]
+    return {"area": area, "recent_on_foot_flat": count, "recent_flat": summary["recent_flat"],
+            "capped": summary["capped"]}
+
+
+def _write_report(report: dict) -> None:
+    report["kr_best"] = _kr_best(report)
+    (config.OUT / "coverage.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _survey_area(name: str, bbox, since: int, sheets: Path, photos: Path) -> dict:
+    images, capped = mapillary.search_area(bbox)
+    summary = mapillary.summarize(images, since, capped=capped)
+    top = mapillary.rank_sequences(images, since)[:TOP_SEQUENCES]
+    entry = {"kr": name in KR_AREAS, "bbox": bbox, "summary": summary, "top_sequences": top}
+    print(f"{name}: {summary['recent_on_foot_flat']} recent pedestrian flat photos "
+          f"({summary['total']} total{', capped' if summary['capped'] else ''}), {len(top)} candidate sequences")
+    if name not in KR_AREAS:
+        return entry
+    for seq in top:
+        frames = mapillary.sequence_frames(seq["sequence"])
+        seq["frames"] = len(frames)
+        seq["km"] = round(mapillary.track_km([mapillary.frame_record(f) for f in frames]), 3)
+        if not frames:
+            continue
+        picks = sorted({round(i * (len(frames) - 1) / (SHEET_PHOTOS - 1)) for i in range(SHEET_PHOTOS)})
+        paths = []
+        for i in picks:
+            path = photos / f"{seq['sequence']}_{i:04d}.jpg"
+            mapillary.download(frames[i].get("thumb_1024_url"), path)
+            paths.append(path)
+        contact_sheet(paths, [str(i) for i in picks], sheets / f"{name}_{seq['sequence']}.jpg")
+    return entry
+
+
 def coverage() -> None:
     since = mapillary.ms(SINCE)
     sheets = config.OUT / "sheets"
@@ -51,32 +95,26 @@ def coverage() -> None:
     photos.mkdir(parents=True, exist_ok=True)
     report = {"since": SINCE, "areas": {}}
     for name, bbox in AREAS.items():
-        images = mapillary.search_images(bbox)
-        summary = mapillary.summarize(images, since)
-        top = mapillary.rank_sequences(images, since)[:TOP_SEQUENCES]
-        report["areas"][name] = {"kr": name in KR_AREAS, "bbox": bbox, "summary": summary, "top_sequences": top}
-        print(f"{name}: {summary['recent_on_foot_flat']} recent pedestrian flat photos "
-              f"({summary['total']} total{', capped' if summary['capped'] else ''}), {len(top)} candidate sequences")
-        if name not in KR_AREAS:
-            continue
-        for seq in top:
-            frames = mapillary.sequence_frames(seq["sequence"])
-            seq["frames"] = len(frames)
-            seq["km"] = round(mapillary.track_km([mapillary.frame_record(f) for f in frames]), 3)
-            if not frames:
-                continue
-            picks = sorted({round(i * (len(frames) - 1) / (SHEET_PHOTOS - 1)) for i in range(SHEET_PHOTOS)})
-            paths = []
-            for i in picks:
-                path = photos / f"{seq['sequence']}_{i:04d}.jpg"
-                mapillary.download(frames[i].get("thumb_1024_url"), path)
-                paths.append(path)
-            contact_sheet(paths, [str(i) for i in picks], sheets / f"{name}_{seq['sequence']}.jpg")
-    best_count, best_area = max((v["summary"]["recent_on_foot_flat"], k)
-                                for k, v in report["areas"].items() if v["kr"])
-    report["kr_best"] = {"area": best_area, "recent_on_foot_flat": best_count}
-    (config.OUT / "coverage.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            report["areas"][name] = _survey_area(name, bbox, since, sheets, photos)
+        except Exception as e:  # one failing area must not abort the whole survey
+            report["areas"][name] = {"kr": name in KR_AREAS, "bbox": bbox, "error": f"{type(e).__name__}: {e}"}
+            print(f"{name}: failed: {type(e).__name__}: {e}")
+        _write_report(report)
     print("best Korean area:", report["kr_best"])
+
+
+def _decodes(path: Path) -> bool:
+    return cv2.imread(str(path)) is not None
+
+
+def _fetch_frame(frame: dict, path: Path) -> bool:
+    """Download one photo into path. A stale or undecodable file is removed and counts as a failure."""
+    path.unlink(missing_ok=True)
+    if mapillary.download(frame.get("thumb_2048_url"), path) and _decodes(path):
+        return True
+    path.unlink(missing_ok=True)
+    return False
 
 
 def build(name: str, sequence_id: str, start: int, count: int) -> None:
@@ -85,24 +123,37 @@ def build(name: str, sequence_id: str, start: int, count: int) -> None:
         raise SystemExit("no photos in that range")
     folder = config.CLIPS / name
     folder.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for i, frame in enumerate(frames):
-        path = folder / f"{i:04d}.jpg"
-        if not mapillary.download(frame.get("thumb_2048_url"), path):
-            print(f"photo {i} ({frame['id']}) failed to download; it becomes a black frame")
-        paths.append(path)
+    paths = [folder / f"{i:04d}.jpg" for i in range(len(frames))]
+    failed = [i for i, frame in enumerate(frames) if not _fetch_frame(frame, paths[i])]
+    if failed:
+        # thumbnail URLs expire, so look the sequence up again and retry only the failed photos once
+        fresh = {str(f["id"]): f for f in mapillary.sequence_frames(sequence_id)}
+        for i in failed:
+            _fetch_frame(fresh.get(str(frames[i]["id"]), frames[i]), paths[i])
+        failed = [i for i in failed if not paths[i].exists()]
+    total = len(frames)
+    print(f"downloaded {total - len(failed)}/{total}, failed {len(failed)}")
     records = [mapillary.frame_record(f) for f in frames]
+    missing_creator = [i for i, r in enumerate(records) if not r["creator"]]
+    if missing_creator:
+        print(f"warning: {len(missing_creator)} photos have no creator name (indices {missing_creator})")
     meta = {
         "sequence": sequence_id,
         "start": start,
         "license": "CC BY-SA 4.0, Mapillary contributors",
         "creators": sorted({r["creator"] for r in records if r["creator"]}),
         "km": round(mapillary.track_km(records), 3),
+        "failed": failed,
+        "missing_creator": missing_creator,
         "frames": records,
     }
     (folder / "frames.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     video.images_to_mp4(paths, config.CLIPS / f"{name}.mp4", fps=config.CLIP_FPS)
-    print(f"{name}.mp4: {len(paths)} photos, {meta['km']} km, creators {meta['creators']}")
+    print(f"{name}.mp4: {total} photos, {meta['km']} km, creators {meta['creators']}")
+    if len(failed) > MAX_FAILED_SHARE * total:
+        print(f"error: {len(failed)} of {total} photos missing (over {MAX_FAILED_SHARE:.0%}); "
+              f"failed indices are in frames.json")
+        sys.exit(1)
 
 
 def main() -> None:

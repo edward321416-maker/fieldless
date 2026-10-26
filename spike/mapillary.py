@@ -12,6 +12,8 @@ import httpx
 from spike import config
 
 MAX_BBOX_DEG2 = 0.01
+MAX_RESULTS = 2000  # Mapillary's per-request limit; a response this long may be truncated
+RETRY_ATTEMPTS = 5
 SEARCH_FIELDS = "id,sequence,captured_at,is_pano,on_foot"
 FRAME_FIELDS = ("id,sequence,captured_at,compass_angle,computed_compass_angle,geometry,computed_geometry,"
                 "is_pano,on_foot,creator,thumb_1024_url,thumb_2048_url")
@@ -35,40 +37,86 @@ def check_bbox(bbox: tuple[float, float, float, float]) -> None:
         raise ValueError(f"bbox area {bbox_area(bbox):.5f} must be under {MAX_BBOX_DEG2} square degrees")
 
 
-def _get(path: str, params: dict) -> dict:
-    headers = {"Authorization": f"OAuth {config.mapillary_token()}"}
-    for attempt in range(5):
+def _retrying(request) -> httpx.Response:
+    """Call request() until it returns a response that is not retryable.
+
+    Retries HTTP 429, 5xx and transport errors with exponential backoff. After the last attempt the
+    last response is returned, or the last transport error is raised.
+    """
+    for attempt in range(RETRY_ATTEMPTS):
+        last = attempt == RETRY_ATTEMPTS - 1
         try:
-            resp = httpx.get(f"{config.MAPILLARY_BASE_URL}/{path}", params=params, headers=headers, timeout=60)
+            resp = request()
         except httpx.TransportError:
-            if attempt == 4:
+            if last:
                 raise
         else:
-            if resp.status_code != 429 and resp.status_code < 500:
-                resp.raise_for_status()
-                return resp.json()
-            if attempt == 4:
-                resp.raise_for_status()
+            if (resp.status_code != 429 and resp.status_code < 500) or last:
+                return resp
         time.sleep(min(30, 2 ** attempt) + random.random())
     raise RuntimeError("unreachable")
 
 
-def search_images(bbox: tuple[float, float, float, float]) -> list[dict]:
+def _scrub(text: str, token: str) -> str:
+    return text.replace(token, "<redacted>") if token else text
+
+
+def _get(path: str, params: dict) -> dict:
+    token = config.mapillary_token()
+    headers = {"Authorization": f"OAuth {token}"}
+    url = f"{config.MAPILLARY_BASE_URL}/{path}"
+    try:
+        resp = _retrying(lambda: httpx.get(url, params=params, headers=headers, timeout=60))
+    except httpx.HTTPError as e:
+        raise RuntimeError(_scrub(f"Mapillary request {path} failed: {type(e).__name__}: {e}", token)) from None
+    if resp.status_code >= 400:
+        raise RuntimeError(_scrub(f"Mapillary HTTP {resp.status_code} for {path}: {resp.text[:300]}", token))
+    return resp.json()
+
+
+def _search(bbox: tuple[float, float, float, float]) -> tuple[list[dict], bool]:
+    params = {"bbox": ",".join(f"{v:.6f}" for v in bbox), "fields": SEARCH_FIELDS, "limit": MAX_RESULTS}
+    data = _get("images", params).get("data", [])
+    return data, len(data) >= MAX_RESULTS
+
+
+def search_area(bbox: tuple[float, float, float, float]) -> tuple[list[dict], bool]:
+    """Return (images, capped). A full response is split into 4 quadrants and merged by id."""
     check_bbox(bbox)
-    params = {"bbox": ",".join(f"{v:.6f}" for v in bbox), "fields": SEARCH_FIELDS, "limit": 2000}
-    return _get("images", params).get("data", [])
+    images, capped = _search(bbox)
+    if not capped:
+        return images, False
+    min_lng, min_lat, max_lng, max_lat = bbox
+    mid_lng, mid_lat = (min_lng + max_lng) / 2, (min_lat + max_lat) / 2
+    quadrants = [
+        (min_lng, min_lat, mid_lng, mid_lat), (mid_lng, min_lat, max_lng, mid_lat),
+        (min_lng, mid_lat, mid_lng, max_lat), (mid_lng, mid_lat, max_lng, max_lat),
+    ]
+    merged: dict[str, dict] = {}
+    still_capped = False
+    for quadrant in quadrants:
+        found, quadrant_capped = _search(quadrant)
+        still_capped = still_capped or quadrant_capped
+        for img in found:
+            merged.setdefault(str(img["id"]), img)
+    return list(merged.values()), still_capped
+
+
+def search_images(bbox: tuple[float, float, float, float]) -> list[dict]:
+    return search_area(bbox)[0]
 
 
 def _flat(img: dict) -> bool:
     return not img.get("is_pano") and img.get("on_foot") is not False
 
 
-def summarize(images: list[dict], since_ms: int) -> dict:
+def summarize(images: list[dict], since_ms: int, capped: bool | None = None) -> dict:
     recent = [i for i in images if i["captured_at"] >= since_ms]
     return {
         "total": len(images),
-        "capped": len(images) >= 2000,
+        "capped": len(images) >= MAX_RESULTS if capped is None else capped,
         "recent": len(recent),
+        "recent_flat": sum(1 for i in recent if _flat(i)),
         "recent_on_foot_flat": sum(1 for i in recent if _flat(i) and i.get("on_foot") is True),
         "recent_unclassified_flat": sum(1 for i in recent if _flat(i) and i.get("on_foot") is None),
         "pano_ratio": (sum(1 for i in images if i.get("is_pano")) / len(images)) if images else 0.0,
@@ -94,7 +142,7 @@ def rank_sequences(images: list[dict], since_ms: int) -> list[dict]:
 
 
 def sequence_frames(sequence_id: str) -> list[dict]:
-    data = _get("images", {"sequence_ids": sequence_id, "fields": FRAME_FIELDS, "limit": 2000}).get("data", [])
+    data = _get("images", {"sequence_ids": sequence_id, "fields": FRAME_FIELDS, "limit": MAX_RESULTS}).get("data", [])
     return sorted(data, key=lambda i: i["captured_at"])
 
 
@@ -126,9 +174,13 @@ def track_km(frames: list[dict]) -> float:
 
 
 def download(url: str | None, dst: Path) -> bool:
+    """Fetch url to dst. Retries 429, 5xx and transport errors; False on a permanent failure or after the last try."""
     if not url:
         return False
-    resp = httpx.get(url, timeout=60, follow_redirects=True)
+    try:
+        resp = _retrying(lambda: httpx.get(url, timeout=60, follow_redirects=True))
+    except httpx.TransportError:
+        return False
     if resp.status_code != 200:
         return False
     Path(dst).write_bytes(resp.content)
