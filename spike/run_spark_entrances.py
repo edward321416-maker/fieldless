@@ -47,25 +47,34 @@ def run_clip(path: Path) -> dict:
     info = video.probe(path)
     entrances: list[dict] = []
     obstacle_types: set[str] = set()
+    errors: list[dict] = []
+    out_of_range = 0
     start = 0.0
     while start < info.duration_s - 0.5:
         end = min(start + CHUNK_S, info.duration_s)
-        chunk = video.cut(path, tmp / f"{path.stem}_{int(start)}.mp4", start, end)
-        stamped = video.burn_timecode(chunk, tmp / f"{path.stem}_{int(start)}_tc.mp4", offset_s=start)
-        held = video.hold_frames(stamped, tmp / f"{path.stem}_{int(start)}_hold.mp4", config.SPARK_HOLD)
-        file_id = mc.upload(held)
         try:
-            result = mc.spark_json([mc.text_part(PROMPT), mc.file_part(file_id)], "street_scan", SCHEMA)
-        finally:
-            mc.delete_file(file_id)
-        entrances += result["entrances"]
-        obstacle_types |= {o.strip().lower() for o in result["obstacle_types"] if o.strip()}
+            chunk = video.cut(path, tmp / f"{path.stem}_{int(start)}.mp4", start, end)
+            stamped = video.burn_timecode(chunk, tmp / f"{path.stem}_{int(start)}_tc.mp4", offset_s=start)
+            held = video.hold_frames(stamped, tmp / f"{path.stem}_{int(start)}_hold.mp4", config.SPARK_HOLD)
+            file_id = mc.upload(held)
+            try:
+                result = mc.spark_json([mc.text_part(PROMPT), mc.file_part(file_id)], "street_scan", SCHEMA)
+            finally:
+                mc.delete_file(file_id)
+            chunk_out = sum(not (start <= e["t"] < end) for e in result["entrances"])
+            out_of_range += chunk_out
+            entrances += result["entrances"]
+            obstacle_types |= {o.strip().lower() for o in result["obstacle_types"] if o.strip()}
+        except Exception as exc:  # one bad chunk must not discard the earlier paid calls
+            errors.append({"start": start, "end": end, "error": f"{type(exc).__name__}: {str(exc)[:300]}"})
         start = end
-    return {"duration_s": info.duration_s, "entrances": entrances, "obstacle_types": sorted(obstacle_types)}
+    return {"duration_s": info.duration_s, "entrances": entrances, "obstacle_types": sorted(obstacle_types),
+            "errors": errors, "out_of_range": out_of_range}
 
 
 def main() -> None:
     report = {}
+    out_path = config.OUT / "spark_entrances.json"
     for clip in load_truth():
         result = run_clip(config.CLIPS / clip.file)
         hits, misses, false_pos = match_times(
@@ -74,10 +83,9 @@ def main() -> None:
         result.update(hits=hits, misses=misses, false_positives=false_pos, truth_count=len(clip.entrances))
         report[clip.file] = result
         print(f"{clip.file}: hits {hits}/{len(clip.entrances)}, false positives {false_pos}, "
-              f"obstacle types {result['obstacle_types']}")
-    (config.OUT / "spark_entrances.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+              f"obstacle types {result['obstacle_types']}, chunk errors {len(result['errors'])}, "
+              f"out of range {result['out_of_range']}")
+        out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
