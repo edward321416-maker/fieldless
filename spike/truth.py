@@ -45,17 +45,19 @@ def load_truth(path: Path | None = None) -> list[ClipTruth]:
 
 
 def match_times(pred: list[float], truth: list[float], tol: float) -> tuple[int, int, int]:
-    unused = sorted(pred)
+    # Optimal one-to-one matching for equal tolerances: process truths ascending and
+    # give each the earliest unused prediction inside its window. Predictions skipped
+    # because they fall before the window can never match a later truth, so one pointer suffices.
+    preds = sorted(pred)
     hits = 0
+    i = 0
     for t in sorted(truth):
-        best = None
-        for p in unused:
-            if abs(p - t) <= tol and (best is None or abs(p - t) < abs(best - t)):
-                best = p
-        if best is not None:
-            unused.remove(best)
+        while i < len(preds) and preds[i] < t - tol:
+            i += 1
+        if i < len(preds) and preds[i] <= t + tol:
             hits += 1
-    return hits, len(truth) - hits, len(unused)
+            i += 1
+    return hits, len(truth) - hits, len(preds) - hits
 
 
 def in_ranges(t: float, ranges: list[tuple[float, float]]) -> bool:
