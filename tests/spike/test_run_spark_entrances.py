@@ -102,3 +102,19 @@ def test_main_writes_report_after_each_clip(fake_io, monkeypatch):
     assert list(clip_entries(saved)) == ["a.mp4"]
     assert saved["a.mp4"]["hits"] == 1
     assert saved["_meta"] == {"truth_sha256": truth_sha256()}
+
+
+def test_clip_result_is_saved_before_its_line_is_printed(fake_io, monkeypatch):
+    clips = [ClipTruth(file="Café.mp4", entrances=[], tactile_ranges=[], obstacles=[])]
+    monkeypatch.setattr(rse, "load_truth", lambda: clips)
+    monkeypatch.setattr(rse, "run_clip", lambda path: {"duration_s": 10.0, "entrances": [], "obstacle_types": [],
+                                                       "errors": [], "out_of_range": 0})
+
+    def broken_print(*args, **kwargs):  # a console that cannot print the clip name
+        raise UnicodeEncodeError("cp949", "Café", 3, 4, "illegal multibyte sequence")
+
+    monkeypatch.setattr("builtins.print", broken_print)
+    with pytest.raises(UnicodeEncodeError):
+        rse.main()
+    saved = json.loads((config.OUT / "spark_entrances.json").read_text(encoding="utf-8"))
+    assert list(clip_entries(saved)) == ["Café.mp4"]  # the paid result was already on disk
