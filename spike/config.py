@@ -15,6 +15,7 @@ SPARK_MODEL = "muse-spark-1.3"
 SAM_MODEL = "sam-3.1"
 MAPILLARY_BASE_URL = "https://graph.mapillary.com"
 CLIP_FPS = 1  # clips built from photo sequences show one photo per second, so t seconds == photo t
+SPARK_HOLD = 2  # D1 finding: Muse Spark samples uploaded video at one frame every 2 s, so Spark copies show each photo for 2 s
 
 
 def api_key() -> str:

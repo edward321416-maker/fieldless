@@ -33,8 +33,8 @@ SCHEMA = {
     },
 }
 
-PROMPT = """You are surveying street accessibility from street-level photos taken by a pedestrian, shown as a video at one photo per second.
-A timer in seconds is burned into the top-left corner of every frame; it equals the photo number.
+PROMPT = """You are surveying street accessibility from street-level photos taken by a pedestrian, shown as a video in which each photo stays on screen for two seconds.
+A timer burned into the top-left corner of every frame shows the photo number.
 1) List every shop or building entrance (door) the photos pass. For each, set t to the timer value shown when that entrance is most clearly and frontally visible. Read t from the timer; do not estimate it.
    Also give the side of the frame (left, right, center), the sign name as written (keep the original language), a short English business category, and whether steps in front of the door are visible.
 2) List the kinds of objects standing on the sidewalk that could block a pedestrian or tactile paving, as short English noun phrases such as "electric scooter", "bicycle", "sandwich board sign", "stacked boxes". Empty list if none.
@@ -52,7 +52,8 @@ def run_clip(path: Path) -> dict:
         end = min(start + CHUNK_S, info.duration_s)
         chunk = video.cut(path, tmp / f"{path.stem}_{int(start)}.mp4", start, end)
         stamped = video.burn_timecode(chunk, tmp / f"{path.stem}_{int(start)}_tc.mp4", offset_s=start)
-        file_id = mc.upload(stamped)
+        held = video.hold_frames(stamped, tmp / f"{path.stem}_{int(start)}_hold.mp4", config.SPARK_HOLD)
+        file_id = mc.upload(held)
         try:
             result = mc.spark_json([mc.text_part(PROMPT), mc.file_part(file_id)], "street_scan", SCHEMA)
         finally:

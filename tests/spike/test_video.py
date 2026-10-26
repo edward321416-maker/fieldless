@@ -105,6 +105,41 @@ def test_frame_at_writes_jpeg(sample, tmp_path):
     assert out.exists() and out.stat().st_size > 0
 
 
+def _frame_means(path):
+    cap = cv2.VideoCapture(str(path))
+    means = []
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        means.append(float(frame.mean()))
+    cap.release()
+    return means
+
+
+def test_hold_frames_repeats_each_frame(tmp_path):
+    imgs = []
+    for i, gray in enumerate((40, 120, 200)):
+        p = tmp_path / f"{i:04d}.jpg"
+        cv2.imwrite(str(p), np.full((300, 400, 3), gray, np.uint8))
+        imgs.append(p)
+    src = video.images_to_mp4(imgs, tmp_path / "seq.mp4", fps=1)
+    src_means = _frame_means(src)
+    assert len(src_means) == 3
+
+    out = video.hold_frames(src, tmp_path / "held.mp4", repeat=2)
+    info = video.probe(out)
+    assert abs(info.fps - 1) < 0.01
+    assert abs(info.duration_s - 6.0) < 0.3
+
+    means = _frame_means(out)
+    assert len(means) == 6
+    for pair, source_mean in zip(((0, 1), (2, 3), (4, 5)), src_means):
+        for i in pair:
+            assert abs(means[i] - source_mean) < 3
+    assert means[0] < means[2] < means[4]
+
+
 def test_images_to_mp4_one_image_per_second(tmp_path):
     paths = []
     for i, gray in enumerate((40, 120, 200)):

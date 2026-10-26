@@ -88,6 +88,27 @@ def burn_timecode(src: Path, dst: Path, offset_s: float = 0.0) -> Path:
     return Path(dst)
 
 
+def hold_frames(src: Path, dst: Path, repeat: int) -> Path:
+    """Write every source frame `repeat` times at the source fps, so each photo stays on screen for repeat/fps seconds."""
+    cap = cv2.VideoCapture(str(src))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    tmp = Path(dst).with_name(Path(dst).stem + "_raw.mp4")
+    writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        for _ in range(repeat):
+            writer.write(frame)
+    cap.release()
+    writer.release()
+    normalize(tmp, Path(dst))
+    tmp.unlink()
+    return Path(dst)
+
+
 def frame_at(src: Path, t_s: float, dst: Path) -> Path:
     _run(["ffmpeg", "-y", "-ss", f"{max(0.0, t_s):.2f}", "-i", str(src), "-frames:v", "1", "-q:v", "2", str(dst)])
     return Path(dst)
