@@ -1,4 +1,15 @@
-"""Gate test 4: does SAM 3.1 track tactile paving and obstacles standing on it?"""
+"""Gate test 4: does SAM 3.1 track tactile paving and obstacles standing on it?
+
+Output contract for the gate report (spike/out/sidewalk.json, keyed by clip file):
+- coverage[phrase] / coverage_counts[phrase]: per-phrase share of in-range photos with a confident
+  mask; coverage_counts gives {"scored", "failed"} photo counts.
+- coverage_any_phrase / coverage_any_counts: the gate's tactile number. A photo in the truth tactile
+  ranges is hit if any phrase whose request succeeded on its chunk has a confident detection there,
+  failed if no phrase succeeded on its chunk. Use this with its counts.
+- events[]: detected is True, False, or None. None (with scored False) means the window overlapped a
+  failed request or the label was not queried. Consumers must filter on scored before computing rates.
+  overlap_detected is informational (box overlap) and is None when the best-phrase request failed.
+"""
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,6 +98,29 @@ def score_coverage(hits, failed: dict[float, str], chunks: list[Chunk],
     return (hit / scored if scored else None), scored, failed_n
 
 
+def score_any_phrase(tactile: dict, chunks: list[Chunk], sample_keys: list[int]) -> tuple[float | None, int, int]:
+    """Share of in-range photos hit by at least one phrase. A photo is failed if no phrase succeeded on its chunk."""
+    hit_keys = {p: {frame_key(t) for t, _ in hits} for p, (hits, _) in tactile.items()}
+    scored = failed_n = hit = 0
+    for k in sample_keys:
+        c = chunk_for(k / FPS, chunks)
+        ok = [p for p, (_, failed) in tactile.items() if c is not None and c.start not in failed]
+        if not ok:
+            failed_n += 1
+            continue
+        scored += 1
+        hit += any(k in hit_keys[p] for p in ok)
+    return (hit / scored if scored else None), scored, failed_n
+
+
+def window_bounds(o) -> tuple[float, float]:
+    return o.t_start - EVENT_MARGIN_S, o.t_end + EVENT_MARGIN_S
+
+
+def chunks_overlapping(chunks: list[Chunk], lo: float, hi: float, starts) -> bool:
+    return any(c.start in starts and c.start < hi and c.end > lo for c in chunks)
+
+
 def longest_run(keys: set[int]) -> int:
     best = run = 0
     prev = None
@@ -98,11 +132,11 @@ def longest_run(keys: set[int]) -> int:
 
 
 def score_event(o, queried: bool, hits, failed: dict[float, str], chunks: list[Chunk]) -> dict:
-    lo, hi = o.t_start - EVENT_MARGIN_S, o.t_end + EVENT_MARGIN_S
+    lo, hi = window_bounds(o)
     window = [(t, d) for t, d in hits if lo <= t <= hi]
     if window:
         detected = True
-    elif not queried or any(c.start in failed and c.start < hi and c.end > lo for c in chunks):
+    elif not queried or chunks_overlapping(chunks, lo, hi, failed):
         detected = None  # not queried or a request covering the window failed: unscored, not a miss
     else:
         detected = False
@@ -152,31 +186,40 @@ def main() -> None:
             rate, scored, failed_n = score_coverage(hits, failed, chunks, sample_keys)
             coverage[phrase] = rate
             counts[phrase] = {"scored": scored, "failed": failed_n}
+        any_rate, any_scored, any_failed = score_any_phrase(tactile, chunks, sample_keys)
         scored_phrases = [p for p in coverage if coverage[p] is not None]
         best_tactile = max(scored_phrases, key=lambda p: coverage[p]) if scored_phrases else None
 
         tactile_by_frame: dict[int, list[Detection]] = {}
-        for t, d in tactile[best_tactile][0] if best_tactile else []:
-            tactile_by_frame.setdefault(frame_key(t), []).append(d)
+        best_failed: dict[float, str] = {}
+        if best_tactile:
+            best_hits, best_failed = tactile[best_tactile]
+            for t, d in best_hits:
+                tactile_by_frame.setdefault(frame_key(t), []).append(d)
 
         events = []
         for o in clip.obstacles:
             queried = o.label in obstacles
             hits, failed = obstacles[o.label] if queried else ([], {})
             scored = score_event(o, queried, hits, failed, chunks)
-            overlap = any(boxes_intersect(d, td) for t, d in scored["window"]
-                          for td in tactile_by_frame.get(frame_key(t), []))
+            overlap: bool | None = any(boxes_intersect(d, td) for t, d in scored["window"]
+                                       for td in tactile_by_frame.get(frame_key(t), []))
+            if not overlap and best_tactile and chunks_overlapping(chunks, *window_bounds(o), best_failed):
+                overlap = None  # best-phrase request failed over this window: unknown, not False
             events.append({"label": o.label, "t_start": o.t_start, "t_end": o.t_end,
                            "on_tactile_truth": o.on_tactile, "detected": scored["detected"],
                            "scored": scored["scored"], "max_consecutive_photos": scored["max_consecutive_photos"],
                            "overlap_detected": overlap})
-        report[clip.file] = {"coverage": coverage, "coverage_counts": counts, "best_tactile_phrase": best_tactile,
-                             "obstacle_labels_queried": labels, "events": events, "errors": errors}
-        (config.OUT / "sidewalk.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        report[clip.file] = {"coverage": coverage, "coverage_counts": counts, "coverage_any_phrase": any_rate,
+                             "coverage_any_counts": {"scored": any_scored, "failed": any_failed},
+                             "best_tactile_phrase": best_tactile, "obstacle_labels_queried": labels,
+                             "events": events, "errors": errors}
+        out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
         n_scored = sum(e["scored"] for e in events)
         n_detected = sum(e["detected"] is True for e in events)
         print(clip.file, "coverage", {p: (coverage[p], counts[p]) for p in coverage},
+              "any-phrase", (any_rate, {"scored": any_scored, "failed": any_failed}),
               f"obstacles detected {n_detected}/{n_scored} scored, {len(events) - n_scored} failed/unqueried,",
               "errors", len(errors))
 
