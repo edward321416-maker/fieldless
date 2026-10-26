@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from spike import config
 from spike.console import utf8_stdout
+from spike.truth import clip_entries, truth_path, truth_sha256
 
 THRESHOLDS = {
     "kr_recent_pedestrian_photos": 300,
@@ -28,6 +29,7 @@ SPARK_OUT_PER_TOKEN = 4.25e-6
 SAM_PER_FRAME = 0.0002
 MIN_SCORED = 3  # a rate over fewer scored samples is not evidence either way
 FAILED_KINDS = ("sam_failed", "spark_failed")  # calls.jsonl lines for failed attempts (meta_client._log_failures)
+RUN_OUTPUTS = ("spark_entrances.json", "sam_stairs.json", "step_count.json", "sidewalk.json")
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,27 @@ def _load(name: str) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
 
+def _recorded_truth_hash(data: dict) -> str | None:
+    return data.get("truth_sha256") or (data.get("_meta") or {}).get("truth_sha256")
+
+
+def truth_consistency(outputs: dict[str, dict | None]) -> tuple[dict[str, str | None], str | None]:
+    """Compare the truth.json hash recorded in each run output with each other and with the current truth.json.
+
+    Returns ({name: hash or None}, warning or None). "current truth.json" is the file now; outputs that are missing
+    are left out, and an output without a recorded hash counts as a mismatch (it predates hashing).
+    """
+    current = truth_sha256() if truth_path().exists() else None
+    hashes = {name: _recorded_truth_hash(data) for name, data in outputs.items() if data is not None}
+    if current is not None:
+        hashes["current truth.json"] = current
+    if None not in hashes.values() and len(set(hashes.values())) <= 1:
+        return hashes, None
+    shown = ", ".join(f"{name} {h[:12] if h else '(no hash recorded)'}" for name, h in hashes.items())
+    return hashes, (f"WARNING: results come from different truth.json versions ({shown}); "
+                    "rerun the stale steps before trusting this report.")
+
+
 def _rate_metric(metrics: dict, extras: dict, name: str, value: float | None, scored: int,
                  failed: int | None) -> None:
     """Record a rate with its sample size; below MIN_SCORED it goes to extras["insufficient"], not into metrics."""
@@ -91,8 +114,11 @@ def collect_metrics() -> tuple[dict, dict]:
     if kr_best:
         metrics["kr_recent_pedestrian_photos"] = kr_best["recent_on_foot_flat"]
 
-    # spark_entrances.json: {clip: {duration_s, hits, truth_count, errors, out_of_range, ...}}
-    spark = _load("spark_entrances.json") or {}
+    raw = {name: _load(name) for name in RUN_OUTPUTS}
+    extras["truth_hashes"], extras["truth_warning"] = truth_consistency(raw)
+
+    # spark_entrances.json: {"_meta": {...}, clip: {duration_s, hits, truth_count, errors, out_of_range, ...}}
+    spark = clip_entries(raw["spark_entrances.json"] or {})
     truth_total = sum(v["truth_count"] for v in spark.values())
     recall = sum(v["hits"] for v in spark.values()) / truth_total if truth_total else None
     _rate_metric(metrics, extras, "spark_entrance_recall", recall, truth_total, None)
@@ -100,7 +126,7 @@ def collect_metrics() -> tuple[dict, dict]:
     extras["spark_out_of_range"] = sum(v.get("out_of_range", 0) for v in spark.values())
 
     # sam_stairs.json: {rows, rates, counts, best_phrase}; rates are over stepped entrances, failed requests excluded
-    stairs = _load("sam_stairs.json") or {}
+    stairs = raw["sam_stairs.json"] or {}
     best_stairs = stairs.get("best_phrase")
     extras["stairs_phrase"] = best_stairs
     if best_stairs:
@@ -110,12 +136,12 @@ def collect_metrics() -> tuple[dict, dict]:
         _rate_metric(metrics, extras, "sam_stairs_rate", None, 0, None)
 
     # step_count.json: {rows, accuracy, scored, failed}; accuracy is over rows without an error
-    steps = _load("step_count.json") or {}
+    steps = raw["step_count.json"] or {}
     _rate_metric(metrics, extras, "step_count_accuracy", steps.get("accuracy"), steps.get("scored", 0),
                  steps.get("failed"))
 
-    # sidewalk.json: {clip: {coverage_any_phrase, coverage_any_counts, best_tactile_phrase, events, ...}}
-    sidewalk = _load("sidewalk.json") or {}
+    # sidewalk.json: {"_meta": {...}, clip: {coverage_any_phrase, coverage_any_counts, best_tactile_phrase, ...}}
+    sidewalk = clip_entries(raw["sidewalk.json"] or {})
     pooled = [v for v in sidewalk.values() if v.get("coverage_any_phrase") is not None]
     tactile_scored = sum(v["coverage_any_counts"]["scored"] for v in pooled)
     tactile_value = (sum(v["coverage_any_phrase"] * v["coverage_any_counts"]["scored"] for v in pooled)
@@ -198,8 +224,10 @@ def build_report(metrics: dict, extras: dict) -> str:
     rows += [f"| {name} | n/a | {THRESHOLDS[name]} | INSUFFICIENT DATA (n={insufficient[name]}) "
              f"| {_sample_cell(name, extras)} |" for name in AT_LEAST if name in insufficient]
     tactile = "; ".join(f"{clip}: {phrase}" for clip, phrase in extras["tactile_phrases"].items()) or "none"
+    warning = extras.get("truth_warning")
     lines = [
         "# D1 Gate Report", "",
+        *([f"**{warning}**", ""] if warning else []),
         f"Decision: **{decision}**", "",
         f"Demo area: **{demo_area}**", "",
         "| Criterion | Value | Threshold | Result | Sample size |", "|---|---|---|---|---|",

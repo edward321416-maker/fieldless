@@ -4,6 +4,7 @@ Output contract (spike/out/sam_stairs.json):
 - rows: one per entrance. A row has an "error" key when its window failed (cut, probe or upload). Each phrase
   entry is either detection fields or {"error": ...}. Consumers must skip error entries when counting.
 - rates, counts and best_phrase are computed over stepped entrances (step_count >= 1) only; see summarize().
+- truth_sha256: hash of the truth.json the run used (truth.truth_sha256).
 - The file is rewritten after every entrance, so an interrupted run keeps everything paid for so far.
 """
 import json
@@ -13,7 +14,7 @@ from spike import config, video
 from spike import meta_client as mc
 from spike.console import utf8_stdout
 from spike.sam_parse import confident, parse_sam_output
-from spike.truth import load_truth
+from spike.truth import load_truth, truth_sha256
 
 PHRASES = ["stairs", "steps", "entrance steps", "staircase"]
 WINDOW_S = 2.0
@@ -79,12 +80,13 @@ def summarize(rows: list[dict]) -> tuple[dict[str, float], str | None, dict[str,
     return rates, best_phrase, counts
 
 
-def write_results(out_path: Path, rows: list[dict]) -> tuple[dict[str, float], str | None, dict[str, dict[str, int]]]:
+def write_results(out_path: Path, rows: list[dict],
+                  truth_hash: str) -> tuple[dict[str, float], str | None, dict[str, dict[str, int]]]:
     """Write sam_stairs.json from the rows so far and return summarize(rows)."""
     rates, best_phrase, counts = summarize(rows)
     out_path.write_text(
-        json.dumps({"rows": rows, "rates": rates, "counts": counts, "best_phrase": best_phrase},
-                   ensure_ascii=False, indent=2),
+        json.dumps({"rows": rows, "rates": rates, "counts": counts, "best_phrase": best_phrase,
+                    "truth_sha256": truth_hash}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     return rates, best_phrase, counts
@@ -98,6 +100,7 @@ def main() -> None:
     raw_dir.mkdir(exist_ok=True)
     out_path = config.OUT / "sam_stairs.json"
     rows: list[dict] = []
+    truth_hash = truth_sha256()
     for clip in load_truth():
         src = config.CLIPS / clip.file
         stem = Path(clip.file).stem
@@ -105,10 +108,10 @@ def main() -> None:
             row = run_entrance(clip.file, i, entrance, src, stem, tmp, raw_dir)
             rows.append(row)
             # save after every entrance and before printing, so neither a crash nor the console loses paid work
-            write_results(out_path, rows)
+            write_results(out_path, rows, truth_hash)
             shown = {p: v.get("detected", v.get("error")) for p, v in row["phrases"].items()}
             print(entrance.name, shown, row.get("error", ""))
-    rates, best_phrase, counts = write_results(out_path, rows)
+    rates, best_phrase, counts = write_results(out_path, rows, truth_hash)
     if best_phrase is None:
         print("no stepped entrances scored")
     print("rates:", rates, "best:", best_phrase, "counts:", counts)

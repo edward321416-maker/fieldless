@@ -8,7 +8,7 @@ import pytest
 
 from spike import config, run_sam_stairs as rss, video
 from spike import meta_client as mc
-from spike.truth import ClipTruth, Entrance
+from spike.truth import ClipTruth, Entrance, truth_sha256
 
 HIT = "<0f>0<|box;x1=10;y1=20;x2=110;y2=220;w=320;h=334;c=0.91|><|mask;x=0;y=0;c=0.88;data=8,8,~zz|>"
 HIT_AT_2F = "<2f>0<|box;x1=10;y1=20;x2=110;y2=220;w=320;h=334;c=0.91|><|mask;x=0;y=0;c=0.88;data=8,8,~zz|>"
@@ -24,6 +24,9 @@ def default_respond(concept, file_id, state):
 def fake_io(monkeypatch, tmp_path):
     """Offline stand-ins for ffmpeg, the Meta upload/SAM/delete calls and the truth file."""
     monkeypatch.setattr(config, "OUT", tmp_path)
+    monkeypatch.setattr(config, "CLIPS", tmp_path / "clips")
+    (tmp_path / "clips").mkdir()
+    (tmp_path / "clips" / "truth.json").write_text('{"clips": {}}', encoding="utf-8")  # only hashed; load_truth is faked
     state = {
         "uploads": [], "deleted": [], "sam_calls": [], "cut_calls": [],
         "fail_sam_for": set(), "fail_cut_for": set(),
@@ -192,3 +195,8 @@ def test_no_stepped_entrance_scored_gives_none_and_message(fake_io, capsys):
     assert out["rates"] == {}
     assert all(c["scored"] == 0 for c in out["counts"].values())
     assert "no stepped entrances scored" in capsys.readouterr().out
+
+
+def test_output_records_the_truth_hash(fake_io):
+    rss.main()
+    assert read_out()["truth_sha256"] == truth_sha256()

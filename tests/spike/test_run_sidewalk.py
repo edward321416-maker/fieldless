@@ -6,6 +6,7 @@ import pytest
 
 from spike import config, run_sidewalk as rs, video
 from spike import meta_client as mc
+from spike.truth import clip_entries, truth_sha256
 
 CLIP = "street_b.mp4"
 
@@ -221,3 +222,19 @@ def test_overlap_is_none_when_best_phrase_failed_over_the_event(fake_io):
     (event,) = rep["events"]
     assert event["detected"] is True
     assert event["overlap_detected"] is None  # best phrase failed over this window: unknown, not False
+
+
+def test_output_records_truth_hash_and_spark_meta_key_is_ignored(fake_io):
+    fake_io["duration"] = 20.0
+    write_truth({"entrances": [], "tactile_ranges": [[0, 9]], "obstacles": []})
+    (config.OUT / "spark_entrances.json").write_text(json.dumps({
+        "_meta": {"truth_sha256": "x"},
+        CLIP: {"obstacle_types": ["sandwich board sign"]},
+    }), encoding="utf-8")
+
+    rs.main()
+
+    saved = json.loads((config.OUT / "sidewalk.json").read_text(encoding="utf-8"))
+    assert saved["_meta"] == {"truth_sha256": truth_sha256()}
+    assert list(clip_entries(saved)) == [CLIP]
+    assert "sandwich board sign" in saved[CLIP]["obstacle_labels_queried"]

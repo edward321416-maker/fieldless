@@ -1,3 +1,4 @@
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,8 +31,23 @@ class ClipTruth:
     obstacles: list[Obstacle]
 
 
+def truth_path() -> Path:
+    return config.CLIPS / "truth.json"
+
+
+def truth_sha256(path: Path | None = None) -> str:
+    """sha256 of truth.json's bytes. Every run output stores it, so the gate report can spot results that were
+    made from different versions of the labels."""
+    return hashlib.sha256(Path(path or truth_path()).read_bytes()).hexdigest()
+
+
+def clip_entries(report: dict) -> dict:
+    """The per-clip entries of an output keyed by clip file, without metadata keys such as "_meta"."""
+    return {k: v for k, v in report.items() if not k.startswith("_")}
+
+
 def load_truth(path: Path | None = None) -> list[ClipTruth]:
-    path = path or config.CLIPS / "truth.json"
+    path = path or truth_path()
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     return [
         ClipTruth(

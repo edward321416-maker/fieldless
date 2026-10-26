@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -310,3 +311,64 @@ def test_main_writes_report_to_out_dir(env, capsys):
     written = (out / "gate_report.md").read_text(encoding="utf-8")
     assert written.startswith("# D1 Gate Report")
     assert written.strip() == capsys.readouterr().out.strip()
+
+
+# --- truth.json consistency across outputs ----------------------------------------------------
+
+def write_truth_file(clips, content=b'{"clips": {}}'):
+    (clips / "truth.json").write_bytes(content)
+    return hashlib.sha256(content).hexdigest()
+
+
+def test_meta_keys_are_skipped_when_iterating_clips(env):
+    out, clips = env
+    h = write_truth_file(clips)
+    write(out, "spark_entrances.json", {"_meta": {"truth_sha256": h}, "street_a.mp4": spark_clip(hits=4, truth=5)})
+    write(out, "sidewalk.json", {"_meta": {"truth_sha256": h},
+                                 "street_a.mp4": sidewalk_clip(0.9, 10, events=[event(True, True)] * 3)})
+    metrics, extras = collect_metrics()
+    assert metrics["spark_entrance_recall"] == pytest.approx(0.8)
+    assert metrics["tactile_coverage"] == pytest.approx(0.9)
+    assert extras["tactile_phrases"] == {"street_a.mp4": "tactile paving"}
+    assert extras["truth_warning"] is None
+
+
+def test_matching_truth_hashes_give_no_warning(env):
+    out, clips = env
+    h = write_truth_file(clips)
+    write(out, "spark_entrances.json", {"_meta": {"truth_sha256": h}})
+    write(out, "sam_stairs.json", {**stairs_file(), "truth_sha256": h})
+    write(out, "step_count.json", {**steps_file(), "truth_sha256": h})
+    write(out, "sidewalk.json", {"_meta": {"truth_sha256": h}})
+    metrics, extras = collect_metrics()
+    assert extras["truth_warning"] is None
+    assert "WARNING" not in build_report(metrics, extras)
+
+
+def test_outputs_from_different_truth_versions_are_flagged_at_the_top(env):
+    out, clips = env
+    h = write_truth_file(clips)
+    write(out, "sam_stairs.json", {**stairs_file(), "truth_sha256": h})
+    write(out, "step_count.json", {**steps_file(), "truth_sha256": "f" * 64})  # made from an older truth.json
+    metrics, extras = collect_metrics()
+    warning = extras["truth_warning"]
+    assert warning.startswith("WARNING: results come from different truth.json versions")
+    assert "step_count.json ffffffffffff" in warning and f"current truth.json {h[:12]}" in warning
+    report = build_report(metrics, extras)
+    assert report.index(warning) < report.index("Decision: ")
+
+
+def test_output_differing_from_current_truth_is_flagged(env):
+    out, clips = env
+    write_truth_file(clips, b'{"clips": {"edited": {}}}')
+    write(out, "sam_stairs.json", {**stairs_file(), "truth_sha256": "a" * 64})
+    _, extras = collect_metrics()
+    assert extras["truth_warning"] is not None
+
+
+def test_output_without_a_recorded_hash_is_flagged(env):
+    out, clips = env
+    write_truth_file(clips)
+    write(out, "sam_stairs.json", stairs_file())  # written before outputs recorded the truth hash
+    _, extras = collect_metrics()
+    assert "sam_stairs.json (no hash recorded)" in extras["truth_warning"]

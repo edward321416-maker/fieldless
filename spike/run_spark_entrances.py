@@ -1,11 +1,16 @@
-"""Gate test 1: can Muse Spark list entrances with timestamps read from a burned-in timer?"""
+"""Gate test 1: can Muse Spark list entrances with timestamps read from a burned-in timer?
+
+Output contract (spike/out/spark_entrances.json): keyed by clip file, one run_clip() result per clip plus
+hits, misses, false_positives and truth_count; written after every clip. The "_meta" key holds
+{"truth_sha256": ...} for the truth.json the run used; consumers skip keys starting with "_" (truth.clip_entries).
+"""
 import json
 from pathlib import Path
 
 from spike import config, video
 from spike import meta_client as mc
 from spike.console import utf8_stdout
-from spike.truth import load_truth, match_times
+from spike.truth import load_truth, match_times, truth_sha256
 
 CHUNK_S = 60.0  # 60 photos per request at 1 fps
 TOLERANCE_S = 2.0  # ±2 photos
@@ -75,7 +80,7 @@ def run_clip(path: Path) -> dict:
 
 def main() -> None:
     utf8_stdout()
-    report = {}
+    report: dict = {"_meta": {"truth_sha256": truth_sha256()}}
     out_path = config.OUT / "spark_entrances.json"
     for clip in load_truth():
         result = run_clip(config.CLIPS / clip.file)

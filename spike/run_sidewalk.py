@@ -9,6 +9,8 @@ Output contract for the gate report (spike/out/sidewalk.json, keyed by clip file
 - events[]: detected is True, False, or None. None (with scored False) means the window overlapped a
   failed request or the label was not queried. Consumers must filter on scored before computing rates.
   overlap_detected is informational (box overlap) and is None when the best-phrase request failed.
+- "_meta": {"truth_sha256": ...} for the truth.json the run used. Consumers skip keys starting with "_"
+  (truth.clip_entries).
 """
 import json
 from dataclasses import dataclass
@@ -18,7 +20,7 @@ from spike import config, video
 from spike import meta_client as mc
 from spike.console import utf8_stdout
 from spike.sam_parse import Detection, boxes_intersect, confident, parse_sam_output
-from spike.truth import ClipTruth, in_ranges, load_truth
+from spike.truth import ClipTruth, clip_entries, in_ranges, load_truth, truth_sha256
 
 TACTILE_PHRASES = ["tactile paving", "yellow tactile paving", "braille block"]
 BASE_OBSTACLES = ["electric scooter", "bicycle"]
@@ -158,9 +160,9 @@ def main() -> None:
     tmp = config.OUT / "tmp"
     tmp.mkdir(exist_ok=True)
     spark_path = config.OUT / "spark_entrances.json"
-    spark = json.loads(spark_path.read_text(encoding="utf-8")) if spark_path.exists() else {}
+    spark = clip_entries(json.loads(spark_path.read_text(encoding="utf-8"))) if spark_path.exists() else {}
     out_path = config.OUT / "sidewalk.json"
-    report = {}
+    report: dict = {"_meta": {"truth_sha256": truth_sha256()}}
     for clip in load_truth():
         if not clip.tactile_ranges and not clip.obstacles:
             continue

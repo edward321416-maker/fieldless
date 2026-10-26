@@ -1,6 +1,8 @@
+import hashlib
 import json
 
-from spike.truth import in_ranges, load_truth, match_times
+from spike import config
+from spike.truth import clip_entries, in_ranges, load_truth, match_times, truth_sha256
 
 
 def test_match_times_counts_hits_misses_and_false_positives():
@@ -57,3 +59,22 @@ def test_load_truth(tmp_path):
     assert clips[0].entrances[0].step_count == 2
     assert clips[0].tactile_ranges == [(1.0, 4.0)]
     assert clips[0].obstacles[0].label == "bicycle"
+
+
+def test_truth_sha256_is_the_hash_of_the_file_bytes(tmp_path):
+    p = tmp_path / "truth.json"
+    p.write_bytes(b'{"clips": {}}')
+    assert truth_sha256(p) == hashlib.sha256(b'{"clips": {}}').hexdigest()
+    p.write_bytes(b'{"clips": {"a.mp4": {}}}')
+    assert truth_sha256(p) == hashlib.sha256(b'{"clips": {"a.mp4": {}}}').hexdigest()
+
+
+def test_truth_sha256_defaults_to_clips_truth_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CLIPS", tmp_path)
+    (tmp_path / "truth.json").write_bytes(b"x")
+    assert truth_sha256() == hashlib.sha256(b"x").hexdigest()
+
+
+def test_clip_entries_skips_metadata_keys():
+    report = {"_meta": {"truth_sha256": "abc"}, "a.mp4": {"hits": 1}, "b.mp4": {"hits": 2}}
+    assert clip_entries(report) == {"a.mp4": {"hits": 1}, "b.mp4": {"hits": 2}}

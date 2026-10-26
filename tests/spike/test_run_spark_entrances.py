@@ -6,13 +6,16 @@ import pytest
 
 from spike import config, run_spark_entrances as rse, video
 from spike import meta_client as mc
-from spike.truth import ClipTruth, Entrance
+from spike.truth import ClipTruth, Entrance, clip_entries, truth_sha256
 
 
 @pytest.fixture
 def fake_io(monkeypatch, tmp_path):
     """Replace probe/cut/burn/hold/upload/spark/delete with offline fakes and record the calls."""
     monkeypatch.setattr(config, "OUT", tmp_path)
+    monkeypatch.setattr(config, "CLIPS", tmp_path / "clips")
+    (tmp_path / "clips").mkdir()
+    (tmp_path / "clips" / "truth.json").write_text('{"clips": {}}', encoding="utf-8")  # only hashed; load_truth is faked
     state = {"duration": 130.0, "spark_calls": 0, "uploads": [], "deleted": [], "fail_on_call": set(),
              "entrances_for_call": {}}
 
@@ -87,7 +90,7 @@ def test_main_writes_report_after_each_clip(fake_io, monkeypatch):
         if calls["n"] == 2:
             # by the time the second clip runs, the first clip's results must already be on disk
             saved = json.loads((config.OUT / "spark_entrances.json").read_text(encoding="utf-8"))
-            assert list(saved) == ["a.mp4"]
+            assert list(clip_entries(saved)) == ["a.mp4"]
             raise KeyboardInterrupt  # stop the run here; the first report must survive
         return {"duration_s": 10.0, "entrances": [{"t": 1.0}], "obstacle_types": [],
                 "errors": [], "out_of_range": 0}
@@ -96,5 +99,6 @@ def test_main_writes_report_after_each_clip(fake_io, monkeypatch):
     with pytest.raises(KeyboardInterrupt):
         rse.main()
     saved = json.loads((config.OUT / "spark_entrances.json").read_text(encoding="utf-8"))
-    assert list(saved) == ["a.mp4"]
+    assert list(clip_entries(saved)) == ["a.mp4"]
     assert saved["a.mp4"]["hits"] == 1
+    assert saved["_meta"] == {"truth_sha256": truth_sha256()}

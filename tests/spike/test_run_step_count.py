@@ -6,7 +6,7 @@ import pytest
 from spike import config, mapillary, video
 from spike import meta_client as mc
 from spike import run_step_count as rsc
-from spike.truth import ClipTruth, Entrance
+from spike.truth import ClipTruth, Entrance, truth_sha256
 
 
 def _truth(entrances):
@@ -29,10 +29,11 @@ def io(monkeypatch, tmp_path):
     out, clips = tmp_path / "out", tmp_path / "clips"
     out.mkdir()
     (clips / "a").mkdir(parents=True)
+    (clips / "truth.json").write_text('{"clips": {}}', encoding="utf-8")  # only hashed; load_truth is faked
     monkeypatch.setattr(config, "OUT", out)
     monkeypatch.setattr(config, "CLIPS", clips)
     state = {"frame_t": [], "original": [], "spark_calls": 0, "spark_steps": {}, "fail_spark_on": set(),
-             "entrances": [(10.0, 2), (20.0, 3), (30.0, 1)]}
+             "entrances": list(DEFAULT_ENTRANCES)}
 
     def frame_at(src, t, dst):
         state["frame_t"].append(t)
@@ -58,15 +59,22 @@ def io(monkeypatch, tmp_path):
     return state
 
 
-def _write_sam(rows, best_phrase):
+def _write_sam(rows, best_phrase, truth_hash=None):
     (config.OUT / "sam_stairs.json").write_text(json.dumps({
         "rows": rows, "rates": {}, "counts": {}, "best_phrase": best_phrase,
+        "truth_sha256": truth_hash or truth_sha256(),  # made from the current truth.json unless a test says not
     }), encoding="utf-8")
 
 
+DEFAULT_ENTRANCES = [(10.0, 2), (20.0, 3), (30.0, 1)]  # the fixture's truth; tests only ever shorten it
+
+
 def _row(index, phrases=None, **extra):
-    return {"clip": "a.mp4", "index": index, "t": 0.0, "window_start": 0.0, "step_count": 2,
-            "phrases": phrases if phrases is not None else {}, **extra}
+    # A sam_stairs row carries its entrance's truth t and step_count; run_step_count checks them against truth.json.
+    t, steps = DEFAULT_ENTRANCES[index]
+    row = {"clip": "a.mp4", "index": index, "t": t, "window_start": max(0.0, t - 2), "step_count": steps,
+           "phrases": phrases if phrases is not None else {}}
+    return {**row, **extra}
 
 
 def test_errored_sam_phrase_falls_back_to_truth_t(io):
@@ -133,7 +141,8 @@ def test_print_failure_cannot_turn_a_scored_row_into_an_error_row(io, monkeypatc
     monkeypatch.setattr(rsc, "SAVE_EVERY", 1)
 
     def broken_print(*args, **kwargs):
-        raise UnicodeEncodeError("cp949", "Café", 3, 4, "illegal multibyte sequence")
+        if "pred" in args:  # the scored row's line
+            raise UnicodeEncodeError("cp949", "Café", 3, 4, "illegal multibyte sequence")
 
     monkeypatch.setattr("builtins.print", broken_print)
     with pytest.raises(UnicodeEncodeError):
@@ -157,3 +166,52 @@ def test_frames_json_selects_photo_by_t(io, monkeypatch):
     assert io["frame_t"] == []
     saved = json.loads((config.OUT / "step_count.json").read_text(encoding="utf-8"))
     assert saved["rows"][0]["image_id"] == "img12"
+
+
+def _saved() -> dict:
+    return json.loads((config.OUT / "step_count.json").read_text(encoding="utf-8"))
+
+
+def test_output_records_the_truth_hash(io):
+    _write_sam([_row(0)], best_phrase=None)
+    io["entrances"] = [(10.0, 2)]
+    rsc.main()
+    assert _saved()["truth_sha256"] == truth_sha256()
+
+
+def test_stale_row_is_an_error_and_never_sent_to_spark(io):
+    # truth.json was edited after run_sam_stairs: entrance 1 moved, entrance 2 changed its step count
+    _write_sam([_row(0), _row(1, t=25.0), _row(2, step_count=4)], best_phrase=None)
+    io["spark_steps"] = {1: 2}
+
+    rsc.main()
+
+    rows = _saved()["rows"]
+    assert "error" not in rows[0] and rows[0]["correct"] is True
+    for row in rows[1:]:
+        assert row["error"].startswith("truth mismatch: sam_stairs.json is stale")
+        assert row["step_count"] is None and row["correct"] is None
+    assert io["spark_calls"] == 1  # only the row that still matches was paid for
+    assert _saved()["scored"] == 1 and _saved()["failed"] == 2
+
+
+def test_row_missing_from_truth_is_an_error_not_a_crash(io):
+    _write_sam([_row(0), {**_row(0), "index": 7}, {**_row(0), "clip": "gone.mp4"}], best_phrase=None)
+    io["spark_steps"] = {1: 2}
+
+    rsc.main()
+
+    rows = _saved()["rows"]
+    assert "error" not in rows[0]
+    for row in rows[1:]:
+        assert row["error"].startswith("truth mismatch: sam_stairs.json is stale")
+        assert row["truth_steps"] is None
+    assert io["spark_calls"] == 1
+
+
+def test_warns_when_sam_stairs_was_made_from_another_truth(io, capsys):
+    _write_sam([_row(0)], best_phrase=None, truth_hash="0" * 64)
+    io["entrances"] = [(10.0, 2)]
+    rsc.main()
+    assert "different truth.json" in capsys.readouterr().out
+    assert "error" not in _saved()["rows"][0]  # the row itself still matches, so it is scored
