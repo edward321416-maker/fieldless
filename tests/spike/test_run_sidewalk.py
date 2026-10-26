@@ -238,3 +238,54 @@ def test_output_records_truth_hash_and_spark_meta_key_is_ignored(fake_io):
     assert saved["_meta"] == {"truth_sha256": truth_sha256()}
     assert list(clip_entries(saved)) == [CLIP]
     assert "sandwich board sign" in saved[CLIP]["obstacle_labels_queried"]
+
+
+def test_raw_sam_text_is_saved_per_request_before_parsing(fake_io):
+    fake_io["duration"] = 120.0
+
+    def respond(concept, file_id):
+        if concept == "tactile paving" and chunk_start(file_id) == 60:
+            return "garbage <|box that does not parse"
+        return box_lines([3]) if concept in rs.TACTILE_PHRASES else ""
+
+    fake_io["respond"] = respond
+    write_truth({"entrances": [], "tactile_ranges": [[0, 9]],
+                 "obstacles": [{"t_start": 2, "t_end": 4, "label": "a-frame sign/board", "on_tactile": True}]})
+
+    rs.main()
+
+    raw = config.OUT / "sidewalk"
+    assert (raw / "street_b_0_tactile_paving.txt").read_text(encoding="utf-8") == box_lines([3])
+    # saved even though it then failed to parse
+    assert (raw / "street_b_60_tactile_paving.txt").read_text(encoding="utf-8").startswith("garbage")
+    assert (raw / "street_b_0_yellow_tactile_paving.txt").exists()
+    assert (raw / "street_b_60_a-frame_sign_board.txt").exists()  # unsafe characters become underscores
+    errors = read_report()["errors"]
+    assert {(e["item"], e["chunk_start"]) for e in errors} == {("tactile paving", 60.0)}
+
+
+def test_frame_index_past_the_chunk_is_an_error_and_its_detections_are_dropped(fake_io):
+    fake_io["duration"] = 20.0  # one chunk of 20 photos: frames 0..19
+
+    def respond(concept, file_id):
+        if concept == "tactile paving":
+            return box_lines([1, 2, 20])  # 20 is past the chunk
+        if concept == "bicycle":
+            return box_lines([25])
+        return ""
+
+    fake_io["respond"] = respond
+    write_truth({"entrances": [], "tactile_ranges": [[0, 9]],
+                 "obstacles": [{"t_start": 1, "t_end": 2, "label": "bicycle", "on_tactile": True}]})
+
+    rs.main()
+    rep = read_report()
+
+    assert {"stage": "tactile", "item": "tactile paving", "chunk_start": 0.0,
+            "error": "ValueError: frame index 20 out of range for 20 photos"} in rep["errors"]
+    assert {"stage": "obstacle", "item": "bicycle", "chunk_start": 0.0,
+            "error": "ValueError: frame index 25 out of range for 20 photos"} in rep["errors"]
+    assert rep["coverage"]["tactile paving"] is None  # its only chunk failed: no photo scored, hits 1, 2 unused
+    assert rep["coverage_counts"]["tactile paving"] == {"scored": 0, "failed": 10}
+    (event,) = rep["events"]
+    assert event["detected"] is None and event["scored"] is False

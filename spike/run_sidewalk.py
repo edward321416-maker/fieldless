@@ -11,15 +11,19 @@ Output contract for the gate report (spike/out/sidewalk.json, keyed by clip file
   overlap_detected is informational (box overlap) and is None when the best-phrase request failed.
 - "_meta": {"truth_sha256": ...} for the truth.json the run used. Consumers skip keys starting with "_"
   (truth.clip_entries).
+- errors[] also holds requests whose response had a frame index past the chunk's photo count.
+- Raw SAM text per request: spike/out/sidewalk/<stem>_<chunk start>_<phrase with underscores>.txt, written
+  before parsing, so results can be re-scored offline at other confidence cuts.
 """
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from spike import config, video
 from spike import meta_client as mc
 from spike.console import utf8_stdout
-from spike.sam_parse import Detection, boxes_intersect, confident, parse_sam_output
+from spike.sam_parse import Detection, boxes_intersect, check_frames, confident, parse_sam_output
 from spike.truth import ClipTruth, clip_entries, in_ranges, load_truth, truth_sha256
 
 TACTILE_PHRASES = ["tactile paving", "yellow tactile paving", "braille block"]
@@ -38,10 +42,16 @@ class Chunk:
     file_id: str | None
     billed: int
     prep_error: str | None = None
+    photos: int = 0  # photos in the uploaded chunk, from probing it
 
 
 def error_text(exc: Exception) -> str:
     return f"{type(exc).__name__}: {str(exc)[:300]}"
+
+
+def raw_name(stem: str, start: float, phrase: str) -> str:
+    """File name for one request's raw SAM text: <stem>_<chunk start>_<phrase with underscores>.txt."""
+    return f"{stem}_{int(start)}_{re.sub(r'[^\w-]+', '_', phrase.strip())}.txt"
 
 
 def prepare_chunks(path: Path, duration: float, tmp: Path) -> list[Chunk]:
@@ -50,20 +60,26 @@ def prepare_chunks(path: Path, duration: float, tmp: Path) -> list[Chunk]:
     start = 0.0
     while start < duration - 0.5:
         end = min(start + CHUNK_S, duration)
-        file_id, billed, prep_error = None, 0, None
+        file_id, billed, prep_error, photos = None, 0, None, 0
         try:
             chunk = video.cut(path, tmp / f"{path.stem}_{int(start)}_side.mp4", start, end)
-            billed = max(mc.SAM_MIN_BILLED_FRAMES, round(video.probe(chunk).duration_s * FPS))
+            photos = round(video.probe(chunk).duration_s * FPS)
+            billed = max(mc.SAM_MIN_BILLED_FRAMES, photos)
             file_id = mc.upload(chunk)
         except Exception as exc:  # one bad chunk must not stop the clip
             prep_error = error_text(exc)
-        chunks.append(Chunk(start, end, file_id, billed, prep_error))
+        chunks.append(Chunk(start, end, file_id, billed, prep_error, photos))
         start = end
     return chunks
 
 
-def run_phrase(chunks: list[Chunk], phrase: str) -> tuple[list[tuple[float, Detection]], dict[float, str]]:
-    """Detections as (photo time, detection), plus {chunk_start: error} for chunks whose request failed."""
+def run_phrase(chunks: list[Chunk], phrase: str, raw_dir: Path,
+               stem: str) -> tuple[list[tuple[float, Detection]], dict[float, str]]:
+    """Detections as (photo time, detection), plus {chunk_start: error} for chunks whose request failed.
+
+    Each response is saved to raw_dir before parsing, so it can be re-scored offline (other confidence cuts)
+    without paying again. A response with a frame index past the chunk's photo count is that chunk's error.
+    """
     hits: list[tuple[float, Detection]] = []
     failed: dict[float, str] = {}
     for c in chunks:
@@ -72,7 +88,10 @@ def run_phrase(chunks: list[Chunk], phrase: str) -> tuple[list[tuple[float, Dete
             continue
         try:
             text = mc.sam(phrase, mc.video_part(c.file_id), billed_frames=c.billed)
-            hits += [(c.start + d.frame / FPS, d) for d in confident(parse_sam_output(text), CONF)]
+            (raw_dir / raw_name(stem, c.start, phrase)).write_text(text, encoding="utf-8")
+            parsed = parse_sam_output(text)
+            check_frames(parsed, c.photos)
+            hits += [(c.start + d.frame / FPS, d) for d in confident(parsed, CONF)]
         except Exception as exc:  # a failed request is recorded, never counted as "no detection"
             failed[c.start] = error_text(exc)
     return hits, failed
@@ -159,6 +178,8 @@ def main() -> None:
     utf8_stdout()
     tmp = config.OUT / "tmp"
     tmp.mkdir(exist_ok=True)
+    raw_dir = config.OUT / "sidewalk"
+    raw_dir.mkdir(exist_ok=True)
     spark_path = config.OUT / "spark_entrances.json"
     spark = clip_entries(json.loads(spark_path.read_text(encoding="utf-8"))) if spark_path.exists() else {}
     out_path = config.OUT / "sidewalk.json"
@@ -171,8 +192,8 @@ def main() -> None:
         duration = video.probe(path).duration_s
         chunks = prepare_chunks(path, duration, tmp)
         try:
-            tactile = {p: run_phrase(chunks, p) for p in TACTILE_PHRASES}
-            obstacles = {label: run_phrase(chunks, label) for label in labels}
+            tactile = {p: run_phrase(chunks, p, raw_dir, path.stem) for p in TACTILE_PHRASES}
+            obstacles = {label: run_phrase(chunks, label, raw_dir, path.stem) for label in labels}
         finally:
             for c in chunks:
                 if c.file_id:

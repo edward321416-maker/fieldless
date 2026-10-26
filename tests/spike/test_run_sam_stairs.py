@@ -200,3 +200,20 @@ def test_no_stepped_entrance_scored_gives_none_and_message(fake_io, capsys):
 def test_output_records_the_truth_hash(fake_io):
     rss.main()
     assert read_out()["truth_sha256"] == truth_sha256()
+
+
+HIT_AT_5F = "<5f>0<|box;x1=10;y1=20;x2=110;y2=220;w=320;h=334;c=0.91|><|mask;x=0;y=0;c=0.88;data=8,8,~zz|>"
+
+
+def test_frame_index_past_the_window_is_a_phrase_error_not_a_detection(fake_io):
+    # the fake probe says every window is 5 s = 5 photos, so frames 0..4 are valid and <5f> is not
+    fake_io["entrances"] = [(10.0, 2)]
+    fake_io["respond"] = lambda concept, file_id: HIT_AT_5F if concept == "stairs" else HIT
+
+    rss.main()
+
+    row = read_out()["rows"][0]
+    assert row["phrases"]["stairs"] == {"error": "ValueError: frame index 5 out of range for 5 photos"}
+    assert row["phrases"]["steps"]["detected"] is True
+    # the raw response is still saved for inspection
+    assert (config.OUT / "sam_stairs" / "a_e0_stairs.txt").read_text(encoding="utf-8") == HIT_AT_5F

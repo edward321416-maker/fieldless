@@ -3,6 +3,8 @@
 Output contract (spike/out/sam_stairs.json):
 - rows: one per entrance. A row has an "error" key when its window failed (cut, probe or upload). Each phrase
   entry is either detection fields or {"error": ...}. Consumers must skip error entries when counting.
+  A response with a frame index at or past the window's photo count is a phrase error (sam_parse.check_frames).
+- Raw SAM text per request: spike/out/sam_stairs/<stem>_e<index>_<phrase>.txt, written before parsing.
 - rates, counts and best_phrase are computed over stepped entrances (step_count >= 1) only; see summarize().
 - truth_sha256: hash of the truth.json the run used (truth.truth_sha256).
 - The file is rewritten after every entrance, so an interrupted run keeps everything paid for so far.
@@ -13,7 +15,7 @@ from pathlib import Path
 from spike import config, video
 from spike import meta_client as mc
 from spike.console import utf8_stdout
-from spike.sam_parse import confident, parse_sam_output
+from spike.sam_parse import check_frames, confident, parse_sam_output
 from spike.truth import load_truth, truth_sha256
 
 PHRASES = ["stairs", "steps", "entrance steps", "staircase"]
@@ -33,7 +35,8 @@ def run_entrance(clip_file: str, index: int, entrance, src: Path, stem: str, tmp
            "step_count": entrance.step_count, "phrases": {}}
     try:
         window = video.cut(src, tmp / f"{stem}_e{index}.mp4", start, entrance.t + WINDOW_S + 1.0 / FPS)
-        billed = max(50, round(video.probe(window).duration_s * FPS))
+        photos = round(video.probe(window).duration_s * FPS)
+        billed = max(mc.SAM_MIN_BILLED_FRAMES, photos)
         file_id = mc.upload(window)
     except Exception as exc:
         row["error"] = _err(exc)
@@ -43,7 +46,9 @@ def run_entrance(clip_file: str, index: int, entrance, src: Path, stem: str, tmp
             try:
                 text = mc.sam(phrase, mc.video_part(file_id), billed_frames=billed)
                 (raw_dir / f"{stem}_e{index}_{phrase.replace(' ', '_')}.txt").write_text(text, encoding="utf-8")
-                dets = confident(parse_sam_output(text), CONF)
+                parsed = parse_sam_output(text)
+                check_frames(parsed, photos)  # an out-of-range frame is this phrase's error, never a wrong time
+                dets = confident(parsed, CONF)
                 best = max(dets, key=lambda d: d.area_ratio, default=None)
                 row["phrases"][phrase] = {
                     "detected": bool(dets),

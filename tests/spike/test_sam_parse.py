@@ -1,6 +1,6 @@
 import pytest
 
-from spike.sam_parse import Detection, boxes_intersect, confident, parse_sam_output
+from spike.sam_parse import Detection, boxes_intersect, check_frames, confident, parse_sam_output
 
 IMAGE = (
     "<0f>0<|box;x1=181;y1=365;x2=556;y2=486;w=1516;h=1600|><|mask;x=0;y=0;data=4,4,~0123|>,"
@@ -69,3 +69,27 @@ def test_box_text_without_frame_marker_is_unrecognized():
     with pytest.raises(ValueError, match="unrecognized SAM output") as err:
         parse_sam_output(text)
     assert len(str(err.value)) < 200
+
+
+def test_two_frame_markers_on_one_line_raise_with_the_line():
+    text = ("<0f>0<|box;x1=0;y1=0;x2=1;y2=1;w=10;h=10|><|mask;x=0;y=0;data=4,4,~0|>"
+            "<1f>1<|box;x1=0;y1=0;x2=1;y2=1;w=10;h=10|><|mask;x=0;y=0;data=4,4,~0|>" + "x" * 300)
+    with pytest.raises(ValueError, match="more than one frame marker") as err:
+        parse_sam_output(text)
+    assert "<0f>0<|box" in str(err.value)
+    assert len(str(err.value)) < 200  # the line is snipped
+
+
+def test_marker_with_header_fields_counts_as_a_second_marker():
+    text = "<0f>0<|box;x1=0;y1=0;x2=1;y2=1;w=10;h=10|><2f;k=v>1<|box;x1=0;y1=0;x2=1;y2=1;w=10;h=10|>"
+    with pytest.raises(ValueError, match="more than one frame marker"):
+        parse_sam_output(text)
+
+
+def test_check_frames_accepts_frames_inside_the_upload():
+    check_frames(parse_sam_output(VIDEO), photos=3)  # frames 0 and 2
+
+
+def test_check_frames_rejects_a_frame_at_or_past_the_photo_count():
+    with pytest.raises(ValueError, match="frame index 2 out of range for 2 photos"):
+        check_frames(parse_sam_output(VIDEO), photos=2)

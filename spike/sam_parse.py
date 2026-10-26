@@ -2,6 +2,8 @@ import re
 from dataclasses import dataclass
 
 FRAME_RE = re.compile(r"<(\d+)f>")
+# any frame header, including the "<Nf;key=value>" form; the mask payload alphabet never contains "<" or ">"
+MARKER_RE = re.compile(r"<\d+f(?:;[^>]*)?>")
 BOX_START = "<|box"
 BOX_RE = re.compile(r"(\d+)\s*<\|box;([^|>]*)\|>")
 SNIP_LEN = 120
@@ -69,11 +71,25 @@ def parse_sam_output(text: str) -> list[Detection]:
         if not frame_match:
             raise ValueError(f"unrecognized SAM output: {_snip(line)}")
         frame = int(frame_match.group(1))
+        if len(MARKER_RE.findall(line)) > 1:
+            # every box on a line is attributed to the line's frame, so a second marker would misplace boxes
+            raise ValueError(f"more than one frame marker in one line: {_snip(line)}")
         boxes = list(BOX_RE.finditer(line, frame_match.end() - 1))
         if line.count(BOX_START) != len(boxes):
             raise ValueError(f"frame {frame}: malformed SAM record in {_snip(line)}")
         detections.extend(_detection(frame, box) for box in boxes)
     return detections
+
+
+def check_frames(dets: list[Detection], photos: int) -> None:
+    """Raise ValueError if a detection's frame index does not fit an upload of `photos` photos.
+
+    The run scripts assume SAM numbers the frames of an uploaded video 0..photos-1, one per photo. An index past
+    that means the assumption broke, and mapping it to a photo time would silently mis-measure.
+    """
+    beyond = [d.frame for d in dets if d.frame >= photos]
+    if beyond:
+        raise ValueError(f"frame index {max(beyond)} out of range for {photos} photos")
 
 
 def confident(dets: list[Detection], threshold: float) -> list[Detection]:
