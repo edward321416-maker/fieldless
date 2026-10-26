@@ -9,14 +9,28 @@ from openai import APIConnectionError, InternalServerError, OpenAI, RateLimitErr
 from spike import config
 
 SAM_MIN_BILLED_FRAMES = 50
+ATTEMPTS = 5  # rate limits, 5xx and transport errors: retried patiently
+STREAM_FAILURE_ATTEMPTS = 2  # a SAM stream that failed or was cut off may already be billed: one retry only
+MAX_CONSECUTIVE_FAILURES = 5  # this many failed requests in a row stop the whole run
 
 
 class SamStreamError(RuntimeError):
     """A SAM stream reported failure, was incomplete, or ended before response.completed."""
 
 
+class RunAborted(BaseException):
+    """MAX_CONSECUTIVE_FAILURES requests in a row failed, so the run stops instead of paying for more failures.
+
+    It subclasses BaseException on purpose: the run scripts catch Exception around every request, so that one
+    bad request cannot discard the paid results before it. RunAborted must escape those handlers, the way
+    KeyboardInterrupt does, while their finally blocks still delete the uploaded files.
+    """
+
+
 RETRYABLE = (RateLimitError, APIConnectionError, InternalServerError, SamStreamError)
+ATTEMPT_LIMITS = {SamStreamError: STREAM_FAILURE_ATTEMPTS}
 _client: OpenAI | None = None
+_consecutive_failures = 0  # failed sam()/spark_json() requests since the last success
 
 
 def client() -> OpenAI:
@@ -32,14 +46,83 @@ def log_call(kind: str, **fields) -> None:
         f.write(json.dumps({"kind": kind, "ts": time.time(), **fields}, ensure_ascii=False) + "\n")
 
 
-def _retry(fn, attempts: int = 5, retry_on: tuple = RETRYABLE):
+def _error_text(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {str(exc)[:300]}"
+
+
+def _retry(fn, attempts: int = ATTEMPTS, retry_on: tuple = RETRYABLE, limits: dict | None = None):
+    """Call fn, retrying retry_on errors with exponential backoff, at most `attempts` calls in total.
+
+    limits maps an exception type to a lower cap on how many times errors of that type may occur before the
+    error is re-raised. The default (ATTEMPT_LIMITS) gives SAM stream failures a single retry, because a stream
+    that failed or was cut off may already have been billed; transport, rate-limit and 5xx errors keep the full
+    `attempts`.
+    """
+    limits = ATTEMPT_LIMITS if limits is None else limits
+    seen: dict[type, int] = {}
     for i in range(attempts):
         try:
             return fn()
-        except retry_on:
+        except retry_on as exc:
+            limited = next((t for t in limits if isinstance(exc, t)), None)
+            if limited is not None:
+                seen[limited] = seen.get(limited, 0) + 1
+                if seen[limited] >= limits[limited]:
+                    raise
             if i == attempts - 1:
                 raise
             time.sleep(min(30, 2 ** i) + random.random())
+
+
+def _log_failures(fn, kind: str, **fields):
+    """Wrap one attempt so that a failure is logged to calls.jsonl (kind, seconds, error, fields), then re-raised.
+
+    Failed attempts may still be billed, so the gate report counts them as an upper bound on spend.
+    """
+    def attempt():
+        t0 = time.time()
+        try:
+            return fn()
+        except Exception as exc:
+            log_call(kind, seconds=time.time() - t0, error=_error_text(exc), **fields)
+            raise
+    return attempt
+
+
+def _counted(request):
+    """Run one request (with its retries) through the run-level circuit breaker.
+
+    A success resets the failure counter. The MAX_CONSECUTIVE_FAILURES-th failure in a row raises RunAborted,
+    chained to the request's own error. The counter is not reset by the abort, so until a request succeeds every
+    further failure aborts as well.
+    """
+    global _consecutive_failures
+    try:
+        result = request()
+    except Exception as exc:
+        _consecutive_failures += 1
+        if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            log_call("run_aborted", consecutive_failures=_consecutive_failures, error=_error_text(exc))
+            raise RunAborted(f"{_consecutive_failures} requests in a row failed, stopping the run; "
+                             f"last error: {_error_text(exc)}") from exc
+        raise
+    _consecutive_failures = 0
+    return result
+
+
+def reset_failures() -> None:
+    """Reset the circuit breaker (for tests, or a caller that deliberately continues after RunAborted)."""
+    global _consecutive_failures
+    _consecutive_failures = 0
+
+
+def _usage_dict(usage) -> dict | None:
+    if usage is None:
+        return None
+    if isinstance(usage, dict):
+        return usage or None
+    dump = getattr(usage, "model_dump", None)
+    return dump() if callable(dump) else None
 
 
 def _guard_model(model: str) -> None:
@@ -103,27 +186,38 @@ def delete_file(file_id: str) -> None:
 
 
 def spark_json(parts: list[dict], schema_name: str, schema: dict, model: str = config.SPARK_MODEL) -> dict:
+    """One structured Spark request. Failed attempts are logged as "spark_failed"; the request counts toward
+    the circuit breaker (see _counted)."""
     _guard_model(model)
-    t0 = time.time()
-    resp = _retry(lambda: client().responses.create(
-        model=model,
-        input=[{"type": "message", "role": "user", "content": parts}],
-        text={"format": {"type": "json_schema", "name": schema_name, "schema": schema, "strict": True}},
-    ))
-    usage = resp.usage.model_dump() if resp.usage else {}
-    log_call("spark", schema=schema_name, model=model, seconds=time.time() - t0, usage=usage)
-    return json.loads(resp.output_text)
+
+    def call():
+        return client().responses.create(
+            model=model,
+            input=[{"type": "message", "role": "user", "content": parts}],
+            text={"format": {"type": "json_schema", "name": schema_name, "schema": schema, "strict": True}},
+        )
+
+    def request() -> dict:
+        t0 = time.time()
+        resp = _retry(_log_failures(call, "spark_failed", schema=schema_name, model=model))
+        usage = resp.usage.model_dump() if resp.usage else {}
+        log_call("spark", schema=schema_name, model=model, seconds=time.time() - t0, usage=usage)
+        return json.loads(resp.output_text)
+
+    return _counted(request)
 
 
 def sam(concept: str, media: dict, billed_frames: int) -> str:
+    """One SAM request. Failed attempts are logged as "sam_failed" with the clamped billed_frames; a stream
+    failure is retried once only; the request counts toward the circuit breaker (see _counted)."""
     _guard_model(config.SAM_MODEL)
     requested_frames = billed_frames
     billed = max(SAM_MIN_BILLED_FRAMES, requested_frames)
-    t0 = time.time()
 
-    def call():
+    def call() -> tuple[str, dict | None]:
         chunks: list[str] = []
         completed = False
+        usage = None
         with client().responses.stream(
             model=config.SAM_MODEL,
             input=[{"type": "message", "role": "user", "content": [text_part(concept), media]}],
@@ -134,13 +228,20 @@ def sam(concept: str, media: dict, billed_frames: int) -> str:
                     chunks.append(event.delta)
                 elif event.type == "response.completed":
                     completed = True
+                    usage = _usage_dict(getattr(getattr(event, "response", None), "usage", None))
                 elif event.type in ("response.failed", "response.incomplete", "error"):
                     raise SamStreamError(f"SAM stream failed: {_event_detail(event)}")
         if not completed:
             raise SamStreamError("SAM stream ended without response.completed")
-        return "".join(chunks)
+        return "".join(chunks), usage
 
-    text = _retry(call)
-    log_call("sam", concept=concept, requested_frames=requested_frames, billed_frames=billed,
-             seconds=time.time() - t0, chars=len(text), status="completed")
-    return text
+    def request() -> str:
+        t0 = time.time()
+        text, usage = _retry(_log_failures(call, "sam_failed", concept=concept,
+                                           requested_frames=requested_frames, billed_frames=billed))
+        log_call("sam", concept=concept, requested_frames=requested_frames, billed_frames=billed,
+                 seconds=time.time() - t0, chars=len(text), status="completed",
+                 **({"usage": usage} if usage else {}))
+        return text
+
+    return _counted(request)

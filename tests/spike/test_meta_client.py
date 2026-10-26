@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from spike import meta_client as mc
@@ -90,6 +91,7 @@ def read_log(tmp_path):
 def offline(monkeypatch, tmp_path):
     monkeypatch.setattr(mc.config, "OUT", tmp_path)
     monkeypatch.setattr(mc.time, "sleep", lambda s: None)
+    monkeypatch.setattr(mc, "_consecutive_failures", 0)  # circuit breaker state must not leak between tests
     monkeypatch.setattr(mc.config, "SAM_MODEL", "sam-3.1")
     monkeypatch.setattr(mc.config, "SPARK_MODEL", "muse-spark-1.3")
 
@@ -187,3 +189,167 @@ def test_contributor_models_are_rejected(offline, monkeypatch):
     monkeypatch.setattr(mc.config, "SAM_MODEL", "sam-contributor-2")
     with pytest.raises(ValueError, match="contributor"):
         mc.sam("tactile paving", {}, billed_frames=50)
+
+
+# ---- retry caps, failed-attempt log, circuit breaker, SAM usage ----
+
+def _connection_error():
+    return mc.APIConnectionError(request=httpx.Request("POST", "https://api.meta.ai/v1/responses"))
+
+
+def stream_failed(message="gpu oom"):
+    return SimpleNamespace(type="response.failed",
+                           response=SimpleNamespace(status="failed", error=SimpleNamespace(message=message)))
+
+
+def test_retry_gives_sam_stream_failures_one_retry_only(monkeypatch):
+    monkeypatch.setattr(mc.time, "sleep", lambda s: None)
+    calls = {"n": 0}
+
+    def stream_fails():
+        calls["n"] += 1
+        raise mc.SamStreamError("SAM stream failed: event=response.failed")
+
+    with pytest.raises(mc.SamStreamError):
+        mc._retry(stream_fails)
+    assert calls["n"] == mc.STREAM_FAILURE_ATTEMPTS == 2
+
+
+def test_retry_keeps_five_attempts_for_transport_errors(monkeypatch):
+    monkeypatch.setattr(mc.time, "sleep", lambda s: None)
+    calls = {"n": 0}
+
+    def down():
+        calls["n"] += 1
+        raise _connection_error()
+
+    with pytest.raises(mc.APIConnectionError):
+        mc._retry(down)
+    assert calls["n"] == mc.ATTEMPTS == 5
+
+
+def test_retry_counts_stream_failures_separately_from_transport_errors(monkeypatch):
+    monkeypatch.setattr(mc.time, "sleep", lambda s: None)
+    errors = [_connection_error(), mc.SamStreamError("cut off"), _connection_error(), mc.SamStreamError("cut off")]
+    calls = {"n": 0}
+
+    def mixed():
+        calls["n"] += 1
+        raise errors[calls["n"] - 1]
+
+    with pytest.raises(mc.SamStreamError):
+        mc._retry(mixed)
+    assert calls["n"] == 4  # the second stream failure stops it, before the 5-attempt cap
+
+
+def test_sam_stream_failure_is_retried_once_and_every_attempt_is_logged(offline, tmp_path):
+    fake = offline(FakeClient(stream_events=[delta("<0f>"), stream_failed()]))
+    with pytest.raises(mc.SamStreamError, match="gpu oom"):
+        mc.sam("tactile paving", {}, billed_frames=7)
+    assert len(fake.stream_calls) == 2
+    entries = read_log(tmp_path)
+    assert [e["kind"] for e in entries] == ["sam_failed", "sam_failed"]
+    for e in entries:
+        assert e["concept"] == "tactile paving"
+        assert e["billed_frames"] == 50 and e["requested_frames"] == 7  # clamped, as billed
+        assert isinstance(e["seconds"], float)
+        assert e["error"].startswith("SamStreamError: SAM stream failed") and "gpu oom" in e["error"]
+
+
+def test_sam_logs_failed_attempt_then_success(offline, tmp_path):
+    offline(FakeClient(stream_events=lambda n: [stream_failed()] if n == 1 else [delta("ok"), completed()]))
+    assert mc.sam("stairs", {}, billed_frames=60) == "ok"
+    assert [e["kind"] for e in read_log(tmp_path)] == ["sam_failed", "sam"]
+
+
+def test_spark_failed_attempts_are_logged(offline, tmp_path):
+    fake = offline(FakeClient())
+
+    def down(**kwargs):
+        raise _connection_error()
+
+    fake.responses.create = down
+    with pytest.raises(mc.APIConnectionError):
+        mc.spark_json([mc.text_part("hi")], "smoke", {"type": "object"})
+    entries = read_log(tmp_path)
+    assert [e["kind"] for e in entries] == ["spark_failed"] * mc.ATTEMPTS
+    assert entries[0]["schema"] == "smoke"
+    assert entries[0]["error"].startswith("APIConnectionError")
+    assert isinstance(entries[0]["seconds"], float)
+
+
+def test_sam_logs_usage_when_completed_event_carries_it(offline, tmp_path):
+    done = SimpleNamespace(type="response.completed", response=SimpleNamespace(
+        status="completed", usage=SimpleNamespace(model_dump=lambda: {"input_tokens": 12, "output_tokens": 3})))
+    offline(FakeClient(stream_events=[delta("x"), done]))
+    mc.sam("stairs", {}, billed_frames=50)
+    (entry,) = read_log(tmp_path)
+    assert entry["usage"] == {"input_tokens": 12, "output_tokens": 3}
+
+
+def test_sam_without_usage_has_no_usage_field(offline, tmp_path):
+    offline(FakeClient(stream_events=[delta("x"), completed()]))
+    mc.sam("stairs", {}, billed_frames=50)
+    (entry,) = read_log(tmp_path)
+    assert "usage" not in entry
+
+
+def test_run_aborted_is_not_an_exception():
+    # run scripts catch Exception per request; RunAborted has to get past them
+    assert issubclass(mc.RunAborted, BaseException)
+    assert not issubclass(mc.RunAborted, Exception)
+
+
+class ScriptedSpark(FakeClient):
+    """responses.create follows a script: "fail" raises a non-retryable error, "ok" answers."""
+
+    def __init__(self, script):
+        super().__init__()
+        self.script = list(script)
+
+    def _create(self, **kwargs):
+        if self.script.pop(0) == "fail":
+            raise ValueError("400 bad request")
+        return super()._create(**kwargs)
+
+
+def call_spark_like_a_run_script() -> str:
+    try:
+        mc.spark_json([mc.text_part("hi")], "smoke", {"type": "object"})
+        return "ok"
+    except Exception:  # what every run script does per request
+        return "error"
+
+
+def test_five_consecutive_failed_requests_abort_the_run(offline, tmp_path):
+    offline(ScriptedSpark(["fail"] * 5))
+    assert [call_spark_like_a_run_script() for _ in range(4)] == ["error"] * 4
+    with pytest.raises(mc.RunAborted, match="5 requests in a row failed") as err:
+        call_spark_like_a_run_script()
+    assert isinstance(err.value.__cause__, ValueError)
+    assert read_log(tmp_path)[-1]["kind"] == "run_aborted"
+
+
+def test_a_success_resets_the_failure_count(offline):
+    offline(ScriptedSpark(["fail"] * 4 + ["ok"] + ["fail"] * 4 + ["fail"]))
+    results = [call_spark_like_a_run_script() for _ in range(9)]
+    assert results == ["error"] * 4 + ["ok"] + ["error"] * 4  # 4 + 4 failures, never 5 in a row
+    with pytest.raises(mc.RunAborted):
+        call_spark_like_a_run_script()  # the fifth in a row after the success
+
+
+def test_sam_requests_count_toward_the_breaker(offline):
+    offline(FakeClient(stream_events=[stream_failed()]))
+    for _ in range(mc.MAX_CONSECUTIVE_FAILURES - 1):
+        with pytest.raises(mc.SamStreamError):
+            mc.sam("stairs", {}, billed_frames=50)
+    with pytest.raises(mc.RunAborted):
+        mc.sam("stairs", {}, billed_frames=50)
+
+
+def test_model_guard_does_not_count_as_a_failed_request(offline, monkeypatch):
+    offline(FakeClient())
+    for _ in range(mc.MAX_CONSECUTIVE_FAILURES + 1):
+        with pytest.raises(ValueError, match="contributor"):
+            mc.spark_json([mc.text_part("hi")], "smoke", {"type": "object"}, model="muse-contributor-1")
+    assert mc._consecutive_failures == 0

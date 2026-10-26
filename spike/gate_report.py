@@ -27,6 +27,7 @@ SPARK_IN_PER_TOKEN = 1.25e-6
 SPARK_OUT_PER_TOKEN = 4.25e-6
 SAM_PER_FRAME = 0.0002
 MIN_SCORED = 3  # a rate over fewer scored samples is not evidence either way
+FAILED_KINDS = ("sam_failed", "spark_failed")  # calls.jsonl lines for failed attempts (meta_client._log_failures)
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,11 @@ def decide(criteria: list[Criterion]) -> str:
     if entrance_ok:
         return "GO: entrance layer as main, sidewalk layer moved to recommended scope"
     return "NO-GO: apply fallbacks from spec section 20 and re-test"
+
+
+def _spark_cost(call: dict) -> float:
+    usage = call.get("usage") or {}
+    return usage.get("input_tokens", 0) * SPARK_IN_PER_TOKEN + usage.get("output_tokens", 0) * SPARK_OUT_PER_TOKEN
 
 
 def _load(name: str) -> dict | None:
@@ -128,11 +134,7 @@ def collect_metrics() -> tuple[dict, dict]:
     calls_path = config.OUT / "calls.jsonl"
     calls = [json.loads(line) for line in calls_path.read_text(encoding="utf-8").splitlines() if line.strip()] \
         if calls_path.exists() else []
-    spark_cost = sum(
-        (c.get("usage") or {}).get("input_tokens", 0) * SPARK_IN_PER_TOKEN
-        + (c.get("usage") or {}).get("output_tokens", 0) * SPARK_OUT_PER_TOKEN
-        for c in calls if c["kind"] == "spark"
-    )
+    spark_cost = sum(_spark_cost(c) for c in calls if c["kind"] == "spark")
     explored = set(PHRASES) | set(TACTILE_PHRASES)
     chosen = ({best_stairs} | set(extras["tactile_phrases"].values())) - {None}
     sam_all = sum(c.get("billed_frames", 0) * SAM_PER_FRAME for c in calls if c["kind"] == "sam")
@@ -140,12 +142,23 @@ def collect_metrics() -> tuple[dict, dict]:
         c.get("billed_frames", 0) * SAM_PER_FRAME
         for c in calls if c["kind"] == "sam" and (c["concept"] not in explored or c["concept"] in chosen)
     )
-    metrics["spike_total_cost_usd"] = spark_cost + sam_all
+    # Failed attempts may or may not be billed: count them at full price (an upper bound) in the spike total only.
+    sam_failed = [c for c in calls if c["kind"] == "sam_failed"]
+    spark_failed = [c for c in calls if c["kind"] == "spark_failed"]
+    failed_cost = (sum(c.get("billed_frames", 0) * SAM_PER_FRAME for c in sam_failed)
+                   + sum(_spark_cost(c) for c in spark_failed))
+    extras["failed_attempts"] = {"sam": len(sam_failed), "spark": len(spark_failed), "cost_usd": failed_cost,
+                                 "seconds": sum(c.get("seconds", 0) for c in sam_failed + spark_failed),
+                                 "run_aborts": sum(c["kind"] == "run_aborted" for c in calls)}
+    metrics["spike_total_cost_usd"] = spark_cost + sam_all + failed_cost
     photos = sum(v["duration_s"] for v in spark.values()) * config.CLIP_FPS
     extras["photos"] = photos
     if photos and calls:  # without recorded calls a $0 cost would read as a pass
         metrics["cost_per_100_photos_usd"] = (spark_cost + sam_production) / photos * 100
-        metrics["seconds_per_100_photos"] = sum(c.get("seconds", 0) for c in calls) / photos * 100
+        # a successful request's seconds already include its failed attempts and backoff, so *_failed lines are
+        # left out here to avoid counting that time twice
+        metrics["seconds_per_100_photos"] = sum(c.get("seconds", 0) for c in calls
+                                                if c["kind"] not in FAILED_KINDS) / photos * 100
     km = 0.0
     for clip_file in spark:
         frames_path = config.CLIPS / clip_file.rsplit(".", 1)[0] / "frames.json"
@@ -195,8 +208,13 @@ def build_report(metrics: dict, extras: dict) -> str:
     ]
     if insufficient:
         lines += [f"Fewer than {MIN_SCORED} scored samples counts as not passed: {', '.join(insufficient)}.", ""]
+    failed = extras.get("failed_attempts") or {"sam": 0, "spark": 0, "cost_usd": 0.0, "seconds": 0.0, "run_aborts": 0}
     lines += [
         f"Spike total cost including phrase exploration: ${metrics.get('spike_total_cost_usd', 0):.2f}",
+        f"Failed API attempts (possibly billed): {failed['sam'] + failed['spark']} "
+        f"(SAM {failed['sam']}, Spark {failed['spark']}, {failed['seconds']:.0f} s); "
+        f"their upper-bound cost ${failed['cost_usd']:.2f} is included in the spike total"
+        + (f"; runs stopped by the circuit breaker: {failed['run_aborts']}" if failed["run_aborts"] else ""),
         f"Kilometers of street in the test clips: {metrics.get('km_covered', 0):.2f}; "
         f"production cost per km: ${metrics.get('cost_per_km_usd', 0):.2f}",
         "`cost_per_100_photos_usd` counts only the chosen phrases (production estimate). "

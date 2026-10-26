@@ -243,6 +243,27 @@ def test_cost_per_100_photos_counts_only_chosen_sam_phrases(env):
     assert metrics["seconds_per_100_photos"] == pytest.approx(sum(l.get("seconds", 0) for l in lines) / 200 * 100)
 
 
+def test_failed_attempts_add_upper_bound_cost_to_spike_total_only(env):
+    out, _ = env
+    write(out, "spark_entrances.json", {"street_a.mp4": spark_clip(duration=100)})
+    write_calls(out, [
+        {"kind": "sam", "concept": "electric scooter", "billed_frames": 60, "requested_frames": 60, "seconds": 4.0},
+        {"kind": "sam_failed", "concept": "electric scooter", "billed_frames": 60, "requested_frames": 60,
+         "seconds": 3.0, "error": "SamStreamError: SAM stream failed"},
+        {"kind": "spark_failed", "schema": "street_scan", "seconds": 1.0, "error": "APIConnectionError: x"},
+        {"kind": "run_aborted", "consecutive_failures": 5, "error": "x"},
+    ])
+    metrics, extras = collect_metrics()
+    assert metrics["spike_total_cost_usd"] == pytest.approx((60 + 60) * 0.0002)
+    assert metrics["cost_per_100_photos_usd"] == pytest.approx(60 * 0.0002)  # production estimate: successes only
+    assert metrics["seconds_per_100_photos"] == pytest.approx(4.0)  # failed seconds are inside the success line
+    assert extras["failed_attempts"] == {"sam": 1, "spark": 1, "cost_usd": pytest.approx(60 * 0.0002),
+                                         "seconds": 4.0, "run_aborts": 1}
+    report = build_report(metrics, extras)
+    assert "Failed API attempts (possibly billed): 2 (SAM 1, Spark 1, 4 s)" in report
+    assert "runs stopped by the circuit breaker: 1" in report
+
+
 # --- report ----------------------------------------------------------------------------------
 
 def full_dataset(out):
