@@ -1,5 +1,6 @@
 """Smoke test: one structured Spark call, one SAM image call on a public photo, and a check of the
 official meta_sam_parser on the same output. Costs well under $0.01. Needs only MODEL_API_KEY."""
+import argparse
 import dataclasses
 import json
 from pathlib import Path
@@ -54,9 +55,16 @@ def describe(obj, depth: int = 0):
 
 
 def main() -> None:
+    parser_args = argparse.ArgumentParser(description="Day-1 Meta API smoke test.")
+    parser_args.add_argument("--image", type=Path, default=None,
+                             help="local photo to send to SAM; skips the Wikimedia download")
+    parser_args.add_argument("--concept", default="tactile paving", help="SAM concept prompt")
+    args = parser_args.parse_args()
+
     print("spark:", mc.spark_json([mc.text_part("Reply with the word ok.")], "smoke", SCHEMA))
 
-    text = mc.sam("tactile paving", mc.image_part(fetch_image()), billed_frames=1)
+    image = args.image if args.image is not None else fetch_image()
+    text = mc.sam(args.concept, mc.image_part(image), billed_frames=1)
     (config.OUT / "smoke_sam.txt").write_text(text, encoding="utf-8")
     print("sam raw (first 300 chars):", text[:300])
     print("our parser:", parse_sam_output(text))
