@@ -11,19 +11,23 @@
   fieldset { margin: 8px 0; }
   li button { margin-left: 8px; }
   .open { color: #b00; font-weight: 600; }
+  .status { color: #060; min-height: 1.2em; }
+  .status.error { color: #b00; }
   kbd { border: 1px solid #999; border-radius: 3px; padding: 0 4px; }
 </style>
 </head>
 <body>
 <h1>Truth Labeler</h1>
 <p>Load a clip, then label while it plays. Clips built from photo sequences show one photo per second.
-Keys: <kbd>Space</kbd> play/pause, <kbd>←</kbd>/<kbd>→</kbd> ±1 s (one photo),
+Keys: <kbd>Space</kbd> play/pause, <kbd>←</kbd>/<kbd>→</kbd> previous/next photo,
 <kbd>,</kbd>/<kbd>.</kbd> ±0.1 s, <kbd>E</kbd> add entrance, <kbd>T</kbd> tactile start/end, <kbd>O</kbd> obstacle start/end.
-Keys are ignored while a text field has focus. Labeling time is counted while a clip is loaded and this tab is visible.</p>
+Labels are recorded as whole photo numbers. Keys are ignored while a text box, number box or dropdown has focus.
+Labeling time is counted while a clip is loaded and this tab is visible. Idle time (no key, mouse, wheel or seek for 60 s) is not counted.</p>
 <div class="row">
   <div>
     <label>Clip <input type="file" id="clip" accept="video/*"></label>
     <label>Import truth.json <input type="file" id="import" accept="application/json"></label>
+    <div id="status" class="status" role="status"></div>
     <div><video id="video" controls></video></div>
     <div>Time: <strong id="now">0.0</strong> s (photo <strong id="photo">0</strong>), clip: <strong id="clipName">none</strong>,
       labeling time: <strong id="elapsed">0</strong> s</div>
@@ -36,7 +40,7 @@ Keys are ignored while a text field has focus. Labeling time is counted while a 
       <label>Door <select id="eDoor">
         <option>swing</option><option>sliding</option><option>automatic</option><option>revolving</option><option>none_visible</option>
       </select></label><br>
-      <button id="addEntrance">Add entrance at current time (E)</button>
+      <button id="addEntrance">Add entrance at current photo (E)</button>
     </fieldset>
     <fieldset><legend>Tactile paving</legend>
       <button id="tactile">Tactile start/end (T)</button> <span id="tactileOpen" class="open"></span>
@@ -57,24 +61,73 @@ Keys are ignored while a text field has focus. Labeling time is counted while a 
 <script>
 const $ = (id) => document.getElementById(id);
 const video = $("video");
+const STORAGE_KEY = "truth-labeler";
+const IDLE_LIMIT_MS = 60000;
 let truth = { clips: {} };
 let clipName = null;
 let tactileStart = null;
 let obstacleStart = null;
+let lastActivity = Date.now();
 
-try { const saved = localStorage.getItem("truth-labeler"); if (saved) truth = JSON.parse(saved); } catch (e) {}
+// Validates an imported or restored object and fills in defaults. Throws on a bad shape.
+function isPlainObject(x) {
+  return x !== null && typeof x === "object" && !Array.isArray(x);
+}
+function normalize(obj) {
+  if (!isPlainObject(obj)) throw new Error("File is not a JSON object.");
+  if (!isPlainObject(obj.clips)) throw new Error("'clips' must be an object.");
+  const out = { clips: {} };
+  for (const [name, raw] of Object.entries(obj.clips)) {
+    const c = isPlainObject(raw) ? raw : {};
+    out.clips[name] = {
+      entrances: Array.isArray(c.entrances) ? c.entrances : [],
+      tactile_ranges: Array.isArray(c.tactile_ranges) ? c.tactile_ranges : [],
+      obstacles: Array.isArray(c.obstacles) ? c.obstacles : [],
+      labeling_seconds: Number.isInteger(c.labeling_seconds) && c.labeling_seconds >= 0 ? c.labeling_seconds : 0,
+    };
+  }
+  return out;
+}
 
-function save() { try { localStorage.setItem("truth-labeler", JSON.stringify(truth)); } catch (e) {} }
+try {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) truth = normalize(JSON.parse(saved));
+} catch (e) {
+  console.error("Ignoring saved labels, starting fresh:", e);
+  truth = { clips: {} };
+}
+
+function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(truth)); } catch (e) {} }
+function setStatus(msg, isError = false) {
+  const s = $("status");
+  s.textContent = msg;
+  s.classList.toggle("error", isError);
+}
+function ensureClip(name) {
+  return truth.clips[name] ||= { entrances: [], tactile_ranges: [], obstacles: [], labeling_seconds: 0 };
+}
 function currentClip() {
   if (!clipName) { alert("Load a clip first."); return null; }
-  return truth.clips[clipName] ||= { entrances: [], tactile_ranges: [], obstacles: [] };
+  return ensureClip(clipName);
 }
-const now = () => Math.round(video.currentTime * 10) / 10;
+
+// Last photo index: one photo per second, so a clip of N seconds has photos 0..N-1.
+function lastPhoto() {
+  return Number.isFinite(video.duration) ? Math.max(0, Math.ceil(video.duration) - 1) : Infinity;
+}
+// Integer photo number under the playhead, clamped to the clip.
+function photoAt() {
+  return Math.min(Math.max(Math.floor(video.currentTime + 1e-6), 0), lastPhoto());
+}
+// Labels record whole photo numbers.
+const now = () => photoAt();
+function touch() { lastActivity = Date.now(); }
 
 function render() {
   const list = $("list");
   list.innerHTML = "";
   const c = clipName && truth.clips[clipName];
+  $("elapsed").textContent = c ? c.labeling_seconds : 0;
   if (!c) return;
   const items = [
     ...c.entrances.map((e, i) => ({ t: e.t, text: `Entrance ${e.name || "(no name)"}: ${e.step_count} steps, ramp ${e.has_ramp}, ${e.door_type}`, del: () => c.entrances.splice(i, 1) })),
@@ -84,8 +137,8 @@ function render() {
   for (const item of items) {
     const li = document.createElement("li");
     const seek = document.createElement("button");
-    seek.textContent = `${item.t.toFixed(1)} s`;
-    seek.onclick = () => { video.currentTime = item.t; };
+    seek.textContent = `${item.t} s`;
+    seek.onclick = () => { video.currentTime = item.t + 0.5; };
     const del = document.createElement("button");
     del.textContent = "delete";
     del.onclick = () => { item.del(); save(); render(); };
@@ -116,18 +169,45 @@ function toggleObstacle() {
   obstacleStart = null; $("obstacleOpen").textContent = "";
   save(); render();
 }
+function stepPhoto(dir) {
+  const target = Math.min(Math.max(photoAt() + dir, 0), lastPhoto());
+  video.currentTime = target + 0.5;
+}
 
 $("clip").onchange = (ev) => {
-  const file = ev.target.files[0]; if (!file) return;
+  const input = ev.target;
+  const file = input.files[0];
+  input.blur();
+  if (!file) return;
   clipName = file.name; $("clipName").textContent = clipName;
   video.src = URL.createObjectURL(file);
   tactileStart = obstacleStart = null;
+  $("tactileOpen").textContent = "";
+  $("obstacleOpen").textContent = "";
+  touch();
   render();
 };
 $("import").onchange = async (ev) => {
-  const file = ev.target.files[0]; if (!file) return;
-  truth = JSON.parse(await file.text());
+  const input = ev.target;
+  const file = input.files[0];
+  input.blur();
+  if (!file) return;
+  let next;
+  try {
+    next = normalize(JSON.parse(await file.text()));
+  } catch (e) {
+    setStatus(`Import failed: ${e.message}`, true);
+    return;
+  } finally {
+    input.value = "";
+  }
+  if (!confirm("Replace all current labels with the imported file?")) {
+    setStatus("Import cancelled.");
+    return;
+  }
+  truth = next;
   save(); render();
+  setStatus(`Imported ${Object.keys(truth.clips).length} clip(s).`);
 };
 $("addEntrance").onclick = addEntrance;
 $("tactile").onclick = toggleTactile;
@@ -139,28 +219,55 @@ $("export").onclick = () => {
 };
 video.ontimeupdate = () => {
   $("now").textContent = video.currentTime.toFixed(1);
-  $("photo").textContent = Math.floor(video.currentTime + 1e-6);
+  $("photo").textContent = photoAt();
 };
+video.addEventListener("seeked", touch);
+
 let ticks = 0;
 setInterval(() => {
   if (!clipName || document.visibilityState !== "visible") return;
-  const c = truth.clips[clipName] ||= { entrances: [], tactile_ranges: [], obstacles: [] };
-  c.labeling_seconds = (c.labeling_seconds || 0) + 1;
+  if (Date.now() - lastActivity >= IDLE_LIMIT_MS) return;
+  const c = ensureClip(clipName);
+  c.labeling_seconds += 1;
   $("elapsed").textContent = c.labeling_seconds;
   if (++ticks % 10 === 0) save();
 }, 1000);
-document.addEventListener("keydown", (ev) => {
-  if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") save(); });
+window.addEventListener("pagehide", save);
+window.addEventListener("mousedown", touch, { capture: true });
+window.addEventListener("wheel", touch, { capture: true, passive: true });
+
+// Keys are ignored while the user is typing in a text box, number box, dropdown or editable area.
+function typingTarget(el) {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+  if (el.tagName === "INPUT") return ["text", "number", "search"].includes(el.type);
+  return false;
+}
+const ACTIONS = {
+  " ": () => { video.paused ? video.play().catch(() => {}) : video.pause(); },
+  "arrowleft": () => stepPhoto(-1),
+  "arrowright": () => stepPhoto(1),
+  ",": () => { video.pause(); video.currentTime -= 0.1; },
+  ".": () => { video.pause(); video.currentTime += 0.1; },
+  "e": addEntrance,
+  "t": toggleTactile,
+  "o": toggleObstacle,
+};
+// Capture phase on window so the focused <video controls> never sees the keys we handle.
+window.addEventListener("keydown", (ev) => {
+  touch();
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  if (typingTarget(document.activeElement)) return;
   const k = ev.key.toLowerCase();
-  if (k === " ") { ev.preventDefault(); video.paused ? video.play() : video.pause(); }
-  else if (k === "arrowleft") video.currentTime -= 1;
-  else if (k === "arrowright") video.currentTime += 1;
-  else if (k === ",") { video.pause(); video.currentTime -= 0.1; }
-  else if (k === ".") { video.pause(); video.currentTime += 0.1; }
-  else if (k === "e") addEntrance();
-  else if (k === "t") toggleTactile();
-  else if (k === "o") toggleObstacle();
-});
+  const action = ACTIONS[k];
+  if (!action) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (ev.repeat) return;
+  action();
+}, { capture: true });
 </script>
 </body>
 </html>
