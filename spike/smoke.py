@@ -2,7 +2,9 @@
 official meta_sam_parser on the same output. Costs well under $0.01. Needs only MODEL_API_KEY."""
 import dataclasses
 import json
+from pathlib import Path
 
+import httpx
 import meta_sam_parser as msp
 
 from spike import config
@@ -15,8 +17,24 @@ SCHEMA = {
     "required": ["answer"],
     "properties": {"answer": {"type": "string"}},
 }
-# Freely licensed sidewalk photo with tactile paving (Wikimedia Commons). The API fetches it by URL.
-IMAGE_URL = "https://commons.wikimedia.org/wiki/Special:FilePath/Blindengeleidestrook.JPG"
+# Freely licensed sidewalk photo with tactile paving (Wikimedia Commons). Downloaded locally and sent as
+# data, because the API's remote URL fetch is refused by Commons robots.txt.
+COMMONS_API = (
+    "https://commons.wikimedia.org/w/api.php?action=query&titles=File:Blindengeleidestrook.JPG"
+    "&prop=imageinfo&iiprop=url&iiurlwidth=1280&format=json"
+)
+USER_AGENT = "threshold-spike/0.1 (hackathon research)"
+LOCAL_IMAGE = config.OUT / "smoke_tactile.jpg"
+
+
+def fetch_image() -> Path:
+    if LOCAL_IMAGE.exists():
+        return LOCAL_IMAGE
+    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True) as http:
+        data = http.get(COMMONS_API).raise_for_status().json()
+        info = next(iter(data["query"]["pages"].values()))["imageinfo"][0]
+        LOCAL_IMAGE.write_bytes(http.get(info.get("thumburl") or info["url"]).raise_for_status().content)
+    return LOCAL_IMAGE
 
 
 def describe(obj, depth: int = 0):
@@ -38,7 +56,7 @@ def describe(obj, depth: int = 0):
 def main() -> None:
     print("spark:", mc.spark_json([mc.text_part("Reply with the word ok.")], "smoke", SCHEMA))
 
-    text = mc.sam("tactile paving", {"type": "input_image", "image_url": IMAGE_URL}, billed_frames=1)
+    text = mc.sam("tactile paving", mc.image_part(fetch_image()), billed_frames=1)
     (config.OUT / "smoke_sam.txt").write_text(text, encoding="utf-8")
     print("sam raw (first 300 chars):", text[:300])
     print("our parser:", parse_sam_output(text))
