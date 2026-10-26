@@ -4,7 +4,7 @@ import json
 import pytest
 
 from spike import config, gate_report
-from spike.gate_report import MIN_SCORED, build_report, collect_metrics, decide, evaluate
+from spike.gate_report import MIN_SCORED, build_report, collect_metrics, decide, evaluate, fallbacks
 
 
 # --- decision logic (brief) -------------------------------------------------------------------
@@ -165,23 +165,30 @@ def test_exactly_min_scored_is_enough(env):
     assert "step_count_accuracy" not in extras["insufficient"]
 
 
-def test_insufficient_layer_metric_blocks_that_layer_in_the_decision(env):
+def test_insufficient_secondary_metric_does_not_block_its_layer(env):
+    # Spec section 20 (changed from the first gate report): only the core metric decides a layer.
     out, _ = env
     write(out, "sam_stairs.json", stairs_file(rates={"steps": 0.9}, counts={"steps": {"scored": 6, "failed": 0}}))
-    write(out, "step_count.json", steps_file(accuracy=1.0, scored=2, failed=0))  # too few: entrance not proven
+    write(out, "step_count.json", steps_file(accuracy=1.0, scored=2, failed=0))  # too few, but secondary
     write(out, "sidewalk.json", {"street_a.mp4": sidewalk_clip(0.9, 10, events=[
         event(True, True), event(True, True), event(True, True), event(False, True)])})
     metrics, extras = collect_metrics()
     assert "step_count_accuracy" in extras["insufficient"]
-    assert decide(evaluate(metrics)).startswith("GO: sidewalk")
+    assert decide(evaluate(metrics)) == "GO: both layers"
 
 
 def test_missing_result_files_are_insufficient_not_crashes(env):
     metrics, extras = collect_metrics()
-    assert extras["insufficient"] == {"spark_entrance_recall": 0, "sam_stairs_rate": 0, "step_count_accuracy": 0,
-                                      "tactile_coverage": 0, "obstacle_detection_rate": 0}
+    assert extras["insufficient"] == {"kr_recent_pedestrian_photos": 0, "spark_entrance_recall": 0,
+                                      "sam_stairs_rate": 0, "step_count_accuracy": 0, "tactile_coverage": 0,
+                                      "obstacle_detection_rate": 0, "cost_per_100_photos_usd": 0,
+                                      "seconds_per_100_photos": 0}
     assert "cost_per_100_photos_usd" not in metrics  # no calls, no photos: nothing to divide
-    assert decide(evaluate(metrics)).startswith("NO-GO")
+    decision = decide(evaluate(metrics))
+    assert decision.startswith("NO-GO")
+    assert "entrance layer untested (insufficient data)" in decision
+    assert "sidewalk layer untested (insufficient data)" in decision
+    assert "reduced" not in decision
 
 
 def test_spark_recall_and_error_counters(env):
@@ -213,7 +220,7 @@ def test_korea_photo_count_and_km_come_from_coverage_and_frames(env):
     assert metrics["cost_per_km_usd"] == pytest.approx((1000 * 1.25e-6 + 100 * 4.25e-6) / 0.75)
 
 
-def test_cost_per_100_photos_counts_only_chosen_sam_phrases(env):
+def test_cost_per_100_photos_counts_chosen_stair_phrase_and_all_tactile_phrases(env):
     out, _ = env
     write(out, "spark_entrances.json", {"street_a.mp4": spark_clip(duration=100), "street_b.mp4": spark_clip(duration=100)})
     write(out, "sam_stairs.json", stairs_file(best="steps"))
@@ -237,7 +244,9 @@ def test_cost_per_100_photos_counts_only_chosen_sam_phrases(env):
     write_calls(out, lines)
     metrics, _ = collect_metrics()
     spark_cost = 1_000_000 * 1.25e-6 + 100_000 * 4.25e-6
-    production_sam = (100 + 100 + 100 + 60) * 0.0002  # steps, tactile paving, braille block, obstacle label
+    # steps (chosen stair phrase), all three tactile phrases (the metric is their union), obstacle label;
+    # not "stairs", an explored stair phrase that lost
+    production_sam = (100 + 100 + 100 + 100 + 60) * 0.0002
     all_sam = (50 + 100 + 100 + 100 + 100 + 60) * 0.0002
     assert metrics["cost_per_100_photos_usd"] == pytest.approx((spark_cost + production_sam) / 200 * 100)
     assert metrics["spike_total_cost_usd"] == pytest.approx(spark_cost + all_sam)
@@ -288,7 +297,7 @@ def test_report_shows_sample_sizes_insufficient_rows_and_counters(env):
     metrics, extras = collect_metrics()
     report = build_report(metrics, extras)
     assert "| Criterion | Value | Threshold | Result | Sample size |" in report
-    assert "| spark_entrance_recall | 0.700 | 0.8 | FAIL | 10 scored |" in report
+    assert "| spark_entrance_recall | 0.700 | 0.8 | FAIL (incomplete: 1 chunk errors) | 10 scored |" in report
     assert "| sam_stairs_rate | 0.800 | 0.7 | PASS | 5 scored / 1 failed |" in report
     assert "| tactile_coverage | 0.800 | 0.8 | PASS | 10 scored / 1 failed |" in report
     assert "INSUFFICIENT DATA (n=2)" in report
@@ -372,3 +381,149 @@ def test_output_without_a_recorded_hash_is_flagged(env):
     write(out, "sam_stairs.json", stairs_file())  # written before outputs recorded the truth hash
     _, extras = collect_metrics()
     assert "sam_stairs.json (no hash recorded)" in extras["truth_warning"]
+
+
+# --- spec section 20 decision: core metrics decide, secondary metrics trigger fallbacks ----------
+
+def test_secondary_fails_do_not_demote_a_layer():
+    criteria = evaluate({"sam_stairs_rate": 0.8, "step_count_accuracy": 0.4, "spark_entrance_recall": 0.5,
+                         "tactile_coverage": 0.9, "obstacle_detection_rate": 0.3})
+    assert decide(criteria) == "GO: both layers"
+    actions = fallbacks(criteria, {})
+    assert actions == [
+        "spark_entrance_recall: Spark reads only; entrance candidates come from SAM `door` detection",
+        "step_count_accuracy: height estimate simplified to standard riser height × step count; "
+        "uncertain counts shown as ⚪",
+        "obstacle_detection_rate: reduce obstacle types to the ones SAM detects reliably",
+    ]
+
+
+def test_core_fail_demotes_and_lists_the_box_prompt_fallback():
+    criteria = evaluate({"sam_stairs_rate": 0.5, "tactile_coverage": 0.9})
+    assert decide(criteria) == "GO: sidewalk layer as main, entrance layer reduced"
+    assert fallbacks(criteria, {}) == [
+        "sam_stairs_rate: switch to box prompts (Spark boxes → SAM) and re-test before demoting"]
+
+
+def test_insufficient_core_metric_leaves_the_layer_untested_not_reduced():
+    sidewalk_only = evaluate({"tactile_coverage": 0.9, "obstacle_detection_rate": 0.8, "step_count_accuracy": 0.9})
+    decision = decide(sidewalk_only)
+    assert decision == "GO: sidewalk layer as main, entrance layer untested (insufficient data)"
+    assert "reduced" not in decision
+    entrance_only = evaluate({"sam_stairs_rate": 0.9})
+    assert decide(entrance_only) == "GO: entrance layer as main, sidewalk layer untested (insufficient data)"
+    assert fallbacks(sidewalk_only, {"sam_stairs_rate": 2}) == [
+        "sam_stairs_rate: entrance layer untested (insufficient data), n=2; "
+        "label more samples and re-run before deciding"]
+
+
+def test_core_fail_with_the_other_layer_untested_is_no_go():
+    decision = decide(evaluate({"sam_stairs_rate": 0.1}))
+    assert decision.startswith("NO-GO: entrance layer failed, sidewalk layer untested (insufficient data)")
+
+
+def test_report_lists_fallbacks_or_none(env):
+    out, _ = env
+    full_dataset(out)  # obstacle rate 2/3 fails, spark recall 0.7 fails
+    report = build_report(*collect_metrics())
+    section = report.split("## Fallbacks (spec section 20)")[1].split("\n\n")[1]
+    assert section.splitlines() == [
+        "- spark_entrance_recall: Spark reads only; entrance candidates come from SAM `door` detection",
+        "- obstacle_detection_rate: reduce obstacle types to the ones SAM detects reliably",
+    ]
+    assert fallbacks(evaluate({"sam_stairs_rate": 0.9, "tactile_coverage": 0.9}), {}) == []
+
+
+# --- report extras (not gate criteria) --------------------------------------------------------
+
+def test_extra_measurements_from_saved_outputs(env):
+    out, _ = env
+    write(out, "step_count.json", {"rows": [
+        {"truth_steps": 0, "correct": True},  # level entrance: left out
+        {"truth_steps": 1, "correct": True},
+        {"truth_steps": 2, "correct": False},
+        {"truth_steps": 3, "correct": None, "error": "RuntimeError: x"},  # error row: left out
+    ], "accuracy": 0.5, "scored": 3, "failed": 1})
+    write(out, "sam_stairs.json", stairs_file(best="steps", rows=[
+        {"step_count": 1, "phrases": {"steps": {"detected": True}}},  # one step: left out
+        {"step_count": 2, "phrases": {"steps": {"detected": True}, "stairs": {"detected": False}}},
+        {"step_count": 3, "phrases": {"steps": {"detected": False}}},
+        {"step_count": 2, "phrases": {"steps": {"error": "RuntimeError: x"}}},  # errored phrase: left out
+        {"step_count": 4, "phrases": {}, "error": "RuntimeError: cut"},  # errored row: left out
+    ]))
+    write(out, "spark_entrances.json", {"street_b.mp4": {**spark_clip(), "obstacle_types": ["bicycle"]}})
+    scooter = {**event(False, True), "label": "Electric Scooter"}  # Spark did not list it: left out
+    write(out, "sidewalk.json", {"street_b.mp4": sidewalk_clip(0.9, 10, events=[
+        event(True, True), {**event(False, True), "label": " Bicycle "}, event(None, False), scooter])})
+
+    metrics, extras = collect_metrics()
+    m = extras["extra_measurements"]
+    assert m["step_count_accuracy_stepped"] == {"value": 0.5, "n": 2}
+    assert m["stairs_rate_2plus_steps"] == {"value": 0.5, "n": 2}
+    assert m["obstacle_rate_spark_types"] == {"value": 0.5, "n": 2}  # the two scored bicycle events only
+    report = build_report(metrics, extras)
+    assert "- Step-count accuracy on stepped entrances (truth step_count >= 1): 0.500 (n=2)" in report
+    assert "- Stair detection rate on entrances with 2+ steps (phrase steps): 0.500 (n=2)" in report
+    assert "- Obstacle detection rate on events whose label Spark also listed for the clip: 0.500 (n=2)" in report
+
+
+# --- report hygiene -------------------------------------------------------------------------------
+
+def test_pooled_tactile_coverage_of_exactly_point_eight_passes(env):
+    out, _ = env
+    write(out, "sidewalk.json", {"street_a.mp4": sidewalk_clip(1 / 1, 1), "street_b.mp4": sidewalk_clip(31 / 39, 39)})
+    metrics, _ = collect_metrics()
+    assert metrics["tactile_coverage"] == 0.8  # 32 / 40, not 0.7999999999999999
+    (criterion,) = [c for c in evaluate(metrics) if c.name == "tactile_coverage"]
+    assert criterion.passed
+
+
+def test_truncated_last_calls_line_is_skipped_and_counted(env):
+    out, _ = env
+    write(out, "spark_entrances.json", {"street_a.mp4": spark_clip(duration=100)})
+    good = {"kind": "sam", "concept": "electric scooter", "billed_frames": 50, "seconds": 1.0}
+    (out / "calls.jsonl").write_text(json.dumps(good) + "\n[1, 2]\n" + '{"kind": "sam", "conc', encoding="utf-8")
+    metrics, extras = collect_metrics()
+    assert extras["calls_read"] == 1 and extras["calls_skipped_lines"] == 2
+    assert metrics["spike_total_cost_usd"] == pytest.approx(50 * 0.0002)
+    assert "calls.jsonl: 1 entries read, 2 unreadable lines skipped" in build_report(metrics, extras)
+
+
+def test_demo_area_unknown_when_no_korean_area_was_summarized(env):
+    out, _ = env
+    write(out, "coverage.json", {"since": "2020-01-01", "areas": {}, "kr_best": None})
+    report = build_report(*collect_metrics())
+    assert "Demo area: **unknown (no Korean area summarized)**" in report
+    assert "| kr_recent_pedestrian_photos | n/a | 300 | INSUFFICIENT DATA (n=0) |" in report
+
+
+def test_korea_count_is_an_integer_with_its_capped_flag(env):
+    out, _ = env
+    write(out, "coverage.json", {"kr_best": {"area": "seoul_myeongdong", "recent_on_foot_flat": 444,
+                                             "recent_flat": 500, "capped": True}})
+    report = build_report(*collect_metrics())
+    assert "| kr_recent_pedestrian_photos | 444 | 300 | PASS | seoul_myeongdong, capped: a lower bound |" in report
+
+
+def test_missing_cost_and_time_are_insufficient_rows_and_km_is_not_printed_as_zero(env):
+    out, _ = env
+    write(out, "sam_stairs.json", stairs_file())
+    report = build_report(*collect_metrics())
+    assert "| cost_per_100_photos_usd | n/a | 0.6 | INSUFFICIENT DATA (n=0) | - |" in report
+    assert "| seconds_per_100_photos | n/a | 300.0 | INSUFFICIENT DATA (n=0) | - |" in report
+    assert "Kilometers of street in the test clips: unknown" in report
+    assert "per km: $0.00" not in report and "test clips: 0.00" not in report
+    assert "Spike total cost including phrase exploration: unknown" in report
+
+
+def test_spark_recall_is_not_marked_incomplete_without_chunk_errors(env):
+    out, _ = env
+    write(out, "spark_entrances.json", {"street_a.mp4": spark_clip(hits=4, truth=5)})
+    report = build_report(*collect_metrics())
+    assert "| spark_entrance_recall | 0.800 | 0.8 | PASS | 5 scored |" in report
+
+
+def test_d1_note_uses_the_configured_hold(env, monkeypatch):
+    monkeypatch.setattr(config, "SPARK_HOLD", 3)
+    report = build_report(*collect_metrics())
+    assert "Spark clips hold each photo 3 s (config.SPARK_HOLD)" in report
