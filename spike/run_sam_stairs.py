@@ -1,4 +1,10 @@
-"""Gate test 2: does SAM 3.1 segment entrance stairs, and which concept phrase works best?"""
+"""Gate test 2: does SAM 3.1 segment entrance stairs, and which concept phrase works best?
+
+Output contract (spike/out/sam_stairs.json):
+- rows: one per entrance. A row has an "error" key when its window failed (cut, probe or upload). Each phrase
+  entry is either detection fields or {"error": ...}. Consumers must skip error entries when counting.
+- rates, counts and best_phrase are computed over stepped entrances (step_count >= 1) only; see summarize().
+"""
 import json
 from pathlib import Path
 
@@ -20,7 +26,8 @@ def _err(exc: Exception) -> str:
 def run_entrance(clip_file: str, index: int, entrance, src: Path, stem: str, tmp: Path, raw_dir: Path) -> dict:
     """One entrance window. A failure in this window or in one phrase is recorded on the row, never raised."""
     start = max(0.0, entrance.t - WINDOW_S)
-    row = {"clip": clip_file, "index": index, "t": entrance.t, "window_start": start, "phrases": {}}
+    row = {"clip": clip_file, "index": index, "t": entrance.t, "window_start": start,
+           "step_count": entrance.step_count, "phrases": {}}
     try:
         window = video.cut(src, tmp / f"{stem}_e{index}.mp4", start, entrance.t + WINDOW_S + 1.0 / FPS)
         billed = max(50, round(video.probe(window).duration_s * FPS))
@@ -47,15 +54,27 @@ def run_entrance(clip_file: str, index: int, entrance, src: Path, stem: str, tmp
     return row
 
 
-def summarize(rows: list[dict]) -> tuple[dict[str, float], str | None]:
-    """Detection rate per phrase over requests that succeeded. A phrase with no successful request has no rate."""
+def summarize(rows: list[dict]) -> tuple[dict[str, float], str | None, dict[str, dict[str, int]]]:
+    """Rates, best phrase and counts over stepped entrances (step_count >= 1).
+
+    counts[p] = {"scored": n, "failed": m}: stepped entrances with a successful request for p, and without one.
+    A phrase with no scored entrance has no rate. best_phrase is the highest rate among phrases tied for the
+    largest scored count, so a phrase scored on fewer entrances cannot win. None if nothing was scored.
+    """
+    stepped = [r for r in rows if r["step_count"] >= 1]
     rates: dict[str, float] = {}
+    counts: dict[str, dict[str, int]] = {}
     for phrase in PHRASES:
-        scored = [r["phrases"][phrase] for r in rows if phrase in r["phrases"] and "error" not in r["phrases"][phrase]]
-        if scored:
-            rates[phrase] = sum(s["detected"] for s in scored) / len(scored)
-    best_phrase = max(rates, key=rates.get) if rates else None
-    return rates, best_phrase
+        ok = [r["phrases"][phrase] for r in stepped if phrase in r["phrases"] and "error" not in r["phrases"][phrase]]
+        counts[phrase] = {"scored": len(ok), "failed": len(stepped) - len(ok)}
+        if ok:
+            rates[phrase] = sum(s["detected"] for s in ok) / len(ok)
+    scored_max = max(c["scored"] for c in counts.values())
+    if scored_max == 0:
+        return rates, None, counts
+    candidates = [p for p in PHRASES if counts[p]["scored"] == scored_max]
+    best_phrase = max(candidates, key=lambda p: (rates[p], counts[p]["scored"]))
+    return rates, best_phrase, counts
 
 
 def main() -> None:
@@ -73,13 +92,16 @@ def main() -> None:
             rows.append(row)
             shown = {p: v.get("detected", v.get("error")) for p, v in row["phrases"].items()}
             print(entrance.name, shown, row.get("error", ""))
-        rates, best_phrase = summarize(rows)
+        rates, best_phrase, counts = summarize(rows)
         out_path.write_text(
-            json.dumps({"rows": rows, "rates": rates, "best_phrase": best_phrase}, ensure_ascii=False, indent=2),
+            json.dumps({"rows": rows, "rates": rates, "counts": counts, "best_phrase": best_phrase},
+                       ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-    rates, best_phrase = summarize(rows)
-    print("rates:", rates, "best:", best_phrase)
+    rates, best_phrase, counts = summarize(rows)
+    if best_phrase is None:
+        print("no stepped entrances scored")
+    print("rates:", rates, "best:", best_phrase, "counts:", counts)
 
 
 if __name__ == "__main__":
