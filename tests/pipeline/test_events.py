@@ -74,7 +74,7 @@ def test_check_event_sends_the_photo(tmp_path):
 @pytest.mark.parametrize("label, fixed", [
     ("bollard", True), ("Bollards", True), ("utility pole", True), ("street light", True), ("streetlight", True),
     ("lamp post", True), ("tree", True), ("planter", True), ("utility cabinet", True), ("fire hydrant", True),
-    ("bench", True), ("electric scooter", False), ("bicycle", False), ("sandwich board sign", False),
+    ("bench", True), ("benches", True), ("electric scooter", False), ("bicycle", False), ("sandwich board sign", False),
     ("poster board", False), ("traffic cone", False), ("stacked boxes", False),
 ])
 def test_is_fixed(label, fixed):

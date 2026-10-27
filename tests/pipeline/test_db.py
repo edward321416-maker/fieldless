@@ -101,9 +101,9 @@ def test_daily_cost_sums_scans_created_that_day(conn):
 def test_clear_issues_deletes_only_the_given_types_of_one_scan(conn):
     scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
     other = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
-    for issue_type in ("obstruction", "break", "damage"):
+    for issue_type in ("obstruction", "fixed_obstruction", "missing_blocks", "cover_cut"):
         db.add_issue(conn, scan_id, {"issue_type": issue_type})
-    db.add_issue(conn, other, {"issue_type": "break"})
-    db.clear_issues(conn, scan_id, ("break", "damage"))
-    assert [i["issue_type"] for i in db.issues(conn, scan_id)] == ["obstruction"]
-    assert [i["issue_type"] for i in db.issues(conn, other)] == ["break"]
+    db.add_issue(conn, other, {"issue_type": "cover_cut"})
+    db.clear_issues(conn, scan_id, ("missing_blocks", "cover_cut"))
+    assert [i["issue_type"] for i in db.issues(conn, scan_id)] == ["obstruction", "fixed_obstruction"]
+    assert [i["issue_type"] for i in db.issues(conn, other)] == ["cover_cut"]

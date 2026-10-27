@@ -22,7 +22,7 @@ DILATE_PX = 8
 MIN_RUN = 2
 LOW_CONFIDENCE = 0.6
 # Objects that stay where they stand: on tactile paving they are durable defects (spec 9.3), not dated facts.
-FIXED_OBJECT = re.compile(r"\b(bollard|pole|post|street ?light|lamp|tree|planter|cabinet|hydrant|bench)s?\b")
+FIXED_OBJECT = re.compile(r"\b(bollard|pole|post|street ?light|lamp|tree|planter|cabinet|hydrant|bench)(?:es|s)?\b")
 
 CHECK_SCHEMA = {
     "type": "object",
