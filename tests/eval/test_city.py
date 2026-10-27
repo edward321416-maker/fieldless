@@ -217,3 +217,17 @@ def test_cli_wants_truth_field_and_truth_yes_together(tmp_path):
     with pytest.raises(SystemExit):
         city.main(["--run", "r", "--scan", "1", "--item", ITEM, "--layer", str(tmp_path / "x.geojson"),
                    "--truth-field", "DETWARN_EXISTS"])
+
+
+def test_where_keeps_only_points_with_the_listed_values():
+    # Seattle's pole layer holds plain utility poles too; only IS_STREETLIGHT=YES are streetlights.
+    features = [point(1, 0, 10, IS_STREETLIGHT="YES"), point(2, 30, 10, IS_STREETLIGHT="NO"), point(3, 330, 10)]
+    r = run([row(1, box=box_at(500))], layer(*features), where={"IS_STREETLIGHT": "YES"})
+    assert r["points_in_layer"] == 1 and pairs(r) == {1: 1} and r["params"]["where"] == {"IS_STREETLIGHT": "YES"}
+
+
+def test_cli_where_takes_key_value_pairs(tmp_path):
+    with pytest.raises(SystemExit):
+        city.main(["--run", "r", "--scan", "1", "--item", ITEM, "--layer", str(tmp_path / "x.geojson"),
+                   "--where", "IS_STREETLIGHT"])
+    assert city.parse_where(["IS_STREETLIGHT=YES", "OWNER=SCL"]) == {"IS_STREETLIGHT": "YES", "OWNER": "SCL"}

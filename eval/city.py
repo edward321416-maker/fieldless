@@ -1,6 +1,6 @@
 """Compare one scan's survey rows for one item with the city's own inventory layer (GeoJSON points).
 
-    python -m eval.city --run R --scan 1 --item streetlight_pole --layer streetlights.geojson --id-field OBJECTID
+    python -m eval.city --run R --scan 1 --item streetlight_pole --layer poles.geojson --id-field OBJECTID --where IS_STREETLIGHT=YES --inventory
 
 Writes <data>/runs/<run>/city_<item>_scan<id>.json. The item id, the layer and its field names are arguments, so the
 same code scores poles, trees, litter cans, bike racks, signs or curb ramps.
@@ -193,11 +193,14 @@ def _agreement(matched: list[dict]) -> dict:
 def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], item_id: str, *,
              inventory: bool = False, fov: float = FOV, max_m: float = MAX_M, max_deg: float = MAX_DEG,
              cover_m: float = COVER_M, max_m_no_dir: float = MAX_M_NO_DIR, installed_field: str | None = None,
-             truth_field: str | None = None, truth_yes: str | None = None, id_field: str | None = None) -> dict:
+             truth_field: str | None = None, truth_yes: str | None = None, id_field: str | None = None,
+             where: dict | None = None) -> dict:
     """Pair the item's rows with the layer's points and sort every point into found, missed, installed after the
     photo or not photographed. A found point was photographed by definition, so covered = found + missed and
-    found_share is at most 1; a point installed after its photo leaves both."""
-    layer = load_points(points, id_field)
+    found_share is at most 1; a point installed after its photo leaves both. `where` keeps only points whose
+    properties equal the given values, compared as text (Seattle's pole layer: IS_STREETLIGHT=YES)."""
+    layer = [p for p in load_points(points, id_field)
+             if all(str(p["props"].get(k)) == str(v) for k, v in (where or {}).items())]
     kept = [r for r in rows if r["issue_type"] == item_id and r.get("review_status") != "rejected"
             and not (inventory and row_answer(r) == "no")]
     located = [f for f in frames if f.get("lat") is not None and f.get("lng") is not None]
@@ -237,7 +240,8 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
            "missed_covered": missed, "not_photographed": not_photographed, "installed_after_photo": after,
            "params": {"inventory": inventory, "fov": fov, "max_m": max_m, "max_deg": max_deg,
                       "max_m_no_dir": max_m_no_dir, "cover_m": cover_m, "id_field": id_field,
-                      "installed_field": installed_field, "truth_field": truth_field, "truth_yes": truth_yes}}
+                      "installed_field": installed_field, "truth_field": truth_field, "truth_yes": truth_yes,
+                      "where": dict(where or {})}}
     if truth_field:
         out.update(_agreement(matched))
     return out
@@ -277,6 +281,17 @@ def to_markdown(r: dict) -> str:
     return "\n".join(lines).rstrip()
 
 
+def parse_where(pairs: list[str]) -> dict:
+    """["KEY=VALUE", ...] -> {KEY: VALUE}; raises ValueError on a pair without "="."""
+    out = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise ValueError(f"--where wants KEY=VALUE, got {pair!r}")
+        out[key] = value
+    return out
+
+
 def main(argv: list[str] | None = None) -> Path:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", required=True)
@@ -292,9 +307,15 @@ def main(argv: list[str] | None = None) -> Path:
     ap.add_argument("--max-m", type=float, default=MAX_M)
     ap.add_argument("--max-deg", type=float, default=MAX_DEG)
     ap.add_argument("--cover-m", type=float, default=COVER_M)
+    ap.add_argument("--where", action="append", default=[], metavar="KEY=VALUE",
+                    help="keep only city points with this property value (repeatable, all must match)")
     args = ap.parse_args(argv)
     if bool(args.truth_field) != bool(args.truth_yes):
         ap.error("--truth-field and --truth-yes go together")
+    try:
+        where = parse_where(args.where)
+    except ValueError as exc:
+        ap.error(str(exc))
     layer = json.loads(Path(args.layer).read_text(encoding="utf-8"))
     run_dir = config.run_dir(args.run)
     conn = open_ro(run_dir / "threshold.db")
@@ -306,7 +327,7 @@ def main(argv: list[str] | None = None) -> Path:
               **evaluate(data["issues"], data["frames"], layer, args.item, inventory=args.inventory, fov=args.fov,
                          max_m=args.max_m, max_deg=args.max_deg, cover_m=args.cover_m,
                          installed_field=args.installed_field, truth_field=args.truth_field,
-                         truth_yes=args.truth_yes, id_field=args.id_field)}
+                         truth_yes=args.truth_yes, id_field=args.id_field, where=where)}
     out = run_dir / f"city_{args.item}_scan{args.scan}.json"
     out.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     print(to_markdown(result))
