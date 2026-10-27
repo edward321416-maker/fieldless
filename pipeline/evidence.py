@@ -46,19 +46,21 @@ def blur(img: np.ndarray, segs: list[Seg]) -> np.ndarray:
 def make_evidence(api, photo: Path, frame: dict, dst: Path) -> dict:
     """Blur people and plates in photo, save it to dst with its long side at most MAX_SIDE, and return the evidence
     record. A failed blur request raises, so an unblurred photo is never stored."""
-    segs: list[Seg] = []
-    for concept in BLUR_CONCEPTS:
-        segs += confident(parse(api.sam_image(concept, photo), video=False), BLUR_CONF)
+    image_id, creator, captured_at = frame["image_id"], frame["creator"], frame["captured_at"]
     img = cv2.imread(str(photo))
     if img is None:
         raise ValueError(f"cannot read {photo}")
+    segs: list[Seg] = []
+    for concept in BLUR_CONCEPTS:
+        segs += confident(parse(api.sam_image(concept, photo), video=False), BLUR_CONF)
     out = blur(img, segs)
     scale = MAX_SIDE / max(out.shape[:2])
     if scale < 1:
         out = cv2.resize(out, (round(out.shape[1] * scale), round(out.shape[0] * scale)),
                          interpolation=cv2.INTER_AREA)
     dst.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(dst), out, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-    return {"image": dst.name, "image_id": frame["image_id"], "creator": frame["creator"],
-            "captured_at": frame["captured_at"], "link": mapillary_link(frame["image_id"]), "license": LICENSE,
+    if not cv2.imwrite(str(dst), out, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]):
+        raise RuntimeError(f"could not write {dst}")
+    return {"image": dst.name, "image_id": image_id, "creator": creator,
+            "captured_at": captured_at, "link": mapillary_link(image_id), "license": LICENSE,
             "blurred_regions": len(segs)}

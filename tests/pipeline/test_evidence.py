@@ -22,7 +22,8 @@ def test_blur_changes_only_the_grown_region():
 
 def test_make_evidence_blurs_saves_small_and_attributes(tmp_path):
     photo = tmp_path / "p.jpg"
-    cv2.imwrite(str(photo), noisy(2000, 1000))
+    src = noisy(2000, 1000)
+    cv2.imwrite(str(photo), src)
     person = text([line(0, [record("0", 100, 100, 140, 180, 2000, 1000, 0.4)])])
     api = FakeApi(sam=lambda prompt, media: person if prompt == "person" else "")
     frame = {"image_id": "123", "creator": "filipb", "captured_at": "2025-09-24T07:21:37Z"}
@@ -32,6 +33,20 @@ def test_make_evidence_blurs_saves_small_and_attributes(tmp_path):
                        "license": "CC BY-SA 4.0", "blurred_regions": 1}
     assert cv2.imread(str(tmp_path / "out" / "e.jpg")).shape[:2] == (800, 1600)
     assert [c[1] for c in api.calls] == ["person", "license plate"]
+    # the person region is blurred in the saved photo, not just downscaled
+    saved = cv2.imread(str(tmp_path / "out" / "e.jpg")).astype(float)
+    plain = cv2.resize(src, (1600, 800), interpolation=cv2.INTER_AREA).astype(float)
+    assert saved[90:130, 85:105].std() < plain[90:130, 85:105].std() / 2
+
+
+def test_an_unreadable_photo_raises_before_any_sam_call(tmp_path):
+    photo = tmp_path / "bad.jpg"
+    photo.write_bytes(b"not a jpeg")
+    api = FakeApi(sam=lambda prompt, media: "")
+    with pytest.raises(ValueError):
+        evidence.make_evidence(api, photo, {"image_id": "1", "creator": "c", "captured_at": "t"},
+                               tmp_path / "e.jpg")
+    assert api.calls == []
 
 
 def test_a_failed_blur_request_stores_nothing(tmp_path):
