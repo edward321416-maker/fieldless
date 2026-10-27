@@ -136,6 +136,18 @@ ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a p
 label_yes = "Utility or streetlight pole"
 ```
 
+### Export a survey
+
+```bash
+python -m assist.report --run RUN --scan SCAN_ID [--area "Capitol Hill"] [--narrate]
+```
+
+This writes `report.md`, `report.html`, `survey_scan<id>.geojson` and one CSV per survey item into
+`<run>/report_scan<id>/`. Every finding sits at its photo's location with the photo's creator, Mapillary link and
+licence; rows a person rejected are left out. `--narrate` adds a short Muse Spark summary written only from the
+report's counts (code drops it if it names an unknown item or a number the counts do not hold); without it no API key
+is needed.
+
 ### Public demo (static)
 
 The public demo is a static site: the web app plus the server's answers for a few surveys already run, read-only. `deploy/static_site.py` asks the real server app for every answer, so the demo shows what the live server shows.
