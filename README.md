@@ -128,12 +128,12 @@ default from `target`:
 
 ```toml
 [[check]]
-id = "streetlight_pole"
+id = "utility_pole"
 inventory = true
-find = "utility pole"
-target = "streetlight pole"
-ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a streetlight pole, with a lamp head or light fixture on it? Plain utility poles without a light, sign posts and trees are not; for those, set visible to false. If the top of the pole is cut off or too far away to see a light, answer unclear."
-label_yes = "Streetlight pole"
+find = "street light pole"
+target = "utility or streetlight pole"
+ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a pole for overhead lines or street lighting: a wooden or metal utility pole, a streetlight pole, or a traffic-signal pole with a light arm? Answer no for a tree, a sign post, a parking meter, a flagpole or a pole on private land. If the pole is too far away or mostly hidden to tell, answer unclear."
+label_yes = "Utility or streetlight pole"
 ```
 
 ### Public demo (static)

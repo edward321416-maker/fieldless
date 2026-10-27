@@ -23,12 +23,12 @@ label_unclear = "Curb ramp: detectable warning unclear"
 # Street assets (inventory): every confirmed object is a point on the map, compared with the city's own inventory.
 
 [[check]]
-id = "streetlight_pole"
+id = "utility_pole"
 inventory = true
-find = "utility pole"
-target = "streetlight pole"
-ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a streetlight pole, with a lamp head or light fixture on it? Answer no for a plain utility pole without a light, a sign post or a tree. If the top of the pole is cut off or too far away to see whether it has a light, answer unclear."
-label_yes = "Streetlight pole"
+find = "street light pole"
+target = "utility or streetlight pole"
+ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a pole for overhead lines or street lighting: a wooden or metal utility pole, a streetlight pole, or a traffic-signal pole with a light arm? Answer no for a tree, a sign post, a parking meter, a flagpole or a pole on private land. If the pole is too far away or mostly hidden to tell, answer unclear."
+label_yes = "Utility or streetlight pole"
 
 [[check]]
 id = "street_tree"
