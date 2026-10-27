@@ -73,7 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.preview:
         if not args.bbox:
             parser.error("--preview needs --bbox")
-        preview = collect.preview(args.bbox, config.photo_budget(args.max_photos))
+        checks = len(survey_items.load(args.standard or survey_items.standard_for(args.bbox)).checks)
+        budget = config.photo_budget(args.max_photos, checks=checks, cap_usd=args.cap_usd or config.SCAN_COST_CAP_USD)
+        preview = collect.preview(args.bbox, budget, checks=checks)
         print(json.dumps(preview, ensure_ascii=False, indent=1))
         return 0
     if (args.bbox is None) == (args.resume is None):

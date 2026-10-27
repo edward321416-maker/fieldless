@@ -93,7 +93,8 @@ def meter_for(conn, scan: dict, scan_cap_usd: float | None = None) -> CostMeter:
 
 
 def stage_collect(s: Scan) -> None:
-    frames = collect.collect(tuple(s.bbox), s.max_photos)
+    budget = config.photo_budget(s.max_photos, checks=len(s.standard.checks), cap_usd=s.api.meter.cap_usd)
+    frames = collect.collect(tuple(s.bbox), budget)
     if not frames:
         raise NoPhotos("no recent pedestrian photos in this area")
     db.clear_rows(s.conn, s.scan_id, "frame")  # a resumed collect starts clean

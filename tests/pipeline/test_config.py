@@ -57,3 +57,17 @@ def test_photo_budget_keeps_a_scan_inside_its_cost_cap():
     assert budget <= config.MAX_PHOTOS_PER_SCAN
     assert budget * config.EST_USD_PER_100_PHOTOS / 100 <= config.SCAN_COST_CAP_USD * 0.9 + 1e-9
     assert config.photo_budget(50) == 50 and config.photo_budget(0) == 1
+
+
+def test_each_photo_check_adds_to_the_estimate_and_shrinks_the_budget():
+    assert config.est_usd_per_100_photos() == config.EST_USD_PER_100_PHOTOS
+    five = config.est_usd_per_100_photos(5)
+    assert five == pytest.approx(config.EST_USD_PER_100_PHOTOS + 5 * config.EST_USD_PER_100_PHOTOS_PER_CHECK)
+    budget = config.photo_budget(999, checks=5)
+    assert budget < config.photo_budget(999)
+    assert budget * five / 100 <= config.SCAN_COST_CAP_USD * 0.9 + 1e-9
+
+
+def test_a_larger_cap_pays_for_more_photos_up_to_the_scan_limit():
+    assert config.photo_budget(999, checks=5, cap_usd=6.0) > config.photo_budget(999, checks=5)
+    assert config.photo_budget(999, checks=5, cap_usd=1000.0) == config.MAX_PHOTOS_PER_SCAN

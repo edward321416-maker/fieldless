@@ -41,14 +41,24 @@ SPARK_IMAGE_ESTIMATE_USD = 0.02
 MAX_PHOTOS_PER_SCAN = 400
 SCAN_COST_CAP_USD = 3.0
 DAILY_COST_CAP_USD = 10.0
-EST_USD_PER_100_PHOTOS = 0.93  # measured 2026-10-27/28: Seongsu $0.91, Myeongdong $0.93, Seattle (US, with checks) $0.83 per 100 photos; the highest is used
+# Cost per 100 photos, measured 2026-10-27/28. The stages every scan runs: Seongsu $0.91, Myeongdong $0.93, Seattle
+# $0.56 (the highest is used). Each photo check of a standard adds SAM on every 2nd photo, Spark on each pick and the
+# blur of its evidence: Seattle scan 3, curb ramps $0.27, street assets $0.32 each. A US scan with five checks cost
+# $2.09 per 100 photos; this estimate says $2.48, erring high so a scan stays inside its cap.
+EST_USD_PER_100_PHOTOS = 0.93
+EST_USD_PER_100_PHOTOS_PER_CHECK = 0.31
 PARALLEL_REQUESTS = 6
 
 
-def photo_budget(max_photos: int = MAX_PHOTOS_PER_SCAN) -> int:
-    """Photos a scan may take: spec 13's 400 at most, and no more than the per-scan cost cap pays for at the measured
-    cost per photo, with a 10% margin (about 290 at $0.93 per 100 photos and a $3 cap)."""
-    affordable = int(SCAN_COST_CAP_USD / EST_USD_PER_100_PHOTOS * 100 * 0.9)
+def est_usd_per_100_photos(checks: int = 0) -> float:
+    return EST_USD_PER_100_PHOTOS + checks * EST_USD_PER_100_PHOTOS_PER_CHECK
+
+
+def photo_budget(max_photos: int = MAX_PHOTOS_PER_SCAN, checks: int = 0, cap_usd: float = SCAN_COST_CAP_USD) -> int:
+    """Photos a scan may take: spec 13's 400 at most, and no more than the cost cap pays for at the estimated cost per
+    photo of a standard with this many checks, with a 10% margin (about 290 with no checks and a $3 cap, 108 with
+    five)."""
+    affordable = int(cap_usd / est_usd_per_100_photos(checks) * 100 * 0.9)
     return max(1, min(max_photos, MAX_PHOTOS_PER_SCAN, affordable))
 
 

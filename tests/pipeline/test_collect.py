@@ -60,6 +60,8 @@ def test_preview_counts_without_downloading(monkeypatch):
     assert p["photos"] == 20 and p["sequences"] == 1
     assert p["captured_from"] == "2025-01-01T00:00:00Z" and p["captured_to"] == "2025-01-01T00:00:19Z"
     assert p["est_cost_usd"] == pytest.approx(0.2 * config.EST_USD_PER_100_PHOTOS, abs=0.01)
+    with_checks = collect.preview((126.9, 37.4, 127.1, 37.6), max_photos=400, checks=5)
+    assert with_checks["est_cost_usd"] == pytest.approx(0.2 * config.est_usd_per_100_photos(5), abs=0.01)
 
 
 def test_fetch_photo_uses_the_cache_and_asks_for_a_fresh_url_once(monkeypatch):

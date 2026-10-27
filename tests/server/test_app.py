@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from pipeline import config, db
+from pipeline import config, db, survey_items
 from server import limits
 from server.app import create_app
 from server.settings import Settings
@@ -30,7 +30,7 @@ def make(tmp_path):
     def build(**overrides):
         settings = Settings(**{"static_dir": tmp_path / "no-web", **overrides})
         worker = FakeWorker()
-        app = create_app(settings, worker=worker, preview=lambda bbox, max_photos: PREVIEW)
+        app = create_app(settings, worker=worker, preview=lambda bbox, max_photos, checks=0: PREVIEW)
         return TestClient(app), worker
     return build
 
@@ -85,7 +85,7 @@ def test_preview_checks_the_area(make):
 def test_a_failed_preview_is_a_502_with_a_message(tmp_path):
     from pipeline.mapillary import MapillaryError
 
-    def boom(bbox, max_photos):
+    def boom(bbox, max_photos, checks=0):
         raise MapillaryError("Mapillary HTTP 500 for /images: split depth")
 
     client = TestClient(create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(), preview=boom))
@@ -271,12 +271,26 @@ def test_the_dataset_store_restores_at_start_and_saves_after_a_review(tmp_path):
     _, _, sill, _, broken = seed()
     store = FakeStore()
     app = create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(),
-                     preview=lambda bbox, max_photos: PREVIEW, store=store)
+                     preview=lambda bbox, max_photos, checks=0: PREVIEW, store=store)
     with TestClient(app) as client:
         assert store.restored == 1
         client.post(f"/api/entrances/{sill}/review", json={"action": "correct", "seconds": 1, "step_count": 0})
         client.post(f"/api/issues/{broken}/review", json={"action": "confirm", "seconds": 1})
     assert store.saves == 2
+
+
+def test_a_preview_is_priced_and_budgeted_for_the_checks_of_its_areas_standard(tmp_path):
+    seen = []
+
+    def fake(bbox, max_photos, checks=0):
+        seen.append((max_photos, checks))
+        return PREVIEW
+
+    client = TestClient(create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(), preview=fake))
+    client.post("/api/preview", json={"bbox": [-122.3230, 47.6130, -122.3170, 47.6175]})
+    client.post("/api/preview", json={"bbox": BBOX})
+    us = len(survey_items.load("US").checks)
+    assert seen == [(config.photo_budget(checks=us), us), (config.photo_budget(), 0)]
 
 
 def test_a_new_scan_gets_the_standard_of_its_area(make):

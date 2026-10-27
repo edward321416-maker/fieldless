@@ -5,8 +5,20 @@ import pytest
 from pipeline import config, db, run_scan
 
 
+def test_preview_is_priced_for_the_standard_and_the_given_cap(monkeypatch, capsys):
+    seen = []
+    monkeypatch.setattr(run_scan.collect, "preview",
+                        lambda bbox, max_photos, checks=0: seen.append((max_photos, checks)) or {"photos": 1})
+    assert run_scan.main(["--preview", "--bbox", "-122.323,47.613,-122.317,47.6175", "--cap-usd", "6"]) == 0
+    assert run_scan.main(["--preview", "--bbox", "-122.323,47.613,-122.317,47.6175", "--standard", "KR"]) == 0
+    us = len(run_scan.survey_items.load("US").checks)
+    assert seen == [(run_scan.config.photo_budget(400, checks=us, cap_usd=6.0), us),
+                    (run_scan.config.photo_budget(400), 0)]
+
+
 def test_preview_prints_the_estimate_without_spending(monkeypatch, capsys):
-    monkeypatch.setattr(run_scan.collect, "preview", lambda bbox, max_photos: {"photos": 12, "est_cost_usd": 0.07})
+    monkeypatch.setattr(run_scan.collect, "preview",
+                        lambda bbox, max_photos, checks=0: {"photos": 12, "est_cost_usd": 0.07})
     assert run_scan.main(["--preview", "--bbox", "126.98,37.56,126.99,37.565"]) == 0
     assert json.loads(capsys.readouterr().out)["photos"] == 12
 

@@ -141,7 +141,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     def post_preview(body: BboxBody):
         bbox = limits.check_bbox(body.bbox, settings.max_bbox_deg2)
         try:
-            return preview(bbox, config.photo_budget())
+            checks = len(survey_items.load(survey_items.standard_for(bbox)).checks)
+            return preview(bbox, config.photo_budget(checks=checks), checks=checks)
         except (mapillary.MapillaryError, httpx.HTTPError, ValueError):  # ValueError: a reply that is not JSON
             log.exception("preview failed")
             raise HTTPException(502, "Mapillary did not answer. Try again in a minute.") from None

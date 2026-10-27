@@ -4,7 +4,7 @@ import json
 import pytest
 
 from pipeline import collect, config, db, entrance_detect, runner, sidewalk, survey_items
-from pipeline.cost import CostCapReached
+from pipeline.cost import CostCapReached, CostMeter
 from tests.pipeline.fakes import FakeApi, synthetic_photo
 from tests.pipeline.sam_text import line, record, text
 
@@ -524,9 +524,23 @@ def test_a_failed_sam_request_is_not_saved_and_is_asked_again(setup):
     assert sam_calls(api, {"curb cut"})[before:] == [("curb cut", "img4.jpg")]  # only the one that failed
 
 
+def test_collect_takes_only_the_photos_the_cap_pays_for_with_the_standards_checks(setup, monkeypatch):
+    _, _, make, _ = setup
+    asked = []
+    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos: asked.append(max_photos) or fake_frames())
+    api = FakeApi()
+    api.meter = CostMeter(cap_usd=3.0)
+    scan = make(api)
+    scan.standard = survey_items.load("US")
+    runner.stage_collect(scan)
+    assert asked == [config.photo_budget(scan.max_photos, checks=len(scan.standard.checks), cap_usd=3.0)]
+    assert asked[0] < config.photo_budget(scan.max_photos)
+
+
 def test_collecting_again_drops_the_saved_sam_areas(setup):
     _, _, make, _ = setup
     scan = make(FakeApi())
+    scan.standard = survey_items.load("KR")
     scan.state("find_curb_ramp_warning").write_text("{}", encoding="utf-8")
     runner.stage_collect(scan)
     assert not scan.state("find_curb_ramp_warning").exists()
