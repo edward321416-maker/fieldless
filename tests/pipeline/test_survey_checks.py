@@ -1,6 +1,8 @@
+import dataclasses
+
 import pytest
 
-from pipeline import survey_checks, survey_items
+from pipeline import geo, survey_checks, survey_items
 from pipeline.cost import CostCapReached
 from tests.pipeline.fakes import FakeApi, synthetic_photo
 from tests.pipeline.sam_text import line, record, text
@@ -154,3 +156,78 @@ def test_run_check_drops_inventory_picks_that_are_not_the_target(tmp_path):
     assert [(r["frame_idx"], r["object_label"], r["review_status"]) for r in rows] == [(2, "yes", "auto")]
     assert missing == {"find": [], "ask": [], "not_target": [8]}
     assert rows[0]["issue_type"] == "streetlight" and set(rows[0]["model_outputs"]) == {"check", "find"}
+
+
+def walk_m(piece, by_idx):
+    return sum(geo.haversine_m(by_idx[a]["lat"], by_idx[a]["lng"], by_idx[b]["lat"], by_idx[b]["lng"])
+               for a, b in zip(piece, piece[1:]))
+
+
+def test_split_by_distance_cuts_a_run_into_pieces_of_at_most_that_many_metres():
+    by_idx = frames(9, step_m=5.0)
+    # photos [0, 2, 4, 6, 8] are 10 m apart: 0->2 walks 10, 2->4 would make 20 > 15, so 4 starts a piece and the
+    # walk starts again from it (4->6 is 10, 6->8 would make 20 > 15).
+    pieces = survey_checks.split_by_distance([0, 2, 4, 6, 8], by_idx, 15.0)
+    assert pieces == [[0, 2], [4, 6], [8]]
+    assert [i for piece in pieces for i in piece] == [0, 2, 4, 6, 8]  # nothing lost, in order
+    for meters in (4.0, 12.0, 15.0, 21.0, 40.0, 100.0):
+        for piece in survey_checks.split_by_distance(list(range(9)), by_idx, meters):
+            assert len(piece) == 1 or walk_m(piece, by_idx) <= meters
+    assert survey_checks.split_by_distance([0, 2, 4, 6, 8], by_idx, 4.0) == [[0], [2], [4], [6], [8]]  # gaps > meters
+    assert survey_checks.split_by_distance([0, 2, 4, 6, 8], by_idx, 500.0) == [[0, 2, 4, 6, 8]]
+    assert survey_checks.split_by_distance([3], by_idx, 15.0) == [[3]]
+
+
+def run_light(tmp_path, check, by_idx, idxs):
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+    api = FakeApi(spark=lambda schema_name, parts: YES, sam=lambda p, m: found)
+    rows, _ = survey_checks.run_check(api, check, {0: idxs}, photos, by_idx, workers=1)
+    return rows
+
+
+def test_group_m_gives_one_long_run_of_poles_more_than_one_row(tmp_path):
+    by_idx = frames(17, step_m=5.0)  # one SAM run over photos 0-16, sampled every 2: 10 m between sampled photos
+    plain = run_light(tmp_path, LIGHT, by_idx, list(range(17)))
+    assert len(plain) == 1 and plain[0]["model_outputs"]["find"]["group_idxs"] == list(range(0, 17, 2))
+    rows = run_light(tmp_path, dataclasses.replace(LIGHT, group_m=15.0), by_idx, list(range(17)))
+    assert [r["model_outputs"]["find"]["group_idxs"] for r in rows] == [[0, 2], [4, 6], [8, 10], [12, 14], [16]]
+    assert [r["frame_idx"] for r in rows] == [0, 4, 8, 12, 16]  # the earlier photo on equal areas
+    assert [(r["frame_start"], r["frame_end"]) for r in rows] == [(0, 2), (4, 6), (8, 10), (12, 14), (16, 16)]
+    assert {r["issue_type"] for r in rows} == {"streetlight"}
+
+
+def test_group_m_pieces_whose_best_photos_are_near_each_other_still_merge(tmp_path):
+    by_idx = frames(9, step_m=3.0)  # sampled photos 6 m apart; group_m 10 cuts after every second one
+    check = dataclasses.replace(LIGHT, group_m=10.0)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    sizes = {"2.jpg": 60, "4.jpg": 40, "6.jpg": 20, "8.jpg": 10, "0.jpg": 10}
+
+    def sam(prompt, media):
+        return text([line(0, [record("0", 0, 0, sizes[media.name], sizes[media.name], 160, 120, 0.9)])])
+
+    rows, _ = survey_checks.run_check(FakeApi(spark=lambda s, p: YES, sam=sam), check, {0: list(range(9))}, photos,
+                                      by_idx, workers=1)
+    # pieces [0,2] [4,6] [8]: best photos 2, 4 (6 m apart, so 4 is the same pole as 2) and 8 (18 m from photo 2)
+    assert [r["frame_idx"] for r in rows] == [2, 8]
+
+
+def test_known_areas_are_not_asked_again_and_the_new_ones_are_added(tmp_path):
+    by_idx = frames(9)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+
+    def sam(prompt, media):
+        if media.name == "6.jpg":
+            raise RuntimeError("timeout")  # this one fails: not saved, asked again next time
+        return found if media.name in ("2.jpg", "4.jpg") else ""
+
+    api = FakeApi(spark=lambda s, p: YES, sam=sam)
+    known = {0: 0, 2: 1600}  # photo 2 was measured before; the new ones must not replace it
+    rows, missing = survey_checks.run_check(api, LIGHT, {0: list(range(9))}, photos, by_idx, 1, known=known)
+    asked = [c[2] for c in api.calls if c[0] == "sam_image"]
+    assert asked == ["4.jpg", "6.jpg", "8.jpg"]  # not the sampled photos 0 and 2, which were known
+    assert known == {0: 0, 2: 1600, 4: 1600, 8: 0}  # 6 failed: not saved
+    assert missing["find"] == [6] and [r["frame_idx"] for r in rows] == [2]  # photos 2 and 4 make one run, 2 is earlier
+    assert survey_checks.run_check(FakeApi(spark=lambda s, p: YES, sam=sam), LIGHT, {0: list(range(9))}, photos,
+                                   by_idx, 1)[1]["find"] == [6]  # without `known`: everything is asked as before

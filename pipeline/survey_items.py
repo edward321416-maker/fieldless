@@ -42,6 +42,7 @@ class Check:
     icon_yes: str = ""
     icon_no: str = ""
     inventory: bool = False  # every confirmed object is an asset point; there is no defect answer
+    group_m: float | None = None  # metres of street one row may cover; None: one row per run of photos
 
     def label(self, answer: str | None) -> tuple[str, str]:
         """(icon, text) for an answer; anything but yes or no is unclear."""
@@ -100,10 +101,15 @@ def _check(table: dict, where: str) -> Check:
         defect_icon, ok_icon = "✖", "✓"
         icon_yes = table.get("icon_yes") or (defect_icon if report == "yes" else ok_icon)
         icon_no = table.get("icon_no") or (defect_icon if report == "no" else ok_icon)
+    group_m = table.get("group_m")
+    if group_m is not None:
+        if isinstance(group_m, bool) or not isinstance(group_m, (int, float)) or group_m <= 0:
+            raise ValueError(f"{where}: group_m must be a positive number of metres")
+        group_m = float(group_m)
     unclear = table.get("label_unclear") or f"{target[:1].upper()}{target[1:]}: unclear from the photo"
     return Check(id=check_id, find=find, target=target, ask=_need(table, "ask", where), report_when=report,
                  label_yes=label_yes, label_no=label_no, label_unclear=unclear, icon_yes=icon_yes, icon_no=icon_no,
-                 inventory=inventory)
+                 inventory=inventory, group_m=group_m)
 
 
 def parse(text: str, where: str) -> Standard:

@@ -136,6 +136,8 @@ ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a p
 label_yes = "Utility or streetlight pole"
 ```
 
+`group_m = 15` gives things that stand in rows (poles, trees) one row per 15 m of walk instead of one per run of photos.
+
 ### Export a survey
 
 ```bash

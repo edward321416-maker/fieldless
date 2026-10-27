@@ -21,6 +21,7 @@ label_no = "Curb ramp without detectable warning"
 label_unclear = "Curb ramp: detectable warning unclear"
 
 # Street assets (inventory): every confirmed object is a point on the map, compared with the city's own inventory.
+# group_m: things that stand in rows get one row per 15 m of walk, not one per run of photos.
 
 [[check]]
 id = "utility_pole"
@@ -29,6 +30,7 @@ find = "street light pole"
 target = "utility or streetlight pole"
 ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a pole for overhead lines or street lighting: a wooden or metal utility pole, a streetlight pole, or a traffic-signal pole with a light arm? Answer no for a tree, a sign post, a parking meter, a flagpole or a pole on private land. If the pole is too far away or mostly hidden to tell, answer unclear."
 label_yes = "Utility or streetlight pole"
+group_m = 15
 
 [[check]]
 id = "street_tree"
@@ -37,6 +39,7 @@ find = "street tree"
 target = "street tree"
 ask = "Is this tree planted in the sidewalk or in the planting strip between the sidewalk and the street? Answer no for a tree in a private yard, behind a fence or clearly on private land. If you cannot tell where it is planted, answer unclear."
 label_yes = "Street tree"
+group_m = 15
 
 [[check]]
 id = "litter_can"
@@ -45,6 +48,7 @@ find = "trash can"
 target = "public litter can"
 ask = "Is this a public litter or recycling can on the sidewalk (a fixed city bin)? Answer no for a private wheeled bin put out for collection. If you cannot tell, answer unclear."
 label_yes = "Public litter can"
+group_m = 15
 
 # Written by the Muse Spark item agent (assist.run_inventory) from the city's pay-station list and tested on
 # assist/testsets/seattle_paystations.json: SAM 8/12 (0/6 on negatives), Spark confirmed 8/8 (2026-10-28).
@@ -55,3 +59,4 @@ find = "grey parking kiosk"
 target = "parking pay station"
 ask = "A parking pay station is a free-standing grey metal kiosk on the sidewalk, waist to chest high with a screen and blue P sign on top, not a single-post parking meter, transit ticket machine, or green utility cabinet. Does this photo show a parking pay station? Answer yes if that kiosk is visible even if partly obscured, no only if it clearly shows only look-alikes. If it is too far away or too small to see, answer unclear."
 label_yes = "Parking pay station"
+group_m = 15

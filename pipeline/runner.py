@@ -97,6 +97,8 @@ def stage_collect(s: Scan) -> None:
     if not frames:
         raise NoPhotos("no recent pedestrian photos in this area")
     db.clear_rows(s.conn, s.scan_id, "frame")  # a resumed collect starts clean
+    for old in s.work.glob("find_*.json"):
+        old.unlink()  # SAM areas saved for the earlier photos
     db.add_frames(s.conn, s.scan_id, frames)
     times = sorted(f["captured_at"] for f in frames)
     db.update_scan(s.conn, s.scan_id, image_count=len(frames), captured_from=times[0], captured_to=times[-1],
@@ -212,6 +214,26 @@ def stage_sidewalk(s: Scan) -> None:
     s.state("tactile").write_text(json.dumps(flags), encoding="utf-8")
 
 
+def _run_check(s: Scan, check, clips, photos, by_idx) -> tuple[list[dict], dict]:
+    """survey_checks.run_check, reusing the SAM areas a rerun already paid for: state find_<id>.json keeps the areas
+    measured for the check's `find` phrase, and is ignored when the phrase has changed. Saved even when the run stops
+    part way (cost cap), so the next run only asks for the photos not yet measured."""
+    kept = s.state(f"find_{check.id}")
+    known: dict[int, int] = {}
+    if kept.exists():
+        try:
+            saved = json.loads(kept.read_text(encoding="utf-8"))
+            if saved.get("phrase") == check.find:
+                known = {int(i): a for i, a in saved["areas"].items()}
+        except (ValueError, KeyError, AttributeError):
+            known = {}  # a half-written file: measure again
+    try:
+        return survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers, known=known)
+    finally:
+        kept.write_text(json.dumps({"phrase": check.find, "areas": {str(i): a for i, a in known.items()}}),
+                        encoding="utf-8")
+
+
 def stage_defects(s: Scan) -> None:
     """KR: S7, missing tactile blocks and covers in the line, checked at the edges of tactile runs and on samples.
     Every standard: its checks (pipeline/survey_checks.py), one row per object found. With only_checks, just those
@@ -237,7 +259,7 @@ def stage_defects(s: Scan) -> None:
     kept = s.state("checks_unavailable")
     unavailable: dict[str, dict] = json.loads(kept.read_text(encoding="utf-8")) if only and kept.exists() else {}
     for check in to_run:
-        rows, missing = survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers)
+        rows, missing = _run_check(s, check, clips, photos, by_idx)
         if s.second_opinion is not None:
             rows = second_opinion.apply(s.second_opinion, check, rows, photos, s.workers)
         unavailable[check.id] = missing

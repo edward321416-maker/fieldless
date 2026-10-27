@@ -1,7 +1,8 @@
 """Checks: survey items written as sentences (design docs/specs/2026-10-28-us-survey-items-design.md §4.3).
 
 SAM 3.1 looks for a check's `find` on every second photo of each walk. Sampled photos in a row that show it are one
-object, seen best where its mask is largest; sightings from different walks within MERGE_M are the same object.
+object, seen best where its mask is largest (a check with `group_m` cuts a long run into pieces of that many metres,
+one object each, for things that stand in rows); sightings from different walks within MERGE_M are the same object.
 Muse Spark answers the check's `ask` on that best photo. One sidewalk_issue row per object, in the format agreed
 with eval on 2026-10-28 (plan 4, Global Constraints)."""
 from pathlib import Path
@@ -43,8 +44,10 @@ def prompt(check: Check) -> str:
     return PROMPT.format(ask=check.ask, target=check.target)
 
 
-def find_areas(api, check: Check, idxs: list[int], photos: dict[int, Path], workers: int) -> dict[int, int | None]:
-    """Largest confident mask area of the check's `find` per photo: 0 when not found, None when the request failed."""
+def find_areas(api, check: Check, idxs: list[int], photos: dict[int, Path], workers: int,
+               known: dict[int, int] | None = None) -> dict[int, int | None]:
+    """Largest confident mask area of the check's `find` per photo: 0 when not found, None when the request failed.
+    Photos in `known` (areas measured earlier for this same `find`) are not asked again."""
     def one(idx):
         try:
             segs = confident(parse(api.sam_image(check.find, photos[idx]), video=False))
@@ -54,7 +57,10 @@ def find_areas(api, check: Check, idxs: list[int], photos: dict[int, Path], work
             return None
         return max((s.area for s in segs), default=0)
 
-    return dict(zip(idxs, run_parallel(one, idxs, workers)))
+    known = known or {}
+    todo = [i for i in idxs if i not in known]
+    fresh = dict(zip(todo, run_parallel(one, todo, workers)))
+    return {i: known[i] if i in known else fresh[i] for i in idxs}
 
 
 def groups(areas: dict[int, int | None], clip_idxs: list[int]) -> list[list[int]]:
@@ -71,6 +77,22 @@ def groups(areas: dict[int, int | None], clip_idxs: list[int]) -> list[list[int]
     if run:
         out.append(run)
     return out
+
+
+def split_by_distance(group: list[int], by_idx: dict[int, dict], meters: float) -> list[list[int]]:
+    """Cut a run of photos into pieces that each cover at most `meters` of the walk (measured photo to photo), so
+    things that stand in rows (poles, trees) get one row each instead of one row per run."""
+    pieces: list[list[int]] = [[group[0]]]
+    walked = 0.0
+    for prev, idx in zip(group, group[1:]):
+        a, b = by_idx[prev], by_idx[idx]
+        walked += geo.haversine_m(a["lat"], a["lng"], b["lat"], b["lng"])
+        if walked > meters:
+            pieces.append([idx])
+            walked = 0.0
+        else:
+            pieces[-1].append(idx)
+    return pieces
 
 
 def best(group: list[int], areas: dict[int, int | None]) -> int:
@@ -109,17 +131,23 @@ def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
 
 
 def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, Path], by_idx: dict[int, dict],
-              workers: int, every: int = SAMPLE_EVERY) -> tuple[list[dict], dict]:
+              workers: int, every: int = SAMPLE_EVERY, known: dict[int, int] | None = None) -> tuple[list[dict], dict]:
     """Rows for one check over every walk, and what could not be analysed: {"find": [photo idx], "ask": [photo idx]}.
-    An inventory check also reports "not_target": the photos of picks Spark said are not the target (no row)."""
+    An inventory check also reports "not_target": the photos of picks Spark said are not the target (no row).
+    `known` holds the areas already measured for this check's `find` (photo idx -> area). Those photos are not asked
+    again, and every area measured now is added to it, clip by clip, so the caller can save it. A failed request is
+    not added; it is asked again next time."""
     picks: list[dict] = []
     failed_find: list[int] = []
     for clip_idxs in clips.values():
-        areas = find_areas(api, check, clip_idxs[::every], photos, workers)
+        areas = find_areas(api, check, clip_idxs[::every], photos, workers, known)
+        if known is not None:
+            known.update({i: a for i, a in areas.items() if a is not None})
         failed_find += [i for i, a in areas.items() if a is None]
         for group in groups(areas, clip_idxs):
-            idx = best(group, areas)
-            picks.append({"idx": idx, "area": areas[idx], "group": group})
+            for piece in (split_by_distance(group, by_idx, check.group_m) if check.group_m else [group]):
+                idx = best(piece, areas)
+                picks.append({"idx": idx, "area": areas[idx], "group": piece})
     picks = merge_near(picks, by_idx)
 
     def one(p):

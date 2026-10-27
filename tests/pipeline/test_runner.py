@@ -1,3 +1,4 @@
+import dataclasses
 import json
 
 import pytest
@@ -414,7 +415,8 @@ def test_rerunning_one_check_keeps_the_other_checks_rows_and_reviews(setup):
     assert (before["second"]["object_label"], after["second"]["object_label"]) == ("no", "yes")  # replaced
     assert after["second"]["evidence"]["image"] and after["first"]["evidence"] == before["first"]["evidence"]
     asked = {c[1] for c in api.calls if c[0] == "sam_image"}
-    assert "bench" in asked and "curb cut" not in asked  # the other check was not asked again
+    assert "bench" not in asked and "curb cut" not in asked  # SAM areas of both checks are reused from the first run
+    assert api.calls.count(("spark", "survey_check")) == 1  # only the rerun check's object was asked about again
     assert json.loads(again.state("checks_unavailable").read_text(encoding="utf-8")).keys() == {"first", "second"}
 
 
@@ -452,3 +454,79 @@ def test_a_second_model_that_disagrees_adds_the_models_disagree_reason(setup):
     (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
     assert ramp["review_reasons"] == ["possible_defect", "models_disagree"]
     assert ramp["model_outputs"]["second_opinion"]["agree"] is False
+
+
+def sam_calls(api, phrases):
+    return [c[1:] for c in api.calls if c[0] == "sam_image" and c[1] in phrases]
+
+
+def test_rerunning_the_defects_stage_does_not_ask_sam_again_unless_the_phrase_changed(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+
+    def sam_ramp(prompt, media):
+        return found if prompt == "curb cut" and media.name == "img2.jpg" else us_sam(prompt, media)
+
+    def spark_ramp(schema_name, parts):
+        return RAMP_NO if schema_name == "survey_check" else spark(schema_name, parts)
+
+    api = FakeApi(spark=spark_ramp, sam=sam_ramp)
+    standard = survey_items.load("US")
+    phrases = {c.find for c in standard.checks}
+    scan = make(api, us_scan)
+    scan.standard = standard
+    runner.run_scan(scan)
+    first = sam_calls(api, phrases)
+    assert ("curb cut", "img2.jpg") in first and len(first) == 3 * len(phrases)  # sampled photos 0, 2, 4 per check
+    saved = json.loads(scan.state("find_curb_ramp_warning").read_text(encoding="utf-8"))
+    assert saved == {"phrase": "curb cut", "areas": {"0": 0, "2": 1600, "4": 0}}
+
+    db.set_stage(conn, us_scan, "defects", "pending")
+    again = make(api, us_scan)
+    again.standard = standard
+    runner.run_scan(again)
+    assert sam_calls(api, phrases) == first  # the second run made no SAM request
+    (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
+    assert ramp["frame_idx"] == 2  # and the row is the same as the first run's
+
+    changed = dataclasses.replace(standard, checks=tuple(
+        dataclasses.replace(c, find="dropped kerb") if c.id == "curb_ramp_warning" else c for c in standard.checks))
+    db.set_stage(conn, us_scan, "defects", "pending")
+    third = make(api, us_scan)
+    third.standard = changed
+    runner.run_scan(third)
+    assert [c for c in sam_calls(api, {*phrases, "dropped kerb"}) if c not in first] == [
+        ("dropped kerb", "img0.jpg"), ("dropped kerb", "img2.jpg"), ("dropped kerb", "img4.jpg")]  # only the new phrase
+    assert json.loads(third.state("find_curb_ramp_warning").read_text(encoding="utf-8"))["phrase"] == "dropped kerb"
+
+
+def test_a_failed_sam_request_is_not_saved_and_is_asked_again(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+    broken = {"on": True}
+
+    def sam_ramp(prompt, media):
+        if prompt == "curb cut" and media.name == "img4.jpg" and broken["on"]:
+            raise RuntimeError("timeout")
+        return found if prompt == "curb cut" and media.name == "img2.jpg" else us_sam(prompt, media)
+
+    api = FakeApi(spark=lambda s, p: RAMP_NO if s == "survey_check" else spark(s, p), sam=sam_ramp)
+    scan = make(api, us_scan)
+    scan.standard = survey_items.load("US")
+    runner.run_scan(scan)
+    assert json.loads(scan.state("find_curb_ramp_warning").read_text(encoding="utf-8"))["areas"] == {"0": 0, "2": 1600}
+    before = len(sam_calls(api, {"curb cut"}))
+    broken["on"] = False
+    db.set_stage(conn, us_scan, "defects", "pending")
+    runner.run_scan(make(api, us_scan))
+    assert sam_calls(api, {"curb cut"})[before:] == [("curb cut", "img4.jpg")]  # only the one that failed
+
+
+def test_collecting_again_drops_the_saved_sam_areas(setup):
+    _, _, make, _ = setup
+    scan = make(FakeApi())
+    scan.state("find_curb_ramp_warning").write_text("{}", encoding="utf-8")
+    runner.stage_collect(scan)
+    assert not scan.state("find_curb_ramp_warning").exists()

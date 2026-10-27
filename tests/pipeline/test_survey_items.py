@@ -54,6 +54,16 @@ def test_parse_reads_the_path_and_the_checks():
     assert check.target == "curb ramp"
 
 
+def test_group_m_is_the_metres_of_street_one_row_may_cover():
+    assert survey_items.parse(US, "us.toml").checks[0].group_m is None
+    assert survey_items.parse(US + "group_m = 15", "us.toml").checks[0].group_m == 15.0
+    assert isinstance(survey_items.parse(US + "group_m = 15", "us.toml").checks[0].group_m, float)
+    assert survey_items.parse(US + "group_m = 7.5", "us.toml").checks[0].group_m == 7.5
+    for bad in ("0", "-3", '"x"', "true"):
+        with pytest.raises(ValueError, match="group_m must be a positive number of metres"):
+            survey_items.parse(US + f"group_m = {bad}", "us.toml")
+
+
 def test_a_check_without_target_uses_find_and_icons_follow_report_when():
     plain = US.replace('find = "curb ramp"', 'find = "curb cut"').replace('target = "curb ramp"', "")
     check = survey_items.parse(plain, "us.toml").checks[0]
