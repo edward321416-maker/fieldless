@@ -97,6 +97,15 @@ def test_a_wrong_shape_answer_marks_only_its_object(tmp_path):
     assert [(r["frame_idx"], r["object_label"]) for r in rows] == [(8, "yes")]
 
 
+
+def test_an_answer_without_confidence_still_makes_its_row(tmp_path):
+    by_idx = frames(3)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+    api = FakeApi(spark=lambda schema_name, parts: {"visible": True, "answer": "no"}, sam=lambda p, m: found)
+    (row,), missing = survey_checks.run_check(api, CHECK, {0: [0, 1, 2]}, photos, by_idx, workers=1)
+    assert row["object_label"] == "no" and row["confidence"] is None and missing["ask"] == []
+
 def test_a_failed_question_is_reported_and_the_cost_cap_stops_the_run(tmp_path):
     by_idx = frames(3)
     photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}

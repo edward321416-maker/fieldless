@@ -135,7 +135,7 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
         frame = by_idx[p["idx"]]
         rows.append({"issue_type": check.id, "object_label": current, "frame_start": min(p["group"]),
                      "frame_end": max(p["group"]), "frame_idx": p["idx"], "lat": frame["lat"], "lng": frame["lng"],
-                     "confidence": answer["confidence"], "review_status": review_status, "review_reasons": reasons,
+                     "confidence": answer.get("confidence"), "review_status": review_status, "review_reasons": reasons,
                      "model_outputs": {"check": answer, "find": {"phrase": check.find, "mask_area": p["area"],
                                                                  "group_idxs": p["group"]}},
                      "captured_at": frame["captured_at"]})
