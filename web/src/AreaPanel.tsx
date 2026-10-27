@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import { bboxTooLarge, bboxTooSmall } from "./bbox";
-import { dollars, stageState, yearsSpan } from "./format";
+import { dollars, isFinished, stageState, yearsSpan } from "./format";
 import type { Bbox, Preview, Scan } from "./types";
 
 interface Props {
@@ -16,6 +16,19 @@ interface Props {
 }
 
 const STATE_ICON: Record<string, string> = { done: "✓", running: "…", failed: "✕", stopped: "■", pending: "○" };
+
+function StageList({ scan }: { scan: Scan }) {
+  return (
+    <ol>
+      {stageState(scan).map((s) => (
+        <li key={s.name} className={`stage stage-${s.state}`}>
+          <span aria-hidden="true">{STATE_ICON[s.state] ?? "•"}</span> {s.label}
+          <span className="visually-hidden"> ({s.state})</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 export default function AreaPanel(props: Props) {
   const { bbox, maxDeg2 } = props;
@@ -103,15 +116,17 @@ export default function AreaPanel(props: Props) {
       )}
       {props.scan && (
         <div className="progress" aria-live="polite">
-          <h3>Survey {props.scan.id}: {props.scan.status.replace(/_/g, " ")}</h3>
-          <ol>
-            {stageState(props.scan).map((s) => (
-              <li key={s.name} className={`stage stage-${s.state}`}>
-                <span aria-hidden="true">{STATE_ICON[s.state] ?? "•"}</span> {s.label}
-                <span className="visually-hidden"> ({s.state})</span>
-              </li>
-            ))}
-          </ol>
+          {isFinished(props.scan) ? (
+            <details>
+              <summary>Survey {props.scan.id}: {props.scan.status.replace(/_/g, " ")}</summary>
+              <StageList scan={props.scan} />
+            </details>
+          ) : (
+            <>
+              <h3>Survey {props.scan.id}: {props.scan.status.replace(/_/g, " ")}</h3>
+              <StageList scan={props.scan} />
+            </>
+          )}
           {props.scan.error && <p className="error">{props.scan.error}</p>}
         </div>
       )}

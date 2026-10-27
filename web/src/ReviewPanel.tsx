@@ -8,16 +8,21 @@ import type { Entrance, Issue } from "./types";
 interface Props {
   entrances: Entrance[];
   issues: Issue[];
+  first?: Picked | null;
   onUpdated: (updated: Picked) => void;
   onClose: () => void;
 }
 
-export default function ReviewPanel({ entrances, issues, onUpdated, onClose }: Props) {
-  // Sidewalk items first: they are the main layer. Durable defects come first within them (server order).
-  const queue = useMemo<Picked[]>(() => [
-    ...issues.filter((i) => i.review_status === "needs_review").map((item) => ({ kind: "issue" as const, item })),
-    ...entrances.filter((e) => e.review_status === "needs_review").map((item) => ({ kind: "entrance" as const, item })),
-  ], [entrances, issues]);
+export default function ReviewPanel({ entrances, issues, first = null, onUpdated, onClose }: Props) {
+  // The item the surveyor picked comes first; then sidewalk items (durable first, server order), then entrances.
+  const queue = useMemo<Picked[]>(() => {
+    const all: Picked[] = [
+      ...issues.filter((i) => i.review_status === "needs_review").map((item) => ({ kind: "issue" as const, item })),
+      ...entrances.filter((e) => e.review_status === "needs_review").map((item) => ({ kind: "entrance" as const, item })),
+    ];
+    const head = first ? all.find((q) => q.kind === first.kind && q.item.id === first.item.id) : undefined;
+    return head ? [head, ...all.filter((q) => q !== head)] : all;
+  }, [entrances, issues, first]);
   const current = queue[0] ?? null;
   const shownAt = useRef(performance.now());
   const [steps, setSteps] = useState(0);
@@ -94,7 +99,7 @@ export default function ReviewPanel({ entrances, issues, onUpdated, onClose }: P
             <legend>Or fix the step count</legend>
             <label className="field">
               Steps
-              <input type="number" min={0} max={50} value={steps} onChange={(e) => setSteps(Number(e.target.value))} />
+              <input type="number" min={0} max={50} value={steps} onChange={(e) => setSteps(Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))))} />
             </label>
             <button type="button" disabled={busy}
               onClick={() => decide(async (seconds) => ({

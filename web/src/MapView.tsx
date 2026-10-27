@@ -1,10 +1,17 @@
 import * as maplibregl from "maplibre-gl"; // v6 has no default export
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
 import { useEffect, useRef } from "react";
 import { bboxFromCorners, bboxPolygon, viewToBbox } from "./bbox";
 import { labelText } from "./format";
 import type { Bbox, Entrance, Issue } from "./types";
+
+// MapLibre 6 looks for its worker next to its own module, which bundling moves; point it at the emitted file.
+maplibregl.setWorkerUrl(workerUrl);
+
+// Street photos credit on the map itself (Mapillary terms 11), next to MapLibre's OSM and OpenFreeMap credits.
+const MAPILLARY_CREDIT = '<a href="https://www.mapillary.com" target="_blank" rel="noreferrer">Street photos: Mapillary</a>';
 
 export type Picked = { kind: "entrance"; item: Entrance } | { kind: "issue"; item: Issue };
 
@@ -44,7 +51,10 @@ export default function MapView(props: Props) {
   latest.current = props;
 
   useEffect(() => {
-    const map = new maplibregl.Map({ container: container.current!, style: STYLE_URL, center: START, zoom: 17 });
+    const map = new maplibregl.Map({
+      container: container.current!, style: STYLE_URL, center: START, zoom: 17,
+      attributionControl: { customAttribution: MAPILLARY_CREDIT },
+    });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     map.on("load", () => {
       map.addSource("area", { type: "geojson", data: areaData(latest.current.bbox) });

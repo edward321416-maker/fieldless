@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import AreaPanel from "./AreaPanel";
 import Attribution from "./Attribution";
 import EvidenceCard from "./EvidenceCard";
@@ -33,13 +33,14 @@ export default function App() {
   const [fitTo, setFitTo] = useState<Bbox | null>(null);
   const [error, setError] = useState<string | null>(null);
   const getView = useRef<(() => Bbox) | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.config().then(setConfig).catch((e: Error) => setError(e.message));
     api.demo().then(setDemos).catch(() => setDemos([]));
   }, []);
 
-  // Poll the survey until it finishes, then load its results.
+  // Poll the survey until it finishes. A failed poll is retried; only a missing survey (404) stops it.
   useEffect(() => {
     if (scanId === null) return;
     window.location.hash = `scan=${scanId}`;
@@ -49,10 +50,13 @@ export default function App() {
       try {
         const s = await api.scan(scanId);
         if (stopped) return;
+        setError(null);
         setScan(s);
         if (!isFinished(s)) timer = window.setTimeout(tick, POLL_MS);
       } catch (e) {
-        if (!stopped) setError((e as Error).message);
+        if (stopped) return;
+        setError((e as Error).message);
+        if (!(e instanceof ApiError && e.status === 404)) timer = window.setTimeout(tick, POLL_MS);
       }
     };
     tick();
@@ -62,17 +66,28 @@ export default function App() {
     };
   }, [scanId]);
 
+  // When the survey has finished, load its results (a later survey's answer is never overwritten by an earlier one).
   const finished = isFinished(scan);
   useEffect(() => {
     if (!scan || !finished) return;
+    let cancelled = false;
     setFitTo(scan.bbox);
     Promise.all([api.entrances(scan.id), api.issues(scan.id)])
       .then(([e, i]) => {
+        if (cancelled) return;
         setEntrances(e);
         setIssues(i);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
   }, [scan?.id, finished]);
+
+  // Bring the evidence card or the review panel into view when it opens (on a phone it sits below the map).
+  useEffect(() => {
+    if (picked || reviewing) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [picked?.kind, picked?.item.id, reviewing]);
 
   const onSelect = useCallback((b: Bbox) => {
     setBbox(b);
@@ -82,6 +97,8 @@ export default function App() {
   function openScan(id: number) {
     setPicked(null);
     setReviewing(false);
+    setError(null);
+    if (id === scanId) return; // already open: keep its results on screen
     setEntrances([]);
     setIssues([]);
     setScan(null);
@@ -97,6 +114,11 @@ export default function App() {
   function updated(u: Picked) {
     if (u.kind === "entrance") setEntrances((list) => list.map((e) => (e.id === u.item.id ? u.item : e)));
     else setIssues((list) => list.flatMap((i) => (i.id !== u.item.id ? [i] : u.item.review_status === "rejected" ? [] : [u.item])));
+    // An open card follows the item it shows; a rejected issue's card closes.
+    setPicked((p) => {
+      if (!p || p.kind !== u.kind || p.item.id !== u.item.id) return p;
+      return u.kind === "issue" && u.item.review_status === "rejected" ? null : u;
+    });
     if (scan) api.scan(scan.id).then(setScan).catch(() => undefined);
   }
 
@@ -131,6 +153,14 @@ export default function App() {
             </div>
           </section>
         )}
+        <div ref={detailRef}>
+          {reviewing ? (
+            <ReviewPanel entrances={entrances} issues={issues} first={picked} onUpdated={updated}
+              onClose={() => setReviewing(false)} />
+          ) : picked ? (
+            <EvidenceCard picked={picked} onClose={() => setPicked(null)} onReview={() => setReviewing(true)} />
+          ) : null}
+        </div>
         <AreaPanel
           bbox={bbox}
           selecting={selecting}
@@ -141,11 +171,6 @@ export default function App() {
           onUseView={() => getView.current && setBbox(getView.current())}
           onStarted={openScan}
         />
-        {reviewing ? (
-          <ReviewPanel entrances={entrances} issues={issues} onUpdated={updated} onClose={() => setReviewing(false)} />
-        ) : picked ? (
-          <EvidenceCard picked={picked} onClose={() => setPicked(null)} onReview={() => setReviewing(true)} />
-        ) : null}
         {scan && finished && (
           <ResultsPanel
             scan={scan}
