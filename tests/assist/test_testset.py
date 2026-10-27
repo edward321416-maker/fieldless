@@ -36,6 +36,20 @@ def test_answer_score_uses_decidable_visible_photos_and_polarity(tmp_path):
     assert (flipped["right"], flipped["unclear"], flipped["unchecked"]) == (2, 1, 0)
 
 
+def test_confirm_score_wants_yes_on_the_target_and_no_on_false_finds(tmp_path):
+    ts = write(tmp_path, [p("a", "yes"), p("b", "yes"), p("c", "yes"), p("d", "yes"), p("n", "no"), p("m", "no"),
+                          p("k", "no"), p("u", "unclear")], questions={})
+    s = testset.score_confirm(ts, {"a": "yes", "b": "no", "c": "unclear", "n": "no", "m": "yes", "k": "unclear",
+                                   "u": "yes"})  # d: SAM missed it; u: the label is unclear, so it does not count
+    assert (s["total_visible"], s["found_visible"], s["confirmed"], s["rejected_wrongly"], s["unclear"]) == \
+        (4, 3, 1, 1, 1)
+    assert (s["total_negatives"], s["false_finds"], s["false_finds_rejected"], s["false_finds_unclear"]) == \
+        (3, 3, 1, 1)
+    assert (s["kept_true"], s["kept_false"]) == (1, 1)
+    assert s["wrong_visible"] == [{"photo_id": "b", "answer": "no"}, {"photo_id": "c", "answer": "unclear"}]
+    assert s["wrong_negatives"] == [{"photo_id": "m", "answer": "yes"}, {"photo_id": "k", "answer": "unclear"}]
+
+
 def test_a_labelled_question_covers_only_the_sections_it_lists(tmp_path):
     # An item may be scored only against the question for its own requirement (2026-10-28 run: the agent rewrote a
     # 406.5 "projects into traffic" item into a detectable-warning question to fit the labels).

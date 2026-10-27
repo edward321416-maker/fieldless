@@ -4,6 +4,7 @@ import pytest
 
 from assist import testset
 from assist.tools import Bench
+from pipeline.meta_api import image_part
 from tests.pipeline import sam_text
 from tests.pipeline.fakes import FakeApi, synthetic_photo
 
@@ -57,3 +58,62 @@ def test_an_item_without_a_labelled_question_cannot_be_scored(tmp_path):
     with pytest.raises(ValueError, match="unknown item"):
         bench.ask("nope", "curb cut", "?")
     assert not [c for c in api.calls if c[0] == "spark"]
+
+
+POLE = {"id": "streetlight_pole", "inventory": True, "target": "streetlight pole", "find": "utility pole"}
+
+
+def answer(visible, said, note=""):
+    return {"visible": visible, "answer": said, "box": [], "confidence": 0.8, "note": note}
+
+
+ANSWERS = {"a": answer(True, "yes"), "b": answer(False, "yes", "no lamp head in view"),
+           "d": answer(True, "no", "a plain wooden pole"), "c": answer(True, "yes"),
+           "n": answer(True, "no"), "m": answer(True, "yes", "looks like a lamp"),
+           "k": answer(False, "no", "a sign post"), "u": answer(True, "yes")}
+
+
+def make_inventory(tmp_path):
+    """Photos a, b, c, d show a streetlight pole and n, m, k do not; u is labelled unclear. "utility pole" finds
+    everything but c; "pole" finds everything."""
+    labels = {"a": "yes", "b": "yes", "c": "yes", "d": "yes", "n": "no", "m": "no", "k": "no", "u": "unclear"}
+    data = {"name": "poles", "target": "streetlight pole", "questions": {},
+            "photos": [{"id": i, "target_visible": v} for i, v in labels.items()]}
+    (tmp_path / "poles.json").write_text(json.dumps(data), encoding="utf-8")
+    ts = testset.load("poles", tmp_path)
+    paths = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=n + 1) for n, i in enumerate(labels)}
+    by_image = {image_part(path)["image_url"]: i for i, path in paths.items()}
+
+    def sam(prompt, media):
+        if prompt == "utility pole" and media.stem == "c":
+            return ""
+        return sam_text.text([sam_text.line(0, [sam_text.record("0", 10, 10, 50, 40, 160, 120, 0.9)])])
+
+    api = FakeApi(spark=lambda name, parts: ANSWERS[by_image[parts[0]["image_url"]]], sam=sam)
+    return api, Bench(api, ts, items=[POLE], photo=lambda i: paths[i], workers=1)
+
+
+def test_confirm_wants_yes_on_the_target_and_no_where_sam_fired_without_it(tmp_path):
+    api, bench = make_inventory(tmp_path)
+    r = bench.confirm("streetlight_pole", " utility pole ", "Is this a streetlight pole? ")
+    assert (r["found_visible"], r["confirmed"], r["rejected_wrongly"], r["unclear"]) == (3, 1, 1, 1)
+    assert (r["false_finds"], r["false_finds_rejected"], r["false_finds_unclear"]) == (3, 1, 1)
+    assert (r["kept_true"], r["kept_false"], r["total_visible"], r["total_negatives"]) == (1, 1, 4, 3)
+    # b: visible=false counts as unclear, as in the pipeline; u: the label is unclear, so Spark is not asked
+    assert r["wrong_visible"] == [{"photo_id": "b", "answer": "unclear", "note": "no lamp head in view"},
+                                  {"photo_id": "d", "answer": "no", "note": "a plain wooden pole"}]
+    assert [(w["photo_id"], w["answer"]) for w in r["wrong_negatives"]] == [("m", "yes"), ("k", "unclear")]
+    assert sum(1 for c in api.calls if c[0] == "spark") == 6
+    assert "whether the streetlight pole is visible" in bench.prompts[0]  # Spark is asked about the target
+    assert bench.last("score_confirm", find="utility pole", ask="Is this a streetlight pole?")["kept_true"] == 1
+    assert bench.last("score_find", phrase="utility pole")["found_visible"] == 3
+
+
+def test_confirm_reuses_answers_when_only_the_phrase_changes(tmp_path):
+    api, bench = make_inventory(tmp_path)
+    bench.confirm("streetlight_pole", "utility pole", "Is this a streetlight pole?")
+    r = bench.confirm("streetlight_pole", "pole", "Is this a streetlight pole?")
+    assert (r["found_visible"], r["kept_true"]) == (4, 2)
+    assert sum(1 for c in api.calls if c[0] == "spark") == 7  # only photo c is new
+    with pytest.raises(ValueError, match="unknown item"):
+        bench.confirm("nope", "pole", "?")

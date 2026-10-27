@@ -1,8 +1,13 @@
-"""The two tools the authoring agent calls: SAM 3.1 finds a phrase in the labelled photos, and Muse Spark answers a
+"""The tools the authoring agents call: SAM 3.1 finds a phrase in the labelled photos, and Muse Spark answers a
 question on the photos where SAM found it, with the same prompt and schema as the pipeline's check stage
 (pipeline/survey_checks.py; since plan 4's final review Spark is asked about the item's `target` noun, such as "curb
 ramp", not the SAM phrase: "whether the curb cut is visible" let driveway cuts pass as visible). Every result is scored by assist.testset and kept in history, so the report
-shows measured scores, never the agent's own claims."""
+shows measured scores, never the agent's own claims.
+
+A check item's question is scored against its labelled question (`ask`). An inventory item's question only confirms
+that what SAM found is the target (`confirm`), so it is also asked on photos without the target where SAM fired:
+there a "no" is right, because the pipeline drops the find. Its answers are counted the way the pipeline counts them
+(survey_checks.status: an answer with visible=false is unclear), so the score says what a scan would record."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -34,12 +39,19 @@ SCHEMA = {
 }
 
 
+def counted(out: dict) -> str:
+    """Spark's answer as the pipeline counts it: yes or no only when Spark says the target is visible, else unclear."""
+    answer = out.get("answer")
+    return answer if out.get("visible", True) and answer in ("yes", "no") else "unclear"
+
+
 class Bench:
     def __init__(self, api, testset, items: list[dict] = (), photo=collect.photo_path, workers: int = 4):
         self.api, self.ts, self.photo, self.workers = api, testset, photo, workers
         self.items = {i["id"]: i for i in items}  # the drafted items, so an item is scored by its own section
         self.areas: dict[str, dict[str, float]] = {}  # phrase -> photo id -> largest mask share of the photo
         self.answers: dict[tuple[str, str, str], tuple[str, str]] = {}  # (find, ask, photo id) -> (answer, note)
+        self.confirmations: dict[tuple[str, str], tuple[str, str]] = {}  # (prompt, photo id) -> (answer, note)
         self.history: list[dict] = []
         self.prompts: list[str] = []  # each distinct question text sent, for tests and the report
 
@@ -99,6 +111,36 @@ class Bench:
             w["note"] = rows[w["photo_id"]][1]
         result = {"item_id": item_id, "find": find, "ask": ask, "key": key, "polarity": polarity, **score}
         self.history.append({"tool": "score_ask", **result})
+        return result
+
+    def _confirmation(self, prompt: str, photo_id: str) -> tuple[str, str]:
+        """(counted answer, note) for one photo. Cached by prompt, not by phrase: the photo and the question decide
+        Spark's answer, so trying another phrase pays only for photos no earlier phrase found."""
+        cached = self.confirmations.get((prompt, photo_id))
+        if cached:
+            return cached
+        out = self.api.spark_json([image_part(Path(self.photo(photo_id))), text_part(prompt)], "survey_check", SCHEMA)
+        got = (counted(out), out.get("note", ""))
+        self.confirmations[(prompt, photo_id)] = got
+        return got
+
+    def confirm(self, item_id: str, find: str, ask: str) -> dict:
+        """Score an inventory item: Spark answers `ask` about the item's target on every photo where SAM found `find`,
+        with and without the target (assist.testset.score_confirm). Wrong answers carry Spark's note."""
+        if item_id not in self.items:
+            raise ValueError(f"unknown item {item_id!r}")
+        find, ask = find.strip(), ask.strip()
+        self.find(find)
+        prompt = PROMPT.format(ask=ask, target=self.items[item_id].get("target") or find)
+        if prompt not in self.prompts:
+            self.prompts.append(prompt)
+        hits = [p.id for p in (*self.ts.visible(), *self.ts.negatives()) if self.areas[find].get(p.id, 0) > 0]
+        rows = dict(zip(hits, self._map(lambda i: self._confirmation(prompt, i), hits)))
+        score = scoring.score_confirm(self.ts, {i: a for i, (a, _) in rows.items()})
+        for w in score["wrong_visible"] + score["wrong_negatives"]:
+            w["note"] = rows[w["photo_id"]][1]
+        result = {"item_id": item_id, "find": find, "ask": ask, **score}
+        self.history.append({"tool": "score_confirm", **result})
         return result
 
     def last(self, tool: str, **match) -> dict | None:

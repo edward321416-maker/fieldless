@@ -3,7 +3,10 @@ labelled question. Scores are computed here, by code, so the agent never grades 
 
 Each labelled question lists the rule sections it covers and the answer that is a defect. An item can be scored only
 against the question for its own section, so the agent cannot rewrite an item into a different requirement to fit the
-labels (it did on the first real run, 2026-10-28)."""
+labels (it did on the first real run, 2026-10-28).
+
+An inventory test set (things a survey records the location of, such as streetlight poles) has no questions: each
+photo only says whether it shows the target, which is all that confirming a find needs."""
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -72,6 +75,24 @@ def score_find(ts: TestSet, found: dict) -> dict:
     return {"found_visible": sum(bool(found.get(p.id)) for p in visible), "total_visible": len(visible),
             "false_on_negatives": sum(bool(found.get(p.id)) for p in negatives), "total_negatives": len(negatives),
             "missed": [p.id for p in visible if not found.get(p.id)]}
+
+
+def score_confirm(ts: TestSet, answers: dict) -> dict:
+    """An inventory item's confirmation. answers: photo id -> yes | no | unclear for the photos where SAM found
+    something. On a photo that shows the target the right answer is yes (the asset is recorded); on a photo without
+    it, SAM's find is false and the right answer is no (the pipeline drops it). Unclear goes to a person either way."""
+    visible = [p.id for p in ts.visible() if p.id in answers]
+    negatives = [p.id for p in ts.negatives() if p.id in answers]
+    on_visible = [answers[i] for i in visible]
+    on_negatives = [answers[i] for i in negatives]
+    return {"total_visible": len(ts.visible()), "found_visible": len(visible),
+            "confirmed": on_visible.count("yes"), "rejected_wrongly": on_visible.count("no"),
+            "unclear": on_visible.count("unclear"),
+            "total_negatives": len(ts.negatives()), "false_finds": len(negatives),
+            "false_finds_rejected": on_negatives.count("no"), "false_finds_unclear": on_negatives.count("unclear"),
+            "kept_true": on_visible.count("yes"), "kept_false": on_negatives.count("yes"),
+            "wrong_visible": [{"photo_id": i, "answer": answers[i]} for i in visible if answers[i] != "yes"],
+            "wrong_negatives": [{"photo_id": i, "answer": answers[i]} for i in negatives if answers[i] != "no"]}
 
 
 def flip(answer: str) -> str:
