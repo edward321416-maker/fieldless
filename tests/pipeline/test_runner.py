@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from pipeline import collect, db, entrance_detect, runner, sidewalk
@@ -79,6 +81,10 @@ def test_a_scan_runs_every_stage_and_stores_entrances_issues_and_evidence(setup)
     assert (issue["issue_type"], issue["object_label"], issue["frame_start"], issue["frame_end"],
             issue["review_status"]) == ("obstruction", "traffic cone", 1, 3, "auto")
     assert list(result["stage_status"]) == list(runner.STAGES)
+    assert result["unavailable"] == {"scene_chunks": 0, "tactile_photos": 0, "obstacle_requests": 0,
+                                     "defect_checks": 0}
+    assert (scan.work / "entrance0" / "stairs_0000_0004.mp4").exists()  # each entrance has its own folder
+    assert json.loads(scan.state("defects_checks").read_text(encoding="utf-8"))[0]["candidate"] == "sample"
     for row in (ent, issue):
         assert (scan.run_dir / "evidence" / row["evidence"]["image"]).exists()
         assert row["evidence"]["license"] == "CC BY-SA 4.0"
@@ -198,3 +204,27 @@ def test_meter_for_leaves_room_only_for_what_is_left_of_the_day(tmp_path):
     assert meter.cap_usd == pytest.approx(1.0) and meter.spent_usd == 0
     meter = runner.meter_for(conn, db.get_scan(conn, first))
     assert meter.cap_usd == pytest.approx(3.0) and meter.spent_usd == pytest.approx(9.0)
+
+
+def test_a_failed_evidence_photo_is_a_row_error_and_is_retried_on_the_next_run(setup, monkeypatch):
+    conn, scan_id, make, _ = setup
+
+    def no_download(image_id):
+        raise RuntimeError("download failed")
+
+    monkeypatch.setattr(runner.entrance_read, "original_photo", no_download)
+    first = runner.run_scan(make(FakeApi(spark=spark, sam=sam)))
+    assert first["status"] == "failed" and first["stage_status"]["evidence"].startswith("failed")
+    (ent,) = db.entrances(conn, scan_id)
+    assert "error" in ent["evidence"]
+    (issue,) = db.issues(conn, scan_id)
+    assert issue["evidence"]["image"]  # the issue's photo needed no download, so it was stored
+    monkeypatch.setattr(runner.entrance_read, "original_photo", collect.photo_path)
+    second = runner.run_scan(make(FakeApi(spark=spark, sam=sam)))
+    assert second["status"] == "done", second
+    (ent,) = db.entrances(conn, scan_id)
+    assert ent["evidence"]["image"]
+
+
+def test_a_scan_never_takes_more_than_400_photos(tmp_path):
+    assert runner.Scan(None, 1, FakeApi(), tmp_path, BBOX, max_photos=999).max_photos == 400

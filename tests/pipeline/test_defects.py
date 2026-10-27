@@ -73,8 +73,10 @@ def test_find_defects_makes_review_rows_merges_repeats_and_reports_failures(tmp_
 
     monkeypatch.setattr(defects, "check_photo", fake_check)
     cands = [(2, "edge"), (4, "sample"), (6, "sample"), (12, "edge"), (14, "edge")]
-    rows, failed = defects.find_defects(FakeApi(), cands, photos, FRAMES, CLIP, workers=2)
+    rows, failed, checks = defects.find_defects(FakeApi(), cands, photos, FRAMES, CLIP, workers=2)
     assert failed == [14]
+    assert [(c["frame_idx"], c["candidate"]) for c in checks] == [(2, "edge"), (4, "sample"), (6, "sample"), (12, "edge")]
+    assert checks[2]["check"]["damage"] == "worn"
     assert [(r["issue_type"], r["object_label"], r["frame_idx"]) for r in rows] == [("missing_blocks", None, 2),
                                                                                   ("cover_cut", None, 12)]
     assert rows[0]["model_outputs"] == {"check": answers[2], "candidate": "edge"}

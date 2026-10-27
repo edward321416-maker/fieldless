@@ -41,7 +41,7 @@ SPARK_IMAGE_ESTIMATE_USD = 0.02
 MAX_PHOTOS_PER_SCAN = 400
 SCAN_COST_CAP_USD = 3.0
 DAILY_COST_CAP_USD = 10.0
-EST_USD_PER_100_PHOTOS = 0.73  # spec 7.4 ($0.57), S7 checks on about 10 candidates ($0.12), 2 fixed labels ($0.04)
+EST_USD_PER_100_PHOTOS = 0.85  # measured: first live scan, Seongsu, 100 photos, $0.84 (2026-10-27)
 PARALLEL_REQUESTS = 6
 
 

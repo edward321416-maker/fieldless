@@ -6,6 +6,7 @@ Sidewalk, defects, entrances and evidence are independent: one failing does not 
 make API requests; rows are written from the main thread.
 """
 import json
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -21,6 +22,17 @@ INDEPENDENT = {"sidewalk", "defects", "entrances", "evidence"}
 RERUN_AFTER = {"defects": {"sidewalk"}, "evidence": set(STAGES)}  # a done stage reruns if one of these ran
 DURABLE = (*defects.ISSUE_TYPES, "fixed_obstruction")  # the three defect classes the user chose (spec 9.3)
 SCENE_WORKERS = 3  # Spark video requests are large; fewer at a time
+_photo_locks: dict[str, threading.Lock] = {}
+_photo_locks_guard = threading.Lock()
+
+
+def _original_photo(image_id: str) -> Path:
+    """entrance_read.original_photo, one download per image at a time: entrance and evidence workers share the photo
+    cache, and a worker must never read a photo another worker is still writing."""
+    with _photo_locks_guard:
+        lock = _photo_locks.setdefault(image_id, threading.Lock())
+    with lock:
+        return entrance_read.original_photo(image_id)
 
 
 class NoPhotos(RuntimeError):
@@ -40,6 +52,9 @@ class Scan:
     frames: list[dict] = field(default_factory=list)
     chunks: list[scene.Chunk] = field(default_factory=list)
     scenes: list[dict] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.max_photos = min(self.max_photos, config.MAX_PHOTOS_PER_SCAN)  # spec 13: never more than 400 photos
 
     @property
     def work(self) -> Path:
@@ -104,15 +119,16 @@ def stage_scene(s: Scan) -> None:
     s.state("scene").write_text(json.dumps(s.scenes, ensure_ascii=False), encoding="utf-8")
 
 
-def _entrance_row(s: Scan, cand: entrance_detect.Candidate, clip_idxs: list[int], by_idx: dict, photos: dict) -> dict:
+def _entrance_row(s: Scan, cand: entrance_detect.Candidate, clip_idxs: list[int], by_idx: dict, photos: dict,
+                  workdir: Path) -> dict:
     frame = by_idx[cand.frame_idx]
     base = {"frame_idx": cand.frame_idx, "place_name": cand.name, "category": cand.category, "side": cand.side}
     try:
         idxs = entrance_detect.window_idxs(cand.frame_idx, clip_idxs)
         sizes = {i: (by_idx[i]["width"], by_idx[i]["height"]) for i in idxs}
-        stairs = entrance_detect.detect_stairs(s.api, idxs, photos, sizes, s.work)
+        stairs = entrance_detect.detect_stairs(s.api, idxs, photos, sizes, workdir)
         rep = by_idx[stairs.best_idx if stairs.found else cand.frame_idx]
-        photo = entrance_read.original_photo(rep["image_id"])
+        photo = _original_photo(rep["image_id"])
         reading = entrance_read.read_entrance(s.api, photo)
         sill = None if stairs.found else entrance_read.outline_sill(s.api, photo, reading)
         measured = entrance_read.measure(stairs.found, reading)
@@ -136,7 +152,9 @@ def stage_entrances(s: Scan) -> None:
     db.clear_rows(s.conn, s.scan_id, "entrance")
     by_idx, photos, clips = s.by_idx(), s.photos(), s.clips()
     cands = entrance_detect.merge_candidates([e for sc in s.scenes for e in sc["entrances"]], by_idx)
-    rows = run_parallel(lambda c: _entrance_row(s, c, clips[c.clip], by_idx, photos), cands, s.workers)
+    # each entrance gets its own work folder: two entrances on the same photos must not share a stairs video
+    rows = run_parallel(lambda kc: _entrance_row(s, kc[1], clips[kc[1].clip], by_idx, photos,
+                                                 s.work / f"entrance{kc[0]}"), list(enumerate(cands)), s.workers)
     for row in rows:
         db.add_entrance(s.conn, s.scan_id, row)
 
@@ -191,34 +209,43 @@ def stage_defects(s: Scan) -> None:
     flags = {int(k): v for k, v in json.loads(s.state("tactile").read_text(encoding="utf-8")).items()}
     by_idx, photos = s.by_idx(), s.photos()
     failed: list[int] = []
+    checks: list[dict] = []
     for clip_idxs in s.clips().values():
-        rows, bad = defects.find_defects(s.api, defects.candidates(flags, clip_idxs), photos, by_idx, clip_idxs,
-                                         s.workers)
+        rows, bad, clip_checks = defects.find_defects(s.api, defects.candidates(flags, clip_idxs), photos, by_idx,
+                                                      clip_idxs, s.workers)
         failed += bad
+        checks += clip_checks
         for row in rows:
             db.add_issue(s.conn, s.scan_id, row)
     s.state("defects_unavailable").write_text(json.dumps(failed), encoding="utf-8")
+    s.state("defects_checks").write_text(json.dumps(checks, ensure_ascii=False), encoding="utf-8")
 
 
 def stage_evidence(s: Scan) -> None:
+    """Blurred, attributed evidence photos for rows that have none yet. A row whose photo failed keeps an error
+    record and is tried again on the next run; the stage then fails, so the failure is visible."""
     out = Path(s.run_dir) / "evidence"
     by_idx, photos = s.by_idx(), s.photos()
-    todo = ([("entrance", r) for r in db.entrances(s.conn, s.scan_id) if not r["evidence"]]
-            + [("issue", r) for r in db.issues(s.conn, s.scan_id) if not r["evidence"]])
+    todo = ([("entrance", r) for r in db.entrances(s.conn, s.scan_id) if not (r["evidence"] or {}).get("image")]
+            + [("issue", r) for r in db.issues(s.conn, s.scan_id) if not (r["evidence"] or {}).get("image")])
 
     def one(item):
         kind, row = item
         frame = by_idx[row["frame_idx"]]
-        photo = entrance_read.original_photo(frame["image_id"]) if kind == "entrance" else photos[row["frame_idx"]]
         try:
+            photo = _original_photo(frame["image_id"]) if kind == "entrance" else photos[row["frame_idx"]]
             return evidence.make_evidence(s.api, photo, frame, out / f"scan{s.scan_id}_{kind}{row['id']}.jpg")
         except CostCapReached:
             raise
-        except Exception as exc:  # no photo is stored without blurring
+        except Exception as exc:  # no photo is stored without blurring; this row is retried on the next run
             return {"error": error_text(exc)}
 
-    for (kind, row), record in zip(todo, run_parallel(one, todo, s.workers)):
+    records = run_parallel(one, todo, s.workers)
+    for (kind, row), record in zip(todo, records):
         (db.update_entrance if kind == "entrance" else db.update_issue)(s.conn, row["id"], evidence=record)
+    failed = sum("error" in r for r in records)
+    if failed:
+        raise RuntimeError(f"evidence failed for {failed} of {len(todo)} rows; they are retried on the next run")
 
 
 STAGE_FUNCS = {"collect": stage_collect, "chunks": stage_chunks, "scene": stage_scene,
@@ -236,7 +263,19 @@ def _load(s: Scan, stage: str) -> None:
         s.scenes = json.loads(s.state("scene").read_text(encoding="utf-8"))
 
 
-def summary(conn, scan_id: int) -> dict:
+def unavailable(work: Path) -> dict:
+    """Counts of what could not be analysed (spec 14), from the stage state files."""
+    def load(name: str, default):
+        path = Path(work) / f"{name}.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+
+    side = load("sidewalk_unavailable", {"tactile_photos": [], "obstacle_requests": []})
+    return {"scene_chunks": sum("error" in c for c in load("scene", [])),
+            "tactile_photos": len(side["tactile_photos"]), "obstacle_requests": len(side["obstacle_requests"]),
+            "defect_checks": len(load("defects_unavailable", []))}
+
+
+def summary(conn, scan_id: int, work: Path | None = None) -> dict:
     scan = db.get_scan(conn, scan_id)
     ents, iss = db.entrances(conn, scan_id), db.issues(conn, scan_id)
     photos = scan["image_count"]
@@ -249,6 +288,7 @@ def summary(conn, scan_id: int) -> dict:
             "processing_seconds": round(scan["processing_seconds"], 1),
             "cost_per_100_photos": round(scan["cost_usd"] * per_100, 4),
             "seconds_per_100_photos": round(scan["processing_seconds"] * per_100, 1),
+            "unavailable": unavailable(work) if work else None,
             "stage_status": scan["stage_status"]}
 
 
@@ -292,4 +332,4 @@ def run_scan(s: Scan) -> dict:
         db.update_scan(conn, scan_id, status=status, error=error,
                        cost_usd=meter.spent_usd if meter else before["cost_usd"],
                        processing_seconds=before["processing_seconds"] + time.time() - started)
-    return summary(conn, scan_id)
+    return summary(conn, scan_id, s.work)

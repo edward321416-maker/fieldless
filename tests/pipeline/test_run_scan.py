@@ -16,3 +16,10 @@ def test_a_scan_needs_a_bbox_or_a_resume_id():
         run_scan.main([])
     with pytest.raises(SystemExit):
         run_scan.main(["--bbox", "1,2,3"])
+
+
+def test_bad_numbers_and_unknown_scans_are_refused():
+    with pytest.raises(SystemExit):
+        run_scan.main(["--bbox", "126.98,37.56,126.99,37.565", "--tactile-every", "0"])
+    with pytest.raises(SystemExit):
+        run_scan.main(["--resume", "999", "--run", "refused"])

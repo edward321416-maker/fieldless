@@ -92,8 +92,8 @@ def defect_of(answer: dict) -> str | None:
 
 
 def find_defects(api, cands: list[tuple[int, str]], photos: dict[int, Path], frames_by_idx: dict[int, dict],
-                 clip_idxs: list[int], workers: int) -> tuple[list[dict], list[int]]:
-    """Issue rows for the candidates of one clip that Spark flags, and the candidates whose check failed."""
+                 clip_idxs: list[int], workers: int) -> tuple[list[dict], list[int], list[dict]]:
+    """Issue rows for the candidates of one clip that Spark flags, the candidates whose check failed, and every answer (for evaluation)."""
     def one(item):
         try:
             return check_photo(api, photos[item[0]])
@@ -104,11 +104,13 @@ def find_defects(api, cands: list[tuple[int, str]], photos: dict[int, Path], fra
 
     rows: list[dict] = []
     failed: list[int] = []
+    checks: list[dict] = []
     last_pos: dict[str, int] = {}
     for (idx, reason), answer in zip(cands, run_parallel(one, cands, workers)):
         if "error" in answer:
             failed.append(idx)
             continue
+        checks.append({"frame_idx": idx, "candidate": reason, "check": answer})
         issue_type = defect_of(answer)
         if issue_type is None:
             continue
@@ -122,4 +124,4 @@ def find_defects(api, cands: list[tuple[int, str]], photos: dict[int, Path], fra
                      "review_status": "needs_review", "review_reasons": ["possible_defect"],
                      "model_outputs": {"check": answer, "candidate": reason},
                      "captured_at": frames_by_idx[idx]["captured_at"]})
-    return rows, failed
+    return rows, failed, checks
