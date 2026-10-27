@@ -1,9 +1,10 @@
-"""One scan through every stage (spec 7): collect, chunks, scene, sidewalk, defects, entrances, evidence.
+"""One scan through every stage (spec 7): collect, chunks, scene, sidewalk, defects, sidewalk_evidence, entrances,
+evidence.
 
-The sidewalk layer is the main layer (spec revision 4), so its stages run before the entrances. Each stage's status
-is kept in scan.stage_status, so a scan that failed or hit its cost cap resumes at the stage that stopped (spec 14).
-Sidewalk, defects, entrances and evidence are independent: one failing does not stop the others. Worker threads only
-make API requests; rows are written from the main thread.
+The sidewalk layer is the main layer (spec revision 4), so its stages, including its evidence photos, run before the
+entrances. Each stage's status is kept in scan.stage_status, so a scan that failed or hit its cost cap resumes at the
+stage that stopped (spec 14). Every stage after scene is independent: one failing does not stop the others. Worker
+threads only make API requests; rows are written from the main thread.
 """
 import json
 import threading
