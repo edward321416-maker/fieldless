@@ -224,3 +224,11 @@ def test_parallel_starts_from_one_address_stop_at_the_daily_limit(make):
     with ThreadPoolExecutor(max_workers=8) as pool:
         codes = list(pool.map(lambda _: client.post("/api/scans", json={"bbox": BBOX}).status_code, range(8)))
     assert codes.count(202) == 3 and codes.count(429) == 5
+
+
+def test_a_scan_shows_its_measured_hand_time(make):
+    scan_id, *_ = seed()
+    client, _ = make(measured_hand_seconds=((scan_id, 1260.0),))
+    assert client.get(f"/api/scans/{scan_id}").json()["hand_seconds"] == 1260.0
+    other, _ = make()
+    assert other.get(f"/api/scans/{scan_id}").json()["hand_seconds"] is None

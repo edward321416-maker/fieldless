@@ -136,7 +136,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
     def get_scan(scan_id: int):
         with connect() as conn:
             scan = found(db.get_scan, conn, scan_id, "scan")
-            return views.scan_json(scan, db.entrances(conn, scan_id), db.issues(conn, scan_id))
+            hand = dict(settings.measured_hand_seconds).get(scan_id)
+            return views.scan_json(scan, db.entrances(conn, scan_id), db.issues(conn, scan_id), hand)
 
     @app.get("/api/scans/{scan_id}/entrances")
     def get_entrances(scan_id: int):

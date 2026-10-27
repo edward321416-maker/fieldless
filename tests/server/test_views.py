@@ -98,3 +98,11 @@ def test_scan_json_counts_defects_obstructions_and_items_to_review():
     assert out["counts"] == {"defects": 2, "obstructions": 1, "entrances": 2, "entrances_with_steps": 1,
                              "needs_review": 2}
     assert out["id"] == 1 and out["status"] == "done" and out["image_count"] == 60
+
+
+def test_scan_json_carries_the_measured_hand_time_when_there_is_one():
+    scan = {"id": 1, "status": "done", "stage_status": {}, "bbox": [0, 0, 1, 1], "image_count": 60,
+            "captured_from": "a", "captured_to": "b", "cost_usd": 0.3, "processing_seconds": 100.0,
+            "review_seconds": 5.0, "error": None}
+    assert views.scan_json(scan, [], [])["hand_seconds"] is None
+    assert views.scan_json(scan, [], [], hand_seconds=1260.0)["hand_seconds"] == 1260.0

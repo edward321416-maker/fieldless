@@ -73,11 +73,12 @@ def issue_json(row: dict, now: datetime | None = None) -> dict:
             "old_photo": is_old(row.get("captured_at"), now)}
 
 
-def scan_json(scan: dict, entrances: list[dict], issues: list[dict]) -> dict:
+def scan_json(scan: dict, entrances: list[dict], issues: list[dict], hand_seconds: float | None = None) -> dict:
     live = [i for i in issues if i["review_status"] != "rejected"]
     defects = sum(i["issue_type"] in DURABLE for i in live)
     needs_review = sum(r["review_status"] == "needs_review" for r in [*entrances, *live])
     with_steps = sum(entrance_label(e)["icon"] == "▲" for e in entrances)  # a possible sill is not counted
     return {**{k: scan[k] for k in SCAN_FIELDS},
+            "hand_seconds": hand_seconds,
             "counts": {"defects": defects, "obstructions": len(live) - defects, "entrances": len(entrances),
                        "entrances_with_steps": with_steps, "needs_review": needs_review}}

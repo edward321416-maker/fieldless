@@ -28,3 +28,10 @@ def test_secrets_never_appear_in_the_settings_repr(monkeypatch):
     monkeypatch.setenv("IP_HASH_SALT", "pepper")
     text = repr(settings.load())
     assert "letmein" not in text and "pepper" not in text
+
+
+def test_measured_hand_seconds(monkeypatch):
+    monkeypatch.setenv("MEASURED_HAND_SECONDS", "3:1260; 7:905.5")
+    assert settings.load().measured_hand_seconds == ((3, 1260.0), (7, 905.5))
+    monkeypatch.setenv("MEASURED_HAND_SECONDS", "")
+    assert settings.load().measured_hand_seconds == ()

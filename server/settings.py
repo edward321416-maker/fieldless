@@ -14,6 +14,7 @@ class Settings:
     scans_per_ip_per_day: int = 3  # spec 13
     max_bbox_deg2: float = 0.0001  # about 1.1 x 0.9 km in Seoul; a scan stops at 400 photos anyway
     demo_scans: tuple[tuple[int, str], ...] = ()  # spec 13 demo mode: pre-processed areas shown first
+    measured_hand_seconds: tuple[tuple[int, float], ...] = ()  # survey seconds a person took by hand (plan 3, D4)
     static_dir: Path = ROOT / "web" / "dist"
 
 
@@ -26,6 +27,15 @@ def _demo_scans(text: str) -> tuple[tuple[int, str], ...]:
     return tuple(out)
 
 
+def _hand_seconds(text: str) -> tuple[tuple[int, float], ...]:
+    """'3:1260;7:905.5' -> ((3, 1260.0), (7, 905.5))."""
+    out = []
+    for item in filter(None, (part.strip() for part in text.split(";"))):
+        scan_id, _, seconds = item.partition(":")
+        out.append((int(scan_id), float(seconds)))
+    return tuple(out)
+
+
 def load() -> Settings:
     return Settings(
         run_name=os.environ.get("THRESHOLD_RUN") or "server",
@@ -33,4 +43,5 @@ def load() -> Settings:
         ip_hash_salt=os.environ.get("IP_HASH_SALT") or "threshold",
         scans_per_ip_per_day=int(os.environ.get("SCANS_PER_IP_PER_DAY") or 3),
         demo_scans=_demo_scans(os.environ.get("DEMO_SCANS") or ""),
+        measured_hand_seconds=_hand_seconds(os.environ.get("MEASURED_HAND_SECONDS") or ""),
     )

@@ -42,6 +42,12 @@ export default function ResultsPanel(props: Props) {
         <dd>{minutes(props.scan.processing_seconds)}</dd>
         <dt>Your review time</dt>
         <dd>{minutes(props.scan.review_seconds)}</dd>
+        {props.scan.hand_seconds !== null && (
+          <>
+            <dt>By hand (measured)</dt>
+            <dd>{minutes(props.scan.hand_seconds)}</dd>
+          </>
+        )}
         <dt>Cost</dt>
         <dd>{dollars(props.scan.cost_usd)}</dd>
         <dt>To confirm (?)</dt>
