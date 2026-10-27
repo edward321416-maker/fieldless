@@ -207,12 +207,16 @@ def spark_json(parts: list[dict], schema_name: str, schema: dict, model: str = c
     return _counted(request)
 
 
-def sam(concept: str, media: dict, billed_frames: int) -> str:
+def sam(concept: str, media: dict, billed_frames: int = 0, images: int = 0) -> str:
     """One SAM request. Failed attempts are logged as "sam_failed" with the clamped billed_frames; a stream
-    failure is retried once only; the request counts toward the circuit breaker (see _counted)."""
+    failure is retried once only; the request counts toward the circuit breaker (see _counted).
+
+    For an image request pass images=1: images are billed per image (billed_images in the log), without the
+    50-frame minimum that applies to video."""
     _guard_model(config.SAM_MODEL)
     requested_frames = billed_frames
-    billed = max(SAM_MIN_BILLED_FRAMES, requested_frames)
+    billed = 0 if images else max(SAM_MIN_BILLED_FRAMES, requested_frames)
+    image_fields = {"billed_images": images} if images else {}
 
     def call() -> tuple[str, dict | None]:
         chunks: list[str] = []
@@ -238,9 +242,9 @@ def sam(concept: str, media: dict, billed_frames: int) -> str:
     def request() -> str:
         t0 = time.time()
         text, usage = _retry(_log_failures(call, "sam_failed", concept=concept,
-                                           requested_frames=requested_frames, billed_frames=billed))
+                                           requested_frames=requested_frames, billed_frames=billed, **image_fields))
         log_call("sam", concept=concept, requested_frames=requested_frames, billed_frames=billed,
-                 seconds=time.time() - t0, chars=len(text), status="completed",
+                 seconds=time.time() - t0, chars=len(text), status="completed", **image_fields,
                  **({"usage": usage} if usage else {}))
         return text
 

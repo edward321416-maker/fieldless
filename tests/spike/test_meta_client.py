@@ -152,6 +152,14 @@ def test_sam_assembles_deltas_and_logs_clamped_frames(offline, tmp_path):
     assert entry["chars"] == len("<0f>ab")
 
 
+def test_sam_image_request_is_logged_per_image_without_frame_minimum(offline, tmp_path):
+    offline(FakeClient(stream_events=[delta("<0f>"), completed()]))
+    mc.sam("stairs", {"type": "input_image", "image_url": "x"}, images=1)
+    (entry,) = read_log(tmp_path)
+    assert entry["billed_images"] == 1
+    assert entry["billed_frames"] == 0
+
+
 def test_sam_raises_on_failed_event(offline):
     failed = SimpleNamespace(
         type="response.failed",
