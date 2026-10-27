@@ -14,6 +14,7 @@ from pipeline import config, geo, mapillary
 
 SINCE = "2020-01-01"
 MIN_GAP_M = 2.0
+MIN_TURN_DEG = 15.0  # a close photo is kept when the walker turns: corners and crossings carry warning pads
 MIN_SEQUENCE_PHOTOS = 10
 OVERLAP_RADIUS_M = 10.0
 MAX_OVERLAP_SHARE = 0.5
@@ -27,11 +28,23 @@ def in_bbox(rec: dict, bbox) -> bool:
     return min_lat <= rec["lat"] <= max_lat and min_lng <= rec["lng"] <= max_lng
 
 
-def thin(frames: list[dict], min_gap_m: float = MIN_GAP_M) -> list[dict]:
-    """Keep the first photo, then each photo at least min_gap_m from the last one kept."""
+def _turn(a: float | None, b: float | None) -> float:
+    """Smallest angle between two compass headings in degrees; 0 when either is unknown."""
+    if a is None or b is None:
+        return 0.0
+    d = abs(a - b) % 360
+    return min(d, 360 - d)
+
+
+def thin(frames: list[dict], min_gap_m: float = MIN_GAP_M, min_turn_deg: float = MIN_TURN_DEG) -> list[dict]:
+    """Keep the first photo, then each photo at least min_gap_m from the last one kept, or turned at least
+    min_turn_deg from it. A walker slows and turns at corners and crossings, where the tactile warning pads are; the
+    D1 street lost its patched crossing (photos 63-64, under 1 m apart) to distance-only thinning."""
     kept: list[dict] = []
     for f in frames:
-        if not kept or geo.haversine_m(kept[-1]["lat"], kept[-1]["lng"], f["lat"], f["lng"]) >= min_gap_m:
+        last = kept[-1] if kept else None
+        if (last is None or geo.haversine_m(last["lat"], last["lng"], f["lat"], f["lng"]) >= min_gap_m
+                or _turn(last.get("compass"), f.get("compass")) >= min_turn_deg):
             kept.append(f)
     return kept
 

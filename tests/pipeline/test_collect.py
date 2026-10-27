@@ -27,6 +27,14 @@ def test_thin_keeps_a_photo_every_two_metres():
     assert [k["id"] for k in kept] == ["s0", "s4", "s8"]  # 0, 2.4 and 4.8 m
 
 
+def test_thin_keeps_close_photos_where_the_walker_turns():
+    frames = street(4, 0.5)
+    for f, heading in zip(frames, (80.0, 84.0, 116.0, 132.0)):  # the D1 crossing: slow, then turning
+        f["compass"] = heading
+    assert [k["id"] for k in collect.thin(frames)] == ["s0", "s2", "s3"]  # turns of 36 and 16 degrees
+    assert collect._turn(350.0, 5.0) == 15.0 and collect._turn(None, 90.0) == 0.0
+
+
 def test_overlap_share():
     a = street(10, 5.0, "a")
     assert collect.overlap_share(a, a) == 1.0
