@@ -1,0 +1,20 @@
+# Survey standard: United States (ADA). Each [[check]] is a survey item written as sentences: SAM 3.1 finds `find`
+# in the photos and Muse Spark answers `ask` on the best photo of it. To survey something new, add a [[check]] and
+# run the defects stage again (README, "Survey standards"). No training data is needed.
+standard = "US"
+
+[path]
+surface = "sidewalk"
+name = "the sidewalk walking path"
+describe = "sidewalks"
+objects = ["sandwich board sign", "traffic cone", "electric scooter", "cafe table"]
+fixed = []  # poles and hydrants at the curb edge are normal on US sidewalks; not reported
+
+[[check]]
+id = "curb_ramp_warning"
+find = "curb ramp"
+ask = "Look at the curb ramp where the sidewalk meets the street. Does it have a detectable warning surface (a panel of raised truncated domes, usually yellow) at its bottom edge?"
+report_when = "no"
+label_yes = "Curb ramp with detectable warning"
+label_no = "Curb ramp without detectable warning"
+label_unclear = "Curb ramp: detectable warning unclear"

@@ -1,0 +1,13 @@
+# Survey standard: Korea (tactile guide lines, spec 9). The tactile defect stage (pipeline/defects.py) was
+# validated on Seongsu; this file only switches it on. The path is the tactile paving itself.
+standard = "KR"
+
+[path]
+surface = "yellow tactile paving"
+name = "the tactile paving"
+describe = "tactile paving (the raised guide blocks for blind pedestrians, usually yellow)"
+objects = ["electric scooter", "bicycle"]
+fixed = ["bollard", "pole"]
+
+[tactile_defects]
+enabled = true
