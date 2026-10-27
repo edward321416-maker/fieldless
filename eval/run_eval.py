@@ -27,8 +27,8 @@ def to_markdown(r: dict) -> str:
               f"rejected {v['defects_rejected']}",
               f"- Person labeling: {s['human_seconds']} s for {s['photos']} photos, {s['km']} km "
               f"({s['human_seconds_per_km']} s/km)",
-              f"- Threshold: {s['processing_seconds']} s processing + {s['review_seconds']} s review "
-              f"({s['threshold_seconds_per_km']} s/km), ${s['cost_usd']} (${s['usd_per_km']}/km)"
+              f"- Threshold: {s['processing_seconds']:.0f} s processing + {s['review_seconds']:.0f} s review "
+              f"({s['threshold_seconds_per_km']} s/km), ${s['cost_usd']:.2f} (${s['usd_per_km']}/km)"
               + ("" if s["reviewed"] else " - not reviewed yet")]
     for kind in DEFECTS:
         m = r["defects"][kind]

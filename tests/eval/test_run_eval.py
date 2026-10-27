@@ -14,7 +14,7 @@ def test_run_eval_writes_json_and_prints_markdown(capsys):
         for i in range(5)])
     db.add_issue(conn, scan_id, {"issue_type": "cover_cut", "frame_start": 2, "frame_end": 2, "frame_idx": 2,
                                  "review_status": "needs_review", "review_reasons": ["possible_defect"]})
-    db.update_scan(conn, scan_id, processing_seconds=50.0, review_seconds=6.0, cost_usd=0.2)
+    db.update_scan(conn, scan_id, processing_seconds=50.4321, review_seconds=6.0, cost_usd=0.2049)
     conn.close()
     truth_path = config.data_dir() / "truth" / "t.json"
     truth_path.parent.mkdir(parents=True, exist_ok=True)
@@ -28,3 +28,4 @@ def test_run_eval_writes_json_and_prints_markdown(capsys):
     assert out.name == f"eval_scan{scan_id}.json" and result["defects"]["cover_cut"]["found"] == 1
     printed = capsys.readouterr().out
     assert "| cover_cut | 1 | 1 | 1 | 1 |" in printed and "Person labeling" in printed
+    assert "50 s processing + 6 s review" in printed and "$0.20 (" in printed

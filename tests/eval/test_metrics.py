@@ -43,12 +43,14 @@ def test_defect_spots_and_obstructions_are_scored_per_class():
     assert (r["obstructions"]["hits"], r["obstructions"]["found"]) == (1, 1)
 
 
-def test_entrances_match_within_two_photos_and_score_steps():
-    d = data(entrances=[{"frame_idx": 2, "step_count": 2, "sill_possible": False, "review_reasons": []},
+def test_entrances_match_within_one_photo_and_score_steps():
+    # Scan photos are about 5-6 m apart, so two photos away is usually the next shop (dry run on scan 1, 2026-10-27).
+    d = data(entrances=[{"frame_idx": 3, "step_count": 2, "sill_possible": False, "review_reasons": []},
                         {"frame_idx": 9, "step_count": 0, "sill_possible": True, "review_reasons": ["sill"]}])
-    t = truth({"img4": photo(4, entrances=[{"steps": 3, "sill_unsure": False}])})
+    t = truth({"img4": photo(4, entrances=[{"steps": 3, "sill_unsure": False}]),
+               "img7": photo(7, entrances=[{"steps": 0, "sill_unsure": True}])})
     e = evaluate(d, t)["entrances"]
-    assert (e["predicted"], e["truth"], e["matched"]) == (2, 1, 1)
+    assert (e["predicted"], e["truth"], e["matched"]) == (2, 2, 1)
     assert (e["steps_exact"], e["steps_within_one"], e["sill_agree"]) == (0, 1, 1)
 
 

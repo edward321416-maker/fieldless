@@ -9,7 +9,7 @@ from pipeline import geo
 
 DEFECTS = ("missing_blocks", "cover_cut", "fixed_obstruction")
 SPOT_TOL = 1
-ENTRANCE_TOL = 2
+ENTRANCE_TOL = 1  # scan photos are about 5-6 m apart; two photos away is usually the next shop (scan 1 dry run)
 SWEEP = (0.2, 0.3, 0.4, 0.5, 0.6)
 
 
