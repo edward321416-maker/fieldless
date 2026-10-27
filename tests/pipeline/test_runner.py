@@ -83,7 +83,7 @@ def test_a_scan_runs_every_stage_and_stores_entrances_issues_and_evidence(setup)
             issue["review_status"]) == ("obstruction", "traffic cone", 1, 3, "auto")
     assert list(result["stage_status"]) == list(runner.STAGES)
     assert result["unavailable"] == {"scene_chunks": 0, "tactile_photos": 0, "obstacle_requests": 0,
-                                     "defect_checks": 0}
+                                     "defect_checks": 0, "check_requests": 0}
     assert (scan.work / "entrance0" / "stairs_0000_0004.mp4").exists()  # each entrance has its own folder
     assert json.loads(scan.state("defects_checks").read_text(encoding="utf-8"))[0]["candidate"] == "sample"
     for row in (ent, issue):
@@ -294,3 +294,50 @@ def test_a_us_scan_tracks_objects_on_the_sidewalk_and_reports_no_fixed_ones(setu
     assert [(i["issue_type"], i["object_label"]) for i in db.issues(conn, us_scan)] == [("obstruction", "traffic cone")]
     asked = {c[1] for c in api.calls if c[0] == "sam_image"}
     assert "sidewalk" in asked and "yellow tactile paving" not in asked
+    assert ("spark", "tactile_condition") not in api.calls  # the KR tactile check is gated off for US
+    assert result["unavailable"]["defect_checks"] == 0
+
+
+RAMP_NO = {"visible": True, "answer": "no", "box": [400, 600, 600, 900], "confidence": 0.8, "note": "no domes"}
+
+
+def test_a_us_scan_checks_curb_ramps_one_row_per_ramp_with_evidence(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+
+    def sam_ramp(prompt, media):
+        if prompt == "curb cut":  # sampled photos 0, 2, 4: the ramp on 2 and, closer, on 4
+            size = {"img2.jpg": 40, "img4.jpg": 80}.get(media.name)
+            return text([line(0, [record("0", 0, 0, size, size, 160, 120, 0.9)])]) if size else ""
+        return us_sam(prompt, media)
+
+    def spark_ramp(schema_name, parts):
+        return RAMP_NO if schema_name == "survey_check" else spark(schema_name, parts)
+
+    result = runner.run_scan(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan))
+    assert result["status"] == "done", result
+    (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
+    assert (ramp["object_label"], ramp["frame_idx"], ramp["review_status"]) == ("no", 4, "needs_review")
+    assert ramp["model_outputs"]["find"]["group_idxs"] == [2, 4]
+    assert ramp["evidence"]["image"]  # the sidewalk evidence stage stored a blurred photo
+    assert result["defects"] == 1 and result["unavailable"]["check_requests"] == 0
+
+
+def test_rerunning_the_defects_stage_replaces_the_check_rows(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+
+    def sam_ramp(prompt, media):
+        return found if prompt == "curb cut" and media.name == "img2.jpg" else us_sam(prompt, media)
+
+    answers = iter([RAMP_NO, {**RAMP_NO, "answer": "yes"}])
+
+    def spark_ramp(schema_name, parts):
+        return next(answers) if schema_name == "survey_check" else spark(schema_name, parts)
+
+    api = FakeApi(spark=spark_ramp, sam=sam_ramp)
+    runner.run_scan(make(api, us_scan))
+    db.set_stage(conn, us_scan, "defects", "pending")
+    runner.run_scan(make(api, us_scan))
+    assert [i["object_label"] for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"] == ["yes"]

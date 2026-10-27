@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from pipeline import (collect, config, db, defects, entrance_detect, entrance_read, events, evidence, geo, scene,
-                      sidewalk, survey_items)
+                      sidewalk, survey_checks, survey_items)
 from pipeline.cost import CostCapReached, CostMeter
 from pipeline.meta_api import RunAborted, error_text
 from pipeline.parallel import run_parallel
@@ -22,7 +22,6 @@ STAGES = ("collect", "chunks", "scene", "sidewalk", "defects", "sidewalk_evidenc
 INDEPENDENT = {"sidewalk", "defects", "sidewalk_evidence", "entrances", "evidence"}
 RERUN_AFTER = {"defects": {"sidewalk"}, "sidewalk_evidence": {"sidewalk", "defects"},
                "evidence": set(STAGES)}  # a done stage reruns if one of these ran
-DURABLE = (*defects.ISSUE_TYPES, "fixed_obstruction")  # the three defect classes the user chose (spec 9.3)
 SCENE_WORKERS = 3  # Spark video requests are large; fewer at a time
 RESUME_MIN_USD = 0.10
 _photo_locks: dict[str, threading.Lock] = {}
@@ -212,21 +211,30 @@ def stage_sidewalk(s: Scan) -> None:
 
 
 def stage_defects(s: Scan) -> None:
-    """S7: missing tactile blocks and covers in the line, checked at the edges of tactile runs and on samples."""
-    db.clear_issues(s.conn, s.scan_id, defects.ISSUE_TYPES)
-    flags = {int(k): v for k, v in json.loads(s.state("tactile").read_text(encoding="utf-8")).items()}
-    by_idx, photos = s.by_idx(), s.photos()
+    """KR: S7, missing tactile blocks and covers in the line, checked at the edges of tactile runs and on samples.
+    Every standard: its checks (pipeline/survey_checks.py), one row per object found."""
+    db.clear_issues(s.conn, s.scan_id, (*defects.ISSUE_TYPES, *(c.id for c in s.standard.checks)))
+    by_idx, photos, clips = s.by_idx(), s.photos(), s.clips()
     failed: list[int] = []
     checks: list[dict] = []
-    for clip_idxs in s.clips().values():
-        rows, bad, clip_checks = defects.find_defects(s.api, defects.candidates(flags, clip_idxs), photos, by_idx,
-                                                      clip_idxs, s.workers)
-        failed += bad
-        checks += clip_checks
+    if s.standard.tactile_defects:
+        flags = {int(k): v for k, v in json.loads(s.state("tactile").read_text(encoding="utf-8")).items()}
+        for clip_idxs in clips.values():
+            rows, bad, clip_checks = defects.find_defects(s.api, defects.candidates(flags, clip_idxs), photos, by_idx,
+                                                          clip_idxs, s.workers)
+            failed += bad
+            checks += clip_checks
+            for row in rows:
+                db.add_issue(s.conn, s.scan_id, row)
+    unavailable: dict[str, dict] = {}
+    for check in s.standard.checks:
+        rows, missing = survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers)
+        unavailable[check.id] = missing
         for row in rows:
             db.add_issue(s.conn, s.scan_id, row)
     s.state("defects_unavailable").write_text(json.dumps(failed), encoding="utf-8")
     s.state("defects_checks").write_text(json.dumps(checks, ensure_ascii=False), encoding="utf-8")
+    s.state("checks_unavailable").write_text(json.dumps(unavailable), encoding="utf-8")
 
 
 def stage_evidence(s: Scan, kinds: tuple[str, ...] = ("entrance", "issue")) -> None:
@@ -289,18 +297,20 @@ def unavailable(work: Path) -> dict:
     side = load("sidewalk_unavailable", {"tactile_photos": [], "obstacle_requests": []})
     return {"scene_chunks": sum("error" in c for c in load("scene", [])),
             "tactile_photos": len(side["tactile_photos"]), "obstacle_requests": len(side["obstacle_requests"]),
-            "defect_checks": len(load("defects_unavailable", []))}
+            "defect_checks": len(load("defects_unavailable", [])),
+            "check_requests": sum(len(v["find"]) + len(v["ask"]) for v in load("checks_unavailable", {}).values())}
 
 
 def summary(conn, scan_id: int, work: Path | None = None) -> dict:
     scan = db.get_scan(conn, scan_id)
+    std = survey_items.load(scan["jurisdiction"])
     ents, iss = db.entrances(conn, scan_id), db.issues(conn, scan_id)
     photos = scan["image_count"]
     per_100 = 100 / photos if photos else 0.0
     return {"scan_id": scan_id, "status": scan["status"], "error": scan["error"], "photos": photos,
             "entrances": len(ents),
             "entrances_needing_review": sum(e["review_status"] == "needs_review" for e in ents),
-            "issues": len(iss), "defects": sum(i["issue_type"] in DURABLE for i in iss),
+            "issues": len(iss), "defects": sum(std.is_defect(i) for i in iss if i["review_status"] != "rejected"),
             "cost_usd": round(scan["cost_usd"], 4),
             "processing_seconds": round(scan["processing_seconds"], 1),
             "cost_per_100_photos": round(scan["cost_usd"] * per_100, 4),
