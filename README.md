@@ -1,6 +1,10 @@
-# Threshold (working title)
+# Fieldless
 
-Pick an area on the map; AI turns the open street-level photos already on Mapillary into an accessibility survey of shop entrances (steps, ramps, doors) and sidewalks (obstacles on tactile paving), with photo evidence. No fieldwork.
+**Street surveys without the fieldwork.** Cities still survey their streets on foot, one block at a time. Fieldless does the first pass from street photos that already exist on Mapillary. It records what it finds with an evidence photo for each item, and a surveyor only confirms. The point is speed: how long a survey takes by hand compared with Fieldless.
+
+Today it surveys sidewalks (tactile paving with missing blocks or cut by a cover, fixed objects standing on it, objects blocking it) and the steps at shop entrances. It is built on Meta's Mapillary imagery, SAM 3.1 and Muse Spark.
+
+This is a work in progress for the Meta Global AI Developer Hackathon. The full README, with measured results, comes with the submission. The repository folder and code keep the earlier working name `threshold`.
 
 ## Built during the Meta Global AI Developer Hackathon
 
