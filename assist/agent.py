@@ -1,8 +1,11 @@
 """The authoring agent (plan 5): Muse Spark tests the survey items it drafted from a rule by calling SAM 3.1 and
 itself through two tools on labelled photos, revises them and calls finish. Code scores every test; the agent only
-chooses what to try next. Limits keep it from running on: MAX_TOOL_CALLS tool calls, and the run's cost meter."""
+chooses what to try next. Limits keep it from running on: MAX_TOOL_CALLS tool calls, and the run's cost meter.
+
+The same loop runs the inventory agent (run_inventory), which tunes one item that records where a thing is."""
 import json
 
+from assist.items import UNCLEAR, with_unclear
 from pipeline.cost import CostCapReached
 
 MAX_TOOL_CALLS = 20
@@ -56,6 +59,38 @@ def _dispatch(bench, name: str, args: dict) -> dict:
     return {"error": f"unknown tool {name}"}
 
 
+def _loop(respond, text: str, dispatch, max_calls: int) -> dict:
+    """Turns until the agent calls finish: {"finished": bool, "args": finish's arguments ({} if it never finished),
+    "calls": tool calls made, "stopped": why it stopped without finishing, or ""}. dispatch(name, args) runs a tool."""
+    history = [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}]
+    calls = 0
+    for _ in range(max_calls + 5):  # turns; a turn may call several tools
+        try:
+            turn = respond(history)
+        except CostCapReached as exc:
+            return {"finished": False, "args": {}, "calls": calls, "stopped": f"cost cap: {exc}"}
+        history += turn["output"]
+        fcalls = [o for o in turn["output"] if o.get("type") == "function_call"]
+        if not fcalls:
+            return {"finished": False, "args": {}, "calls": calls, "stopped": "answered without calling finish"}
+        for c in fcalls:
+            args = json.loads(c.get("arguments") or "{}")
+            if c["name"] == "finish":
+                return {"finished": True, "args": args, "calls": calls, "stopped": ""}
+            calls += 1
+            if calls > max_calls:
+                result = {"error": "tool call limit reached: call finish now"}
+            else:
+                try:
+                    result = dispatch(c["name"], args)
+                except CostCapReached as exc:
+                    return {"finished": False, "args": {}, "calls": calls, "stopped": f"cost cap: {exc}"}
+                except (KeyError, ValueError) as exc:
+                    result = {"error": str(exc)}
+            history.append({"type": "function_call_output", "call_id": c["call_id"], "output": json.dumps(result)})
+    return {"finished": False, "args": {}, "calls": calls, "stopped": "turn limit"}
+
+
 def run(respond, bench, drafts: list[dict], max_calls: int = MAX_TOOL_CALLS) -> dict:
     """{"finished": bool, "items": finish's items ([] if it never finished), "calls": tool calls made,
     "stopped": why it stopped without finishing, or ""}."""
@@ -65,30 +100,78 @@ def run(respond, bench, drafts: list[dict], max_calls: int = MAX_TOOL_CALLS) -> 
     shown = [{k: d[k] for k in ("id", "section", "target", "find", "ask", "report_when")} for d in drafts]
     text = PROMPT.format(name=ts.name, count=len(ts.photos), target=ts.target, questions=questions,
                          items=json.dumps(shown, ensure_ascii=False, indent=1), max_calls=max_calls)
-    history = [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}]
-    calls = 0
-    for _ in range(max_calls + 5):  # turns; a turn may call several tools
-        try:
-            turn = respond(history)
-        except CostCapReached as exc:
-            return {"finished": False, "items": [], "calls": calls, "stopped": f"cost cap: {exc}"}
-        history += turn["output"]
-        fcalls = [o for o in turn["output"] if o.get("type") == "function_call"]
-        if not fcalls:
-            return {"finished": False, "items": [], "calls": calls, "stopped": "answered without calling finish"}
-        for c in fcalls:
-            args = json.loads(c.get("arguments") or "{}")
-            if c["name"] == "finish":
-                return {"finished": True, "items": args.get("items", []), "calls": calls, "stopped": ""}
-            calls += 1
-            if calls > max_calls:
-                result = {"error": "tool call limit reached: call finish now"}
-            else:
-                try:
-                    result = _dispatch(bench, c["name"], args)
-                except CostCapReached as exc:
-                    return {"finished": False, "items": [], "calls": calls, "stopped": f"cost cap: {exc}"}
-                except (KeyError, ValueError) as exc:
-                    result = {"error": str(exc)}
-            history.append({"type": "function_call_output", "call_id": c["call_id"], "output": json.dumps(result)})
-    return {"finished": False, "items": [], "calls": calls, "stopped": "turn limit"}
+    r = _loop(respond, text, lambda name, args: _dispatch(bench, name, args), max_calls)
+    return {"finished": r["finished"], "items": r["args"].get("items", []), "calls": r["calls"],
+            "stopped": r["stopped"]}
+
+
+# The inventory agent: one item that records where a thing is (a streetlight pole, a street tree). There is no defect
+# question to score, so the agent picks the SAM phrase and tests that Spark confirms what SAM found. Its own tool
+# list, so the check agent's tools and prompt stay as they are.
+
+MAX_INVENTORY_CALLS = 12
+MAX_REWORDS = 3  # rewordings of the drafted ask; code refuses a further one
+
+INVENTORY_TOOLS = [
+    TOOLS[0],  # score_find
+    {"type": "function", "name": "score_confirm", "strict": True,
+     "description": "Run SAM 3.1 with `find` on every test photo, then ask Muse Spark `ask` on each photo where SAM "
+                    "found something, with and without the target. Returns, of the photos showing the target, how "
+                    "many Spark confirmed (yes), rejected wrongly (no) or found unclear; of the photos without it "
+                    "where SAM fired, how many Spark rejected (no, right) or kept (yes, wrong); and the wrong photo ids "
+                    "with Spark's note.",
+     "parameters": {"type": "object", "additionalProperties": False, "required": ["find", "ask"],
+                    "properties": {"find": {"type": "string"}, "ask": {"type": "string"}}}},
+    {"type": "function", "name": "finish", "strict": True,
+     "description": "Finish with the find phrase and the ask to keep, and a one-sentence note on why.",
+     "parameters": {"type": "object", "additionalProperties": False, "required": ["item"],
+                    "properties": {"item": {
+                        "type": "object", "additionalProperties": False, "required": ["find", "ask", "note"],
+                        "properties": {"find": {"type": "string"}, "ask": {"type": "string"},
+                                       "note": {"type": "string"}}}}}},
+]
+
+INVENTORY_PROMPT = """You make one inventory survey item work. A surveyor records where every {target} is. SAM 3.1 segments `find`, a short phrase, in each street photo; on each photo where it finds something, Muse Spark answers `ask` about that photo: "yes" records a {target}, "no" drops the find as something else, "unclear" sends it to a person.
+Test set "{name}": {visible} labelled street photos that show a {target} and {negatives} that do not.
+Drafted item:
+{item}
+Other phrases to try for find: {alternatives}
+1) score_find with the drafted phrase and the other phrases. Keep the phrase with the highest found_visible minus false_on_negatives.
+2) score_confirm with that phrase and the ask.
+3) If Spark rejects real ones, keeps things that are not one, or answers unclear on clear photos, reword the ask to say better what a {target} is and which look-alikes are not, and test again. Keep it a definition naming the look-alikes, then the question, then: "{unclear}". Reword the ask at most {rewords} times.
+You have at most {max_calls} tool calls in total. Then call finish with the find and the ask that worked best."""
+
+
+def _inventory_dispatch(bench, item: dict, max_rewords: int):
+    """dispatch for _loop. Every ask tested ends with the unclear sentence, and code refuses more than max_rewords
+    new asks, so the limit holds whatever the agent does."""
+    asks = [with_unclear(item["ask"])]
+
+    def dispatch(name: str, args: dict) -> dict:
+        if name == "score_find":
+            return bench.find(args["phrase"])
+        if name == "score_confirm":
+            ask = with_unclear(args["ask"])
+            if ask not in asks:
+                if len(asks) > max_rewords:
+                    return {"error": f"the ask was reworded {max_rewords} times already: call finish"}
+                asks.append(ask)
+            return bench.confirm(item["id"], args["find"], ask)
+        return {"error": f"unknown tool {name}"}
+
+    return dispatch
+
+
+def run_inventory(respond, bench, item: dict, max_calls: int = MAX_INVENTORY_CALLS,
+                  max_rewords: int = MAX_REWORDS) -> dict:
+    """{"finished": bool, "item": finish's item ({} if it never finished), "calls", "stopped"} for one drafted
+    inventory item (assist.items.validate_inventory)."""
+    ts = bench.ts
+    shown = {k: item[k] for k in ("id", "target", "find", "ask")}
+    text = INVENTORY_PROMPT.format(target=item["target"], name=ts.name, visible=len(ts.visible()),
+                                   negatives=len(ts.negatives()), item=json.dumps(shown, ensure_ascii=False, indent=1),
+                                   alternatives=", ".join(f'"{a}"' for a in item.get("alternatives", [])) or "none",
+                                   unclear=UNCLEAR, rewords=max_rewords, max_calls=max_calls)
+    r = _loop(respond, text, _inventory_dispatch(bench, item, max_rewords), max_calls)
+    return {"finished": r["finished"], "item": r["args"].get("item", {}), "calls": r["calls"],
+            "stopped": r["stopped"]}
