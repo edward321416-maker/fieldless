@@ -12,7 +12,7 @@ fixed = []  # poles and hydrants at the curb edge are normal on US sidewalks; no
 
 [[check]]
 id = "curb_ramp_warning"
-find = "curb ramp"
+find = "curb cut"
 ask = "Look at the curb ramp where the sidewalk meets the street. Does it have a detectable warning surface (a panel of raised truncated domes, usually yellow) at its bottom edge?"
 report_when = "no"
 label_yes = "Curb ramp with detectable warning"
