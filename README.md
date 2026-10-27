@@ -26,3 +26,40 @@ Create a file named `.env` with two lines, either in the repo root (it is git-ig
 MODEL_API_KEY=<your Meta Model API key>
 MAPILLARY_TOKEN=<your Mapillary client token>
 ```
+
+## Run the app
+
+The app is one FastAPI server (`server/`) that also serves the built web app (`web/`).
+
+Local development, in two terminals from the repo root:
+
+```bash
+.venv/Scripts/python -m uvicorn server.app:create_app --factory --port 8000
+npm --prefix web install
+npm --prefix web run dev
+```
+
+Then open http://localhost:5173. Vite forwards `/api` to port 8000.
+
+With Docker:
+
+```bash
+docker build -t threshold .
+docker run --rm -p 8000:8000 -v threshold-data:/data \
+  -e MODEL_API_KEY -e MAPILLARY_TOKEN threshold
+```
+
+Then open http://localhost:8000.
+
+| Variable | Needed | Meaning |
+|---|---|---|
+| `MODEL_API_KEY` | yes | Meta Model API key |
+| `MAPILLARY_TOKEN` | yes | Mapillary client token |
+| `THRESHOLD_DATA` | no | data folder (the image uses `/data`) |
+| `INVITE_CODE` | no | if set, starting a survey needs this code |
+| `IP_HASH_SALT` | no | salt for the hashed client address (set it in production) |
+| `SCANS_PER_IP_PER_DAY` | no | default 3 |
+| `DEMO_SCANS` | no | surveys listed first, as `id:Name;id:Name` |
+| `THRESHOLD_RUN` | no | run folder under `<data>/runs`, default `server` |
+
+Keys are read only from the environment and are never logged.
