@@ -61,12 +61,17 @@ def from_env(run_dir: Path) -> OpenModel | None:
 
 def apply(model, check: Check, rows: list[dict], photos: dict[int, Path], workers: int) -> list[dict]:
     """Ask the open model on every row whose answer is the check's report_when; record its answer and whether the two
-    models agree. A failed request is recorded and changes nothing else."""
+    models agree. Anything but the same answer is a disagreement, so "unclear" (or a photo where the open model sees
+    nothing) also puts the row first for a person. A failed request, or a reply of the wrong shape, is recorded on
+    that row and changes nothing else."""
     todo = [r for r in rows if r["object_label"] == check.report_when]
 
     def one(row):
         try:
-            return model.answer(check, photos[row["frame_idx"]])
+            answer = model.answer(check, photos[row["frame_idx"]])
+            if not isinstance(answer, dict) or answer.get("answer") not in ("yes", "no", "unclear"):
+                raise ValueError(f"unexpected answer from {MODEL}: {str(answer)[:200]}")
+            return answer
         except Exception as exc:  # this row keeps Spark's answer alone
             return {"error": error_text(exc)}
 

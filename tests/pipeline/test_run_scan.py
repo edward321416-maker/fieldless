@@ -32,7 +32,7 @@ def fake_run(captured):
     return run
 
 
-def test_the_cli_turns_on_the_second_opinion_only_with_a_baseten_key(monkeypatch, capsys):
+def test_the_cli_turns_on_the_second_opinion_only_with_a_baseten_key(monkeypatch):
     from pipeline import second_opinion
     captured = []
     monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))

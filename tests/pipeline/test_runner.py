@@ -348,7 +348,7 @@ class DisagreeingOpen:
         return {"visible": True, "answer": "yes", "box": [], "confidence": 0.6, "note": "domes"}
 
 
-def test_a_second_model_that_disagrees_puts_the_ramp_first_in_line(setup):
+def test_a_second_model_that_disagrees_adds_the_models_disagree_reason(setup):
     conn, _, make, _ = setup
     us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
     found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])

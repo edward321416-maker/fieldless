@@ -50,6 +50,15 @@ def test_a_failed_second_opinion_is_recorded_and_changes_nothing_else(tmp_path):
     assert "baseten 503" in out["model_outputs"]["second_opinion"]["error"]
 
 
+def test_a_wrong_shape_answer_is_recorded_on_its_row_only(tmp_path):
+    photos = {4: synthetic_photo(tmp_path / "4.jpg")}
+    for wrong in ({}, {"answer": "maybe"}, None, ["yes"]):
+        (out,) = second_opinion.apply(FakeOpen({"4.jpg": wrong}), CHECK, [row("no")], photos, 1)
+        assert out["review_reasons"] == ["possible_defect"]
+        assert "unexpected answer" in out["model_outputs"]["second_opinion"]["error"]
+        assert "agree" not in out["model_outputs"]["second_opinion"]
+
+
 def test_open_model_asks_with_the_photo_and_the_schema_and_logs_usage(tmp_path):
     sent = {}
 
