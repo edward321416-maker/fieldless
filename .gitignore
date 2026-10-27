@@ -6,6 +6,8 @@ spike/out/*
 !spike/out/gate_report.md
 !spike/out/box_retest.md
 !spike/out/durable_check.md
+!spike/out/ramp_probe.md
+!spike/out/ramp_probe_phrases.md
 *.mp4
 *.mov
 *.webm
