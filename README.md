@@ -16,7 +16,7 @@ python -m venv .venv
 .venv/Scripts/python -m pytest -q                         # offline tests, no API calls
 ```
 
-Create a file named `.env` in the repo root (it is git-ignored) with two lines:
+Create a file named `.env` with two lines, either in the repo root (it is git-ignored) or in any parent folder. Git worktrees of this repo can share one `.env` placed above them.
 
 ```
 MODEL_API_KEY=<your Meta Model API key>
