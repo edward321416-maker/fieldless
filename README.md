@@ -8,6 +8,14 @@ All code in this repository was written during the hackathon, starting after kic
 
 ## Setup
 
+Needs Python 3.12+ and `ffmpeg`/`ffprobe` on PATH.
+
+```
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt   # macOS/Linux: .venv/bin/python
+.venv/Scripts/python -m pytest -q                         # offline tests, no API calls
+```
+
 Create a file named `.env` in the repo root (it is git-ignored) with two lines:
 
 ```
