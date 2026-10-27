@@ -45,6 +45,14 @@ def counted(out: dict) -> str:
     return answer if out.get("visible", True) and answer in ("yes", "no") else "unclear"
 
 
+def counted_inventory(out: dict) -> str:
+    """An inventory confirmation as the pipeline counts it (pipeline.survey_checks.status): the target not visible, or
+    a "no", drops the pick (a look-alike such as a plain utility pole); "unclear" goes to review; "yes" is an asset."""
+    if not out.get("visible", True) or out.get("answer") == "no":
+        return "no"
+    return "yes" if out.get("answer") == "yes" else "unclear"
+
+
 class Bench:
     def __init__(self, api, testset, items: list[dict] = (), photo=collect.photo_path, workers: int = 4):
         self.api, self.ts, self.photo, self.workers = api, testset, photo, workers
@@ -120,7 +128,7 @@ class Bench:
         if cached:
             return cached
         out = self.api.spark_json([image_part(Path(self.photo(photo_id))), text_part(prompt)], "survey_check", SCHEMA)
-        got = (counted(out), out.get("note", ""))
+        got = (counted_inventory(out), out.get("note", ""))
         self.confirmations[(prompt, photo_id)] = got
         return got
 

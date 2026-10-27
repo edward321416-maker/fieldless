@@ -96,13 +96,14 @@ def make_inventory(tmp_path):
 def test_confirm_wants_yes_on_the_target_and_no_where_sam_fired_without_it(tmp_path):
     api, bench = make_inventory(tmp_path)
     r = bench.confirm("streetlight_pole", " utility pole ", "Is this a streetlight pole? ")
-    assert (r["found_visible"], r["confirmed"], r["rejected_wrongly"], r["unclear"]) == (3, 1, 1, 1)
-    assert (r["false_finds"], r["false_finds_rejected"], r["false_finds_unclear"]) == (3, 1, 1)
+    assert (r["found_visible"], r["confirmed"], r["rejected_wrongly"], r["unclear"]) == (3, 1, 2, 0)
+    assert (r["false_finds"], r["false_finds_rejected"], r["false_finds_unclear"]) == (3, 2, 0)
     assert (r["kept_true"], r["kept_false"], r["total_visible"], r["total_negatives"]) == (1, 1, 4, 3)
-    # b: visible=false counts as unclear, as in the pipeline; u: the label is unclear, so Spark is not asked
-    assert r["wrong_visible"] == [{"photo_id": "b", "answer": "unclear", "note": "no lamp head in view"},
+    # b, k: visible=false drops the pick like a "no", as the pipeline does for inventory checks (585d1de);
+    # u: the label is unclear, so Spark is not asked
+    assert r["wrong_visible"] == [{"photo_id": "b", "answer": "no", "note": "no lamp head in view"},
                                   {"photo_id": "d", "answer": "no", "note": "a plain wooden pole"}]
-    assert [(w["photo_id"], w["answer"]) for w in r["wrong_negatives"]] == [("m", "yes"), ("k", "unclear")]
+    assert [(w["photo_id"], w["answer"]) for w in r["wrong_negatives"]] == [("m", "yes")]
     assert sum(1 for c in api.calls if c[0] == "spark") == 6
     assert "whether the streetlight pole is visible" in bench.prompts[0]  # Spark is asked about the target
     assert bench.last("score_confirm", find="utility pole", ask="Is this a streetlight pole?")["kept_true"] == 1
