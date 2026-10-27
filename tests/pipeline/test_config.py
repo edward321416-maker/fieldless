@@ -45,3 +45,8 @@ def test_missing_keys_raise(monkeypatch):
         config.api_key()
     with pytest.raises(RuntimeError):
         config.mapillary_token()
+
+
+def test_tests_never_see_the_real_keys():
+    from tests.pipeline.conftest import FAKE_KEY
+    assert config.api_key() == FAKE_KEY and config.mapillary_token() == FAKE_KEY
