@@ -232,3 +232,12 @@ def clear_rows(conn, scan_id: int, table: str) -> None:
         raise ValueError(f"not a stage table: {table}")
     conn.execute(f"DELETE FROM {table} WHERE scan_id = ?", (scan_id,))
     conn.commit()
+
+
+def clear_issues(conn, scan_id: int, issue_types: tuple[str, ...]) -> None:
+    """Delete one scan's sidewalk issues of the given types, so the stage that makes them can run again without
+    touching the other stage's rows (S4/S5 obstructions and S7 defects come from different stages)."""
+    marks = ",".join("?" * len(issue_types))
+    conn.execute(f"DELETE FROM sidewalk_issue WHERE scan_id = ? AND issue_type IN ({marks})",
+                 (scan_id, *issue_types))
+    conn.commit()

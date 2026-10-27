@@ -96,3 +96,14 @@ def test_daily_cost_sums_scans_created_that_day(conn):
     db.update_scan(conn, b, cost_usd=0.5)
     assert db.daily_cost(conn, db.now()[:10]) == pytest.approx(1.75)
     assert db.daily_cost(conn, "1999-01-01") == 0
+
+
+def test_clear_issues_deletes_only_the_given_types_of_one_scan(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    other = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    for issue_type in ("obstruction", "break", "damage"):
+        db.add_issue(conn, scan_id, {"issue_type": issue_type})
+    db.add_issue(conn, other, {"issue_type": "break"})
+    db.clear_issues(conn, scan_id, ("break", "damage"))
+    assert [i["issue_type"] for i in db.issues(conn, scan_id)] == ["obstruction"]
+    assert [i["issue_type"] for i in db.issues(conn, other)] == ["break"]
