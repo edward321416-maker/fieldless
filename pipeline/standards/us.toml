@@ -27,7 +27,7 @@ id = "streetlight_pole"
 inventory = true
 find = "utility pole"
 target = "streetlight pole"
-ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a streetlight pole, with a lamp head or light fixture on it? Plain utility poles without a light, sign posts and trees are not; for those, set visible to false. If the top of the pole is cut off or too far away to see a light, answer unclear."
+ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a streetlight pole, with a lamp head or light fixture on it? Answer no for a plain utility pole without a light, a sign post or a tree. If the top of the pole is cut off or too far away to see whether it has a light, answer unclear."
 label_yes = "Streetlight pole"
 
 [[check]]
@@ -35,7 +35,7 @@ id = "street_tree"
 inventory = true
 find = "street tree"
 target = "street tree"
-ask = "Is there a tree planted in the sidewalk or planting strip between the sidewalk and the street (not in a private yard behind the sidewalk)? If it is behind a fence or clearly on private land, set visible to false. If you cannot tell where it is planted, answer unclear."
+ask = "Is this tree planted in the sidewalk or in the planting strip between the sidewalk and the street? Answer no for a tree in a private yard, behind a fence or clearly on private land. If you cannot tell where it is planted, answer unclear."
 label_yes = "Street tree"
 
 [[check]]
@@ -43,5 +43,5 @@ id = "litter_can"
 inventory = true
 find = "trash can"
 target = "public litter can"
-ask = "Is this a public litter or recycling can on the sidewalk (a fixed city bin), not a private wheeled bin put out for collection? If it is a private wheeled bin, set visible to false. If you cannot tell, answer unclear."
+ask = "Is this a public litter or recycling can on the sidewalk (a fixed city bin)? Answer no for a private wheeled bin put out for collection. If you cannot tell, answer unclear."
 label_yes = "Public litter can"

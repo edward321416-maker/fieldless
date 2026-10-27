@@ -47,7 +47,7 @@ def test_status_follows_report_when(answer, expected):
     ({**YES}, ("auto", [], "yes")),
     ({**NO}, None),
     ({**NO, "answer": "unclear"}, ("needs_review", ["unclear"], "unclear")),
-    ({**YES, "visible": False}, ("needs_review", ["unclear"], "unclear")),
+    ({**YES, "visible": False}, None),  # the target is not there: SAM found a look-alike, so the pick is dropped
 ])
 def test_status_of_an_inventory_check(answer, expected):
     assert survey_checks.status(LIGHT, answer) == expected

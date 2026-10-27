@@ -216,6 +216,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
                     raise HTTPException(422, "Only a survey check takes an answer")
                 if body.answer is None:
                     raise HTTPException(422, "An answer needs yes or no")
+                if std.check(row["issue_type"]).inventory and body.answer == "no":
+                    raise HTTPException(422, "An inventory item is confirmed with yes; reject it if it is not one")
             db.update_issue(conn, issue_id,
                             **review.issue_update(row, body.action, body.seconds, db.now(), body.answer))
             db.add_review_seconds(conn, row["scan_id"], body.seconds)

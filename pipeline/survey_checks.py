@@ -91,13 +91,18 @@ def merge_near(picks: list[dict], by_idx: dict[int, dict], meters: float = MERGE
 
 
 def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
-    """(review_status, reasons, current answer) for Spark's answer; None drops the pick (an inventory check's "no":
-    SAM found something that is not the target)."""
+    """(review_status, reasons, current answer) for Spark's answer; None drops the pick. For an inventory check a
+    "no", or the target not being visible, means SAM found something that is not the target (a plain utility pole,
+    a private bin), so the pick is dropped instead of being sent to review."""
+    if check.inventory:
+        if not answer["visible"] or answer["answer"] == "no":
+            return None
+        if answer["answer"] == "unclear":
+            return "needs_review", ["unclear"], "unclear"
+        return "auto", [], "yes"
     current = answer["answer"] if answer["visible"] else "unclear"
     if current == "unclear":
         return "needs_review", ["unclear"], current
-    if check.inventory:
-        return None if current == "no" else ("auto", [], current)
     if current == check.report_when:
         return "needs_review", ["possible_defect"], current
     return "auto", [], current
