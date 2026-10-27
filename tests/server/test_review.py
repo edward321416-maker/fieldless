@@ -1,3 +1,5 @@
+import pytest
+
 from server import review
 
 AT = "2026-10-31T10:00:00Z"
@@ -38,3 +40,16 @@ def test_issue_confirm_and_reject():
     rejected = review.issue_update({"corrections": []}, "reject", 3.0, AT)
     assert rejected["review_status"] == "rejected"
     assert rejected["corrections"] == [{"at": AT, "action": "reject", "seconds": 3.0}]
+
+
+def test_only_the_step_count_can_be_changed():
+    fields = review.entrance_update(row(), "correct", {"step_count": 2, "evidence": {}, "scan_id": 9}, 1.0, AT)
+    assert set(fields) == {"step_count", "review_status", "corrections"}
+    assert fields["corrections"][0]["changes"] == {"step_count": 2}
+
+
+def test_unknown_actions_are_refused():
+    with pytest.raises(ValueError):
+        review.entrance_update(row(), "reject", {}, 1.0, AT)
+    with pytest.raises(ValueError):
+        review.issue_update({"corrections": []}, "Confirm", 1.0, AT)

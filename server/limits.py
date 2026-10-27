@@ -1,9 +1,14 @@
 """Request limits (spec 13): area size, optional invite code, and scans per address per day. Addresses are kept only
-as a salted hash."""
+as a keyed hash."""
 import hashlib
+import hmac
+import ipaddress
 from datetime import datetime, timedelta, timezone
 
 from pipeline import db
+
+PROXY_HOPS = 1  # trusted proxies in front of the server that append to X-Forwarded-For (Railway's edge)
+MAX_SIDE_DEG = 0.02  # about 1.8 km of longitude and 2.2 km of latitude in Seoul: no long slivers
 
 
 class LimitError(Exception):
@@ -13,31 +18,55 @@ class LimitError(Exception):
         self.detail = detail
 
 
-def client_ip(headers, peer: str | None) -> str:
-    """The caller's address; behind Railway's proxy it is the first X-Forwarded-For entry."""
-    forwarded = headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return peer or "unknown"
+def _address_key(addr: str | None) -> str | None:
+    """A parsed address as a stable key: IPv4 as is, IPv6 as its /64 network (one household's block). None if the
+    text is not an address."""
+    try:
+        ip = ipaddress.ip_address((addr or "").strip())
+    except ValueError:
+        return None
+    if ip.version == 6:
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip)
+
+
+def client_ip(headers, peer: str | None, proxy_hops: int = PROXY_HOPS) -> str:
+    """The caller's address. Each trusted proxy appends the address it saw to X-Forwarded-For, so the entry
+    proxy_hops from the right is what the nearest trusted proxy saw; entries further left come from the client and can
+    be forged. Without a usable header, the socket peer is used."""
+    forwarded = [p for p in (headers.get("x-forwarded-for") or "").split(",") if p.strip()]
+    if proxy_hops > 0 and len(forwarded) >= proxy_hops:
+        key = _address_key(forwarded[-proxy_hops])
+        if key:
+            return key
+    return _address_key(peer) or peer or "unknown"
 
 
 def ip_hash(ip: str, salt: str) -> str:
-    return hashlib.sha256(f"{salt}:{ip}".encode()).hexdigest()[:32]
+    """Keyed hash of an address (HMAC-SHA256, 32 hex characters); the address itself is never stored."""
+    if not salt:
+        raise ValueError("an address hash needs a non-empty salt (IP_HASH_SALT)")
+    return hmac.new(salt.encode(), ip.encode(), hashlib.sha256).hexdigest()[:32]
 
 
 def check_bbox(bbox: list[float], max_deg2: float) -> list[float]:
     if len(bbox) != 4:
         raise LimitError(422, "bbox needs four numbers: min_lng, min_lat, max_lng, max_lat")
-    min_lng, min_lat, max_lng, max_lat = (float(v) for v in bbox)
+    try:
+        min_lng, min_lat, max_lng, max_lat = (float(v) for v in bbox)
+    except (TypeError, ValueError):
+        raise LimitError(422, "bbox needs four numbers: min_lng, min_lat, max_lng, max_lat") from None
     if not (-180 <= min_lng < max_lng <= 180 and -90 <= min_lat < max_lat <= 90):
         raise LimitError(422, "The area's corners are out of order or out of range")
     if (max_lng - min_lng) * (max_lat - min_lat) > max_deg2:
         raise LimitError(422, "This area is too large. Choose a rectangle about 1 km across or smaller.")
+    if max_lng - min_lng > MAX_SIDE_DEG or max_lat - min_lat > MAX_SIDE_DEG:
+        raise LimitError(422, "This area is too long. Choose a rectangle about 1 km across or smaller.")
     return [min_lng, min_lat, max_lng, max_lat]
 
 
 def check_invite(given: str | None, expected: str | None) -> None:
-    if expected and given != expected:
+    if expected and not (given and hmac.compare_digest(given.encode(), expected.encode())):
         raise LimitError(403, "Starting a survey needs an invite code")
 
 
