@@ -41,7 +41,7 @@ SPARK_IMAGE_ESTIMATE_USD = 0.02
 MAX_PHOTOS_PER_SCAN = 400
 SCAN_COST_CAP_USD = 3.0
 DAILY_COST_CAP_USD = 10.0
-EST_USD_PER_100_PHOTOS = 0.57  # spec section 7.4
+EST_USD_PER_100_PHOTOS = 0.69  # spec section 7.4 ($0.57) plus S7 checks on about 10 candidates ($0.12)
 PARALLEL_REQUESTS = 6
 
 
