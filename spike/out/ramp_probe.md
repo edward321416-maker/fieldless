@@ -33,3 +33,5 @@ Spark on visible ramps whose domes were judged yes/no by eye: 9/11 right, 1 uncl
 - **Pass.** SAM 3.1 finds the ramp with **"curb cut"** on 10/12 visible ramps (one false find on 5 photos without a ramp); "curb ramp" and "sidewalk ramp" find 0/12 (first run: `ramp_probe_phrases.md`). Muse Spark is right on 9/11 ramps whose domes were judged by eye (82%) and calls one distant ramp unclear, with the same prompt the pipeline will use (find = "curb cut").
 - `pipeline/standards/us.toml`: `find = "curb cut"`; `ask` unchanged.
 - The city record (2015) agrees on 7/11; at least 3 of the 4 differences are ramps the 2022 photos show with yellow domes, so the record is out of date there (2d labels).
+
+Re-scored on 2d's relabelled probe set (2026-10-28: 3 gray pads now 'unclear', 1938591246337969 now 'no'): Spark is right on 7/9 decidable visible ramps, 1 unclear.
