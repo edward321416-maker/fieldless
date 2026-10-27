@@ -8,8 +8,9 @@ same code scores poles, trees, litter cans, bike racks, signs or curb ramps.
 A row is paired with the city point it looks at, not only the nearest one: two poles on the corners of a crossing are
 metres apart but tens of degrees apart seen from the photo, so the row's direction (photo compass plus where the box
 sits across the image) decides between them. Only points a photo could have shown can be missed. The city record is
-not ground truth either: a row with no city point is "not in the city record" (new, moved, or a false find), and a
-point installed after the photo is its own class."""
+not ground truth either: a row with no city point is "not in the city record" (new, moved, or a false find), a row
+that could only pair with a point another row already found is a repeat (two photos of one thing), and a point
+installed after the photo is its own class."""
 import argparse
 import json
 import math
@@ -206,7 +207,8 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
     located = [f for f in frames if f.get("lat") is not None and f.get("lng") is not None]
     by_idx = {f["idx"]: f for f in located}
     near = near_track(layer, located, max(max_m, max_m_no_dir, cover_m))
-    pairs = assign(candidates(kept, by_idx, near, fov=fov, max_m=max_m, max_deg=max_deg, max_m_no_dir=max_m_no_dir))
+    cands = candidates(kept, by_idx, near, fov=fov, max_m=max_m, max_deg=max_deg, max_m_no_dir=max_m_no_dir)
+    pairs = assign(cands)
 
     matched, after = [], []
     for ri, pi, dist, offset in pairs:
@@ -219,6 +221,9 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
                         "offset_deg": None if offset is None else round(offset, 1), "row_answer": row_answer(row),
                         "city_value": city_answer(point["props"], truth_field, truth_yes)})
     paired_rows, paired_points = {ri for ri, *_ in pairs}, {pi for _, pi, *_ in pairs}
+    # An unpaired row that could have paired with a point another row took photographed that same thing again (two
+    # pieces of one walk past a pole, or two walks): a repeat. Only a row that reaches no city point is outside it.
+    repeats = {ri for _, ri, pi, *_ in cands if ri not in paired_rows and pi in paired_points}
 
     missed, not_photographed = [], len(layer) - len(near)
     for pi, point in enumerate(near):
@@ -236,7 +241,8 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
     out = {"item": item_id, "rows": len(kept), "points_in_layer": len(layer), "covered": covered,
            "matched": sorted(matched, key=lambda m: m["issue_id"]),
            "found_share": round(len(matched) / covered, 3) if covered else None,
-           "rows_unmatched": sorted(r["id"] for ri, r in enumerate(kept) if ri not in paired_rows),
+           "rows_unmatched": sorted(r["id"] for ri, r in enumerate(kept) if ri not in paired_rows | repeats),
+           "rows_repeat": sorted(kept[ri]["id"] for ri in repeats),
            "missed_covered": missed, "not_photographed": not_photographed, "installed_after_photo": after,
            "params": {"inventory": inventory, "fov": fov, "max_m": max_m, "max_deg": max_deg,
                       "max_m_no_dir": max_m_no_dir, "cover_m": cover_m, "id_field": id_field,
@@ -258,6 +264,7 @@ def to_markdown(r: dict) -> str:
              f"| Photographed, not found | {len(r['missed_covered'])} |",
              f"| Installed after the photo | {len(r['installed_after_photo'])} |",
              f"| Not photographed | {r['not_photographed']} |",
+             f"| Rows repeating a found city point | {len(r.get('rows_repeat', []))} |",
              f"| Rows not in the city record | {len(r['rows_unmatched'])} |"]
     if "agree" in r:
         lines += [f"| Answer agrees with the city record | {r['agree']} |",
@@ -265,6 +272,8 @@ def to_markdown(r: dict) -> str:
                   f"| Answer unclear | {r['unclear']} |",
                   f"| No city value | {r['city_unknown']} |"]
     lines.append("")
+    if r.get("rows_repeat"):
+        lines.append(f"- Repeats a found city point (two photos of one thing): rows {r['rows_repeat']}")
     if r["rows_unmatched"]:
         lines.append(f"- Not in the city record (new, moved, or a false find): rows {r['rows_unmatched']}")
     if r["missed_covered"]:

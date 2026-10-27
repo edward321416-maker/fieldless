@@ -63,10 +63,10 @@ def test_box_on_the_left_or_right_picks_the_pole_on_that_side_of_the_corner():
 
 def test_pairs_are_one_to_one_and_the_best_score_chooses_first():
     # Row 2 looks straight at P (score 0.33) and takes it before row 3 (0.51); row 1 looks straight at Q; row 3 is
-    # left with both points used, so it stays unmatched instead of sharing one.
+    # left with both points used, so it does not share one: it repeats a found point.
     rows = [row(1, box=box_at(600)), row(2, box=box_at(500)), row(3, box=box_at(450))]
     r = run(rows, layer(point("P", 0, 10), point("Q", 7, 12)))
-    assert pairs(r) == {1: "Q", 2: "P"} and r["rows_unmatched"] == [3]
+    assert pairs(r) == {1: "Q", 2: "P"} and r["rows_repeat"] == [3] and r["rows_unmatched"] == []
 
 
 def test_a_row_without_a_box_matches_by_distance_alone_within_12_m():
@@ -79,7 +79,7 @@ def test_a_row_with_a_direction_chooses_before_one_without():
     # Both rows can reach the pole; the boxless row is closer in metres, but its unknown angle scores as max_deg.
     frames = [frame(0), frame(1, at=geo.offset_point(*ORIGIN, 180, 4))]
     r = run([row(1, frame_idx=0), row(2, frame_idx=1, box=box_at(500))], layer(point(10, 0, 8)), frames)
-    assert pairs(r) == {2: 10} and r["rows_unmatched"] == [1]
+    assert pairs(r) == {2: 10} and r["rows_repeat"] == [1] and r["rows_unmatched"] == []
 
 
 def test_rejected_rows_and_other_items_are_ignored():
@@ -175,6 +175,27 @@ def test_points_come_from_point_features_only():
     assert [p["id"] for p in city.load_points(features)] == [0]
     with pytest.raises(ValueError, match="OBJECTID"):
         city.load_points([point(None, 0, 10)], "OBJECTID")
+
+
+def test_a_row_that_can_only_reach_a_found_point_repeats_it_and_is_not_outside_the_record():
+    # group_m cuts one walk past a pole into pieces; two neighbouring pieces can both pick that pole. The second row
+    # is a repeat, not a thing the city never recorded. A row that reaches no city point at all is outside it.
+    frames = [frame(0), frame(1, at=geo.offset_point(*ORIGIN, 0, 5))]
+    rows = [row(1, frame_idx=0, box=box_at(500)), row(2, frame_idx=1, box=box_at(500)),
+            row(3, frame_idx=0, box=box_at(1000))]
+    r = run(rows, layer(point(10, 0, 15)), frames)
+    assert pairs(r) == {2: 10} and r["rows_repeat"] == [1] and r["rows_unmatched"] == [3]
+    text = city.to_markdown(r)
+    assert "| Rows repeating a found city point | 1 |" in text and "| Rows not in the city record | 1 |" in text
+    assert "Repeats a found city point (two photos of one thing): rows [1]" in text
+
+
+def test_a_row_that_reaches_a_point_installed_after_its_photo_is_a_repeat_too():
+    frames = [frame(0), frame(1, at=geo.offset_point(*ORIGIN, 0, 5))]
+    rows = [row(1, frame_idx=0, box=box_at(500)), row(2, frame_idx=1, box=box_at(500))]
+    r = run(rows, layer(point(10, 0, 15, INSTALL=MS_2024)), frames, installed_field="INSTALL")
+    assert [a["issue_id"] for a in r["installed_after_photo"]] == [2]
+    assert r["rows_repeat"] == [1] and r["rows_unmatched"] == []
 
 
 def test_markdown_never_calls_a_row_outside_the_city_record_wrong():
