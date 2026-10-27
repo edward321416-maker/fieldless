@@ -81,10 +81,18 @@ def _write(frames, size: tuple[int, int], fps: float, dst: Path) -> None:
     """Write BGR frames of `size` as mp4v, then re-encode as H.264."""
     tmp = Path(dst).with_name(Path(dst).stem + "_raw.mp4")
     writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), fps, size)
-    for frame in frames:
-        writer.write(frame)
-    writer.release()
-    _normalize(tmp, Path(dst))
+    if not writer.isOpened():
+        raise RuntimeError(f"cv2.VideoWriter could not open {tmp}")
+    try:
+        try:
+            for frame in frames:
+                writer.write(frame)
+        finally:
+            writer.release()
+        _normalize(tmp, Path(dst))
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     tmp.unlink()
 
 
@@ -124,7 +132,7 @@ def _read(src: Path):
 
 
 def burn_photo_numbers(src: Path, dst: Path) -> Path:
-    """Stamp each frame's photo number in the top-left corner, in the D1 format ("012.0s" is photo 12 at 1 fps).
+    """Stamp each frame's photo number in the top-left corner, in the D1 format ("0012.0s" is photo 12 at 1 fps).
     Spark reads entrance positions from this number instead of estimating them (spec 7.1)."""
     fps, size, frames = _read(src)
     scale = max(0.6, size[1] / 360)
