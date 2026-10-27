@@ -11,7 +11,8 @@ from pipeline.scene import Chunk
 TACTILE_PHRASE = "yellow tactile paving"  # D1 re-test; "braille block" found nothing
 TACTILE_EVERY = 2
 BASE_OBSTACLES = ["electric scooter", "bicycle"]
-MAX_OBSTACLE_LABELS = 6
+FIXED_OBSTACLES = ["bollard", "pole"]  # always asked: a fixed object on tactile paving is a durable defect (spec 9.3)
+MAX_OBSTACLE_LABELS = 8
 
 
 def sampled(clip_idxs: list[int], every: int) -> list[int]:
@@ -32,8 +33,8 @@ def tactile_segs(api, idxs: list[int], photos: dict[int, Path], workers: int) ->
 
 
 def obstacle_labels(spark_types: list[str]) -> list[str]:
-    """SAM concepts to ask for: the base labels, then the kinds Spark listed, at most MAX_OBSTACLE_LABELS."""
-    labels = BASE_OBSTACLES + [t.strip().lower() for t in spark_types if t.strip()]
+    """SAM concepts to ask for: the base and fixed labels, then the kinds Spark listed, at most MAX_OBSTACLE_LABELS."""
+    labels = BASE_OBSTACLES + FIXED_OBSTACLES + [t.strip().lower() for t in spark_types if t.strip()]
     return list(dict.fromkeys(labels))[:MAX_OBSTACLE_LABELS]
 
 

@@ -69,3 +69,13 @@ def test_check_event_sends_the_photo(tmp_path):
     answer = {"blocked": True, "object": "cone", "damage_visible": False, "confidence": 0.8, "notes": ""}
     api = FakeApi(spark=lambda name, parts: answer if name == "event_check" else {})
     assert events.check_event(api, synthetic_photo(tmp_path / "p.jpg")) == answer
+
+
+@pytest.mark.parametrize("label, fixed", [
+    ("bollard", True), ("Bollards", True), ("utility pole", True), ("street light", True), ("streetlight", True),
+    ("lamp post", True), ("tree", True), ("planter", True), ("utility cabinet", True), ("fire hydrant", True),
+    ("bench", True), ("electric scooter", False), ("bicycle", False), ("sandwich board sign", False),
+    ("poster board", False), ("traffic cone", False), ("stacked boxes", False),
+])
+def test_is_fixed(label, fixed):
+    assert events.is_fixed(label) is fixed

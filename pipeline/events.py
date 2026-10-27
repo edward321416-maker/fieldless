@@ -4,6 +4,7 @@ row becomes an event, and Spark checks the event's middle photo.
 "Standing on" uses the obstacle's footprint (the bottom FOOTPRINT of its mask) against the tactile mask grown by
 DILATE_PX, so an object beside the line that hides part of it in the picture does not count. D1 had no obstacle on
 tactile paving, so these constants are first guesses, to be tuned on the expanded truth set (plan 3)."""
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,8 @@ FOOTPRINT = 0.2
 DILATE_PX = 8
 MIN_RUN = 2
 LOW_CONFIDENCE = 0.6
+# Objects that stay where they stand: on tactile paving they are durable defects (spec 9.3), not dated facts.
+FIXED_OBJECT = re.compile(r"\b(bollard|pole|post|street ?light|lamp|tree|planter|cabinet|hydrant|bench)s?\b")
 
 CHECK_SCHEMA = {
     "type": "object",
@@ -151,3 +154,8 @@ def review(check: dict) -> tuple[str | None, list[str]]:
     if check["confidence"] < LOW_CONFIDENCE:
         return "needs_review", ["low_confidence"]
     return "auto", []
+
+
+def is_fixed(label: str) -> bool:
+    """Whether an obstacle label names a fixed object (a bollard, pole, street light and the like)."""
+    return FIXED_OBJECT.search(label.lower()) is not None

@@ -9,8 +9,8 @@ FRAMES = {i: {"lat": 37.5 + i * 1e-5, "lng": 127.0, "captured_at": f"2025-09-24T
 FLAGS = {0: False, 2: True, 4: True, 6: True, 8: True, 10: True, 12: True, 14: False, 16: None, 18: True}
 
 
-def answer(line_end="none", damage="none", visible=True, conf=0.8):
-    return {"tactile_visible": visible, "line_end": line_end, "damage": damage, "box": [],
+def answer(line_end="none", damage="none", visible=True, conf=0.8, box=()):
+    return {"tactile_visible": visible, "line_end": line_end, "damage": damage, "box": list(box),
             "confidence": conf, "note": ""}
 
 
@@ -28,20 +28,26 @@ def test_a_single_tactile_photo_between_empty_ones_is_one_edge():
 
 
 @pytest.mark.parametrize("ans, found", [
-    (answer(line_end="abrupt"), ("break", None)),
-    (answer(damage="missing"), ("damage", "missing")),
-    (answer(damage="broken"), ("damage", "broken")),
-    (answer(damage="covered"), ("damage", "covered")),
+    (answer(damage="missing"), "missing_blocks"),
+    (answer(damage="cut_by_cover"), "cover_cut"),
+    (answer(damage="covered"), None),  # a mat or debris: not a durable defect
+    (answer(damage="broken"), None),
     (answer(damage="worn"), None),
+    (answer(line_end="abrupt"), None),
     (answer(line_end="unclear", damage="unclear"), None),
-    (answer(line_end="normal"), None),
-    (answer(line_end="abrupt", visible=False), None),
+    (answer(damage="missing", visible=False), None),
 ])
-def test_defect_of(ans, found):
+def test_defect_of_keeps_only_the_two_classes_a_surveyor_confirms_from_a_photo(ans, found):
     assert defects.defect_of(ans) == found
 
 
-def test_check_photo_sends_the_photo_then_the_validated_prompt(tmp_path):
+def test_the_schema_separates_covers_from_mats_and_debris():
+    damage = defects.SCHEMA["properties"]["damage"]["enum"]
+    assert "cut_by_cover" in damage and "covered" in damage
+    assert '"cut_by_cover" (a manhole, utility cover or metal plate' in defects.PROMPT
+
+
+def test_check_photo_sends_the_photo_then_the_prompt(tmp_path):
     seen = {}
 
     def spark(name, parts):
@@ -56,8 +62,8 @@ def test_check_photo_sends_the_photo_then_the_validated_prompt(tmp_path):
 
 def test_find_defects_makes_review_rows_merges_repeats_and_reports_failures(tmp_path, monkeypatch):
     photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in CLIP}
-    answers = {2: answer(line_end="abrupt"), 4: answer(line_end="abrupt"), 6: answer(damage="worn"),
-               12: answer(damage="missing", conf=0.7)}
+    answers = {2: answer(damage="missing", box=(375, 670, 575, 825)), 4: answer(damage="missing"),
+               6: answer(damage="worn"), 12: answer(damage="cut_by_cover", conf=0.7)}
 
     def fake_check(api, photo):
         idx = int(photo.stem)
@@ -69,13 +75,13 @@ def test_find_defects_makes_review_rows_merges_repeats_and_reports_failures(tmp_
     cands = [(2, "edge"), (4, "sample"), (6, "sample"), (12, "edge"), (14, "edge")]
     rows, failed = defects.find_defects(FakeApi(), cands, photos, FRAMES, CLIP, workers=2)
     assert failed == [14]
-    assert [(r["issue_type"], r["object_label"], r["frame_idx"]) for r in rows] == [("break", None, 2),
-                                                                                  ("damage", "missing", 12)]
+    assert [(r["issue_type"], r["object_label"], r["frame_idx"]) for r in rows] == [("missing_blocks", None, 2),
+                                                                                  ("cover_cut", None, 12)]
+    assert rows[0]["model_outputs"] == {"check": answers[2], "candidate": "edge"}
     row = rows[1]
     assert (row["frame_start"], row["frame_end"], row["review_status"], row["review_reasons"]) == (
         12, 12, "needs_review", ["possible_defect"])
     assert (row["lat"], row["lng"], row["confidence"]) == (FRAMES[12]["lat"], 127.0, 0.7)
-    assert row["model_outputs"] == {"check": answers[12], "candidate": "edge"}
     assert row["captured_at"] == FRAMES[12]["captured_at"]
 
 

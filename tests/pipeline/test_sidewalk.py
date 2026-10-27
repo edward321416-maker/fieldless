@@ -14,9 +14,9 @@ def test_sampled_takes_every_nth_photo_of_the_clip():
     assert sidewalk.sampled([3, 4], 1) == [3, 4]
 
 
-def test_obstacle_labels_start_with_the_base_labels_and_are_capped():
-    labels = sidewalk.obstacle_labels(["Traffic cone", " bicycle", "", "plastic stool", "a", "b", "c"])
-    assert labels == ["electric scooter", "bicycle", "traffic cone", "plastic stool", "a", "b"]
+def test_obstacle_labels_start_with_the_base_and_fixed_labels_and_are_capped():
+    labels = sidewalk.obstacle_labels(["Traffic cone", " bicycle", "", "plastic stool", "Bollard", "a", "b", "c"])
+    assert labels == ["electric scooter", "bicycle", "bollard", "pole", "traffic cone", "plastic stool", "a", "b"]
 
 
 def test_tactile_segs_marks_failed_photos_and_keeps_the_rest(tmp_path):

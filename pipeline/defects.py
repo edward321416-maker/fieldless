@@ -1,11 +1,18 @@
-"""Sidewalk flow, S7 (spec 7.3): possible breaks and damage in the tactile paving.
+"""Sidewalk flow, S7 (spec 7.3): tactile paving defects a surveyor can confirm from one photo.
+
+The user chose the classes on 2026-10-27: blocks missing (or replaced by other paving), and a tactile line cut by a
+cover (a manhole, utility cover or plate). Broken, worn or abruptly ending paving is not reported: the 2d check
+(threshold/spike/out/durable_check.md) found fading unreliable, a line end needs the neighbouring photos, and a
+surveyor could not confirm those from the photo without going on site. Fixed objects standing on the paving, the
+third class, come from the S4/S5 events (pipeline.events.is_fixed).
 
 Candidates come from the per-photo tactile results of S2 (sampled photos only): the photos where a run of tactile
-paving starts or ends while the walk goes on, and every CHECK_EVERY-th photo inside a run. Spark judges each
-candidate on its full-resolution photo, with the prompt the 2d session checked on 38 Seongsu stills
-(threshold/spike/out/durable_check.md). It raised no structural alarm on 18 intact photos and found 2 of 3
-structural spots when fixed covers count, but fading was unreliable and the sample was small. So "worn" is never a
-defect, and every defect is a possible defect for a person to confirm (needs_review), never an automatic verdict.
+paving starts or ends while the walk goes on, and every CHECK_EVERY-th photo inside a run. Spark judges each one on
+its full-resolution photo. Every defect is for a person to confirm (needs_review) with its photo and Spark's box.
+
+2b re-ran this prompt on the 38 labelled Seongsu stills (2026-10-27): missing blocks found at the crossing (64, not
+63 from farther), the manhole cover found from near and far (82, 81), and no shown class on the worn or intact
+photos.
 """
 from pathlib import Path
 
@@ -14,10 +21,10 @@ from pipeline.cost import CostCapReached
 from pipeline.meta_api import error_text, image_part, text_part
 from pipeline.parallel import run_parallel
 
-ISSUE_TYPES = ("break", "damage")
-CHECK_EVERY = 4  # inside a run, every 4th sampled tactile photo is also checked for damage
+ISSUE_TYPES = ("missing_blocks", "cover_cut")
+DAMAGE_TO_ISSUE = {"missing": "missing_blocks", "cut_by_cover": "cover_cut"}
+CHECK_EVERY = 4  # inside a run, every 4th sampled tactile photo is also checked
 MERGE_GAP = 4  # photos: a same-type defect this close to the last one in a clip is the same defect
-DEFECT_DAMAGE = ("broken", "missing", "covered")  # "worn" is unreliable from one photo (2d check: 1 of 7)
 
 SCHEMA = {
     "type": "object",
@@ -26,7 +33,8 @@ SCHEMA = {
     "properties": {
         "tactile_visible": {"type": "boolean"},
         "line_end": {"type": "string", "enum": ["none", "normal", "abrupt", "unclear"]},
-        "damage": {"type": "string", "enum": ["none", "broken", "missing", "worn", "covered", "unclear"]},
+        "damage": {"type": "string",
+                   "enum": ["none", "broken", "missing", "worn", "cut_by_cover", "covered", "unclear"]},
         "box": {"type": "array", "items": {"type": "integer"}},
         "confidence": {"type": "number"},
         "note": {"type": "string"},
@@ -43,7 +51,8 @@ Answer as JSON:
   "unclear": you cannot tell.
 - damage: the worst condition of the visible tactile blocks. "none", "broken" (cracked, chipped or sunken blocks),
   "missing" (blocks missing or replaced by other paving), "worn" (color faded or bumps worn flat),
-  "covered" (covered by a plate, mat, paint or debris), "unclear".
+  "cut_by_cover" (a manhole, utility cover or metal plate sits in the tactile paving and cuts it),
+  "covered" (covered by a mat, paint or debris), "unclear".
 - box: the problem area (abrupt end or damage) as [x1, y1, x2, y2] on a 0-1000 scale of the image, or [] if none.
 - confidence: 0 to 1 for your line_end and damage answers.
 - note: one sentence on what you see."""
@@ -75,15 +84,11 @@ def check_photo(api, photo: Path) -> dict:
     return api.spark_json([image_part(photo), text_part(PROMPT)], "tactile_condition", SCHEMA)
 
 
-def defect_of(answer: dict) -> tuple[str, str | None] | None:
-    """(issue_type, kind) for an answer that reports a defect, or None."""
+def defect_of(answer: dict) -> str | None:
+    """The issue type for an answer that reports one of the two S7 classes, or None."""
     if not answer["tactile_visible"]:
         return None
-    if answer["line_end"] == "abrupt":
-        return "break", None
-    if answer["damage"] in DEFECT_DAMAGE:
-        return "damage", answer["damage"]
-    return None
+    return DAMAGE_TO_ISSUE.get(answer["damage"])
 
 
 def find_defects(api, cands: list[tuple[int, str]], photos: dict[int, Path], frames_by_idx: dict[int, dict],
@@ -104,16 +109,15 @@ def find_defects(api, cands: list[tuple[int, str]], photos: dict[int, Path], fra
         if "error" in answer:
             failed.append(idx)
             continue
-        found = defect_of(answer)
-        if found is None:
+        issue_type = defect_of(answer)
+        if issue_type is None:
             continue
-        issue_type, kind = found
         pos = clip_idxs.index(idx)
         if issue_type in last_pos and pos - last_pos[issue_type] <= MERGE_GAP:
             continue  # the same defect seen again a few photos on
         last_pos[issue_type] = pos
         lat, lng = geo.issue_location(frames_by_idx, idx, idx)
-        rows.append({"issue_type": issue_type, "object_label": kind, "frame_start": idx, "frame_end": idx,
+        rows.append({"issue_type": issue_type, "object_label": None, "frame_start": idx, "frame_end": idx,
                      "frame_idx": idx, "lat": lat, "lng": lng, "confidence": answer["confidence"],
                      "review_status": "needs_review", "review_reasons": ["possible_defect"],
                      "model_outputs": {"check": answer, "candidate": reason},
