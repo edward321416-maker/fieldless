@@ -20,7 +20,10 @@ RUN grep -v '^pytest' requirements.txt > runtime.txt \
 COPY pipeline/ pipeline/
 COPY server/ server/
 COPY --from=web /web/dist web/dist
+# Hugging Face Spaces run the container as uid 1000, so the data folder must be writable by any user.
+RUN mkdir -p /data && chmod 777 /data
 ENV THRESHOLD_DATA=/data \
+    HF_HOME=/tmp/hf \
     PYTHONUNBUFFERED=1
 EXPOSE 8000
 CMD ["sh", "-c", "mkdir -p \"$THRESHOLD_DATA\" && exec uvicorn server.app:create_app --factory --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

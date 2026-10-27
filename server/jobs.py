@@ -43,10 +43,11 @@ def spend_saver(db_path: Path, scan_id: int, saved_usd: float):
 
 
 class ScanWorker:
-    def __init__(self, db_path: Path, run_dir: Path, run=None):
+    def __init__(self, db_path: Path, run_dir: Path, run=None, on_done=None):
         self.db_path = Path(db_path)
         self.run_dir = Path(run_dir)
         self._run = run or self._run_pipeline
+        self._on_done = on_done  # called with the scan id after every scan, finished or crashed
         self._queue: queue.Queue = queue.Queue()
         self._thread: threading.Thread | None = None
 
@@ -94,6 +95,11 @@ class ScanWorker:
                 log.exception("scan %s crashed", scan_id)
                 self._mark_failed(scan_id, exc)
             finally:
+                if scan_id is not None and self._on_done:
+                    try:
+                        self._on_done(scan_id)
+                    except Exception:
+                        log.exception("after-scan hook failed for scan %s", scan_id)
                 self._queue.task_done()
 
     def _mark_failed(self, scan_id: int, exc: BaseException) -> None:

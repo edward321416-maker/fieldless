@@ -67,7 +67,8 @@ def seed():
 
 def test_health_and_config(make):
     client, _ = make()
-    assert client.get("/api/health").json() == {"ok": True}
+    assert client.get("/api/health").json() == {"ok": True, "forwarded_for_entries": 0}
+    assert client.get("/api/health", headers={"x-forwarded-for": "1.2.3.4, 5.6.7.8"}).json()["forwarded_for_entries"] == 2
     assert client.get("/api/config").json() == {"invite_required": False, "max_bbox_deg2": 0.0001}
     client, _ = make(invite_code="abc")
     assert client.get("/api/config").json()["invite_required"] is True
@@ -219,7 +220,7 @@ def test_the_built_web_app_is_served_when_present(make, tmp_path):
     assert "Threshold" in client.get("/").text
     assert client.get("/").headers["cache-control"] == "no-cache"
     assert client.get("/docs").status_code == 404
-    assert client.get("/api/health").json() == {"ok": True}
+    assert client.get("/api/health").json()["ok"] is True
 
 
 def test_validation_errors_carry_a_text_detail(make):
@@ -251,3 +252,28 @@ def test_parallel_starts_from_one_address_stop_at_the_daily_limit(make):
     with ThreadPoolExecutor(max_workers=8) as pool:
         codes = list(pool.map(lambda _: client.post("/api/scans", json={"bbox": BBOX}).status_code, range(8)))
     assert codes.count(202) == 3 and codes.count(429) == 5
+
+
+class FakeStore:
+    def __init__(self):
+        self.restored = 0
+        self.saves = 0
+
+    def restore(self):
+        self.restored += 1
+        return False
+
+    def request_save(self):
+        self.saves += 1
+
+
+def test_the_dataset_store_restores_at_start_and_saves_after_a_review(tmp_path):
+    _, _, sill, _, broken = seed()
+    store = FakeStore()
+    app = create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(),
+                     preview=lambda bbox, max_photos: PREVIEW, store=store)
+    with TestClient(app) as client:
+        assert store.restored == 1
+        client.post(f"/api/entrances/{sill}/review", json={"action": "correct", "seconds": 1, "step_count": 0})
+        client.post(f"/api/issues/{broken}/review", json={"action": "confirm", "seconds": 1})
+    assert store.saves == 2

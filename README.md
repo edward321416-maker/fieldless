@@ -61,6 +61,18 @@ Then open http://localhost:8000.
 | `SCANS_PER_IP_PER_DAY` | no | default 3 |
 | `DEMO_SCANS` | no | surveys listed first, as `id:Name;id:Name` |
 | `THRESHOLD_RUN` | no | run folder under `<data>/runs`, default `server` |
+| `HF_DATA_REPO` | no | private Hugging Face dataset that keeps the data on a host without a disk (with `HF_TOKEN`) |
 | `PROXY_HOPS` | no | trusted proxies that append to `X-Forwarded-For`, default 1 (Railway); 0 when no proxy |
 
 Keys are read only from the environment and are never logged. In production, mount a persistent volume at `/data`: the database, photo cache and evidence photos live there. The server runs one process (`--workers 1`), because surveys run one at a time on a background thread. The image installs the tested package versions in constraints.txt.
+
+### On a free Hugging Face Space
+
+A free Space (Docker, 2 vCPU, 16 GB) has no disk that survives a restart, so the server keeps its database and evidence photos in a private Hugging Face dataset: it restores them on start and uploads them after each survey and review (`server/store.py`, on when `HF_DATA_REPO` is set).
+
+```bash
+hf auth login                      # a token with write access to your repos
+python -m deploy.hf_space --space USER/fieldless --data USER/fieldless-data --salt
+```
+
+Then set `MODEL_API_KEY`, `MAPILLARY_TOKEN`, `INVITE_CODE` and `HF_TOKEN` (write access to the dataset) as secrets in the Space settings. `--seed data/runs/<run>` uploads a local run's surveys to the dataset first.

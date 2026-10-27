@@ -110,3 +110,19 @@ def test_a_base_exception_from_a_scan_does_not_stop_the_worker(tmp_path):
     worker.join()
     worker.stop()
     assert ran == [1, 2]
+
+
+def test_the_after_scan_hook_runs_after_every_scan_even_a_crash(tmp_path):
+    done = []
+
+    def run(scan_id):
+        if scan_id == 1:
+            raise RuntimeError("boom")
+
+    worker = ScanWorker(tmp_path / "t.db", tmp_path, run=run, on_done=done.append)
+    worker.start()
+    worker.submit(1)
+    worker.submit(2)
+    worker.join()
+    worker.stop()
+    assert done == [1, 2]

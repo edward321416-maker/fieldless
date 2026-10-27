@@ -15,8 +15,10 @@ def test_environment_overrides(monkeypatch):
     monkeypatch.setenv("SCANS_PER_IP_PER_DAY", "5")
     monkeypatch.setenv("DEMO_SCANS", "3:Myeongdong;7:Seongsu Atelier-gil;9")
     monkeypatch.setenv("THRESHOLD_RUN", "demo")
+    monkeypatch.setenv("HF_DATA_REPO", "me/fieldless-data")
     s = settings.load()
     assert s.invite_code == "letmein" and s.scans_per_ip_per_day == 5 and s.run_name == "demo"
+    assert s.hf_data_repo == "me/fieldless-data"
     assert s.demo_scans == ((3, "Myeongdong"), (7, "Seongsu Atelier-gil"), (9, "Scan 9"))
 
 
@@ -38,7 +40,7 @@ def test_bad_numbers_name_their_variable(monkeypatch):
         settings.load()
 
 
-@pytest.mark.parametrize("marker", ["RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID"])
+@pytest.mark.parametrize("marker", ["RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID", "SPACE_ID"])
 def test_any_railway_variable_needs_a_salt(monkeypatch, marker):
     monkeypatch.setenv(marker, "x")
     with pytest.raises(RuntimeError, match="IP_HASH_SALT"):

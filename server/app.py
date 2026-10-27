@@ -23,6 +23,7 @@ from pipeline.runner import RESUME_MIN_USD
 from server import limits, review, views
 from server.jobs import ScanWorker
 from server.settings import Settings, load
+from server.store import DatasetStore
 
 log = logging.getLogger(__name__)
 
@@ -53,13 +54,15 @@ class IssueReview(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-def create_app(settings: Settings | None = None, worker=None, preview=None) -> FastAPI:
+def create_app(settings: Settings | None = None, worker=None, preview=None, store=None) -> FastAPI:
     settings = settings or load()
     if settings.ip_hash_salt == "threshold":
         log.warning("IP_HASH_SALT is not set; set a random salt in production")
     run_dir = config.run_dir(settings.run_name)
     db_path = run_dir / "threshold.db"
-    worker = worker or ScanWorker(db_path, run_dir)
+    if store is None and settings.hf_data_repo:
+        store = DatasetStore(settings.hf_data_repo, run_dir)
+    worker = worker or ScanWorker(db_path, run_dir, on_done=(lambda _: store.request_save()) if store else None)
     preview = preview or collect.preview
 
     start_lock = threading.Lock()  # the per-address check, the new scan and its address tag happen as one step
@@ -74,6 +77,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        if store:
+            store.restore()  # before anything opens the database
         worker.start()
         yield
         worker.stop()
@@ -109,8 +114,11 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
         return response
 
     @app.get("/api/health")
-    def health():
-        return {"ok": True}
+    def health(request: Request):
+        # How many X-Forwarded-For entries reach the server (a count, no addresses): checked once per host to set
+        # PROXY_HOPS.
+        forwarded = [p for p in (request.headers.get("x-forwarded-for") or "").split(",") if p.strip()]
+        return {"ok": True, "forwarded_for_entries": len(forwarded)}
 
     @app.get("/api/config")
     def get_config():
@@ -192,6 +200,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
             db.update_entrance(conn, entrance_id,
                                **review.entrance_update(row, body.action, changes, body.seconds, db.now()))
             db.add_review_seconds(conn, row["scan_id"], body.seconds)
+            if store:
+                store.request_save()
             return views.entrance_json(db.get_entrance(conn, entrance_id))
 
     @app.post("/api/issues/{issue_id}/review")
@@ -201,6 +211,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
             check_reviewable(row)
             db.update_issue(conn, issue_id, **review.issue_update(row, body.action, body.seconds, db.now()))
             db.add_review_seconds(conn, row["scan_id"], body.seconds)
+            if store:
+                store.request_save()
             return views.issue_json(db.get_issue(conn, issue_id))
 
     if settings.static_dir.is_dir():
