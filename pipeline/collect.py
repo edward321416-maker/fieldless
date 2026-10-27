@@ -4,6 +4,7 @@ Pedestrian, non-panorama photos taken since 2020 come first (mapillary.rank_sequ
 re-walks a street already chosen is skipped, so the higher-ranked walk of a street wins. D1: the Myeongdong
 sequence had a photo every 0.5 m, so photos are thinned to one every MIN_GAP_M.
 """
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -44,7 +45,7 @@ def overlap_share(frames: list[dict], chosen: list[dict]) -> float:
     return near / len(frames)
 
 
-def plan_clips(sequences: list[list[dict]], max_photos: int) -> list[list[dict]]:
+def plan_clips(sequences: Iterable[list[dict]], max_photos: int) -> list[list[dict]]:
     """Sequences in rank order -> clips to process, within max_photos in total."""
     clips: list[list[dict]] = []
     chosen: list[dict] = []
@@ -60,18 +61,17 @@ def plan_clips(sequences: list[list[dict]], max_photos: int) -> list[list[dict]]
     return clips
 
 
-def candidate_sequences(bbox) -> list[list[dict]]:
-    """Ranked sequences of the area as thinned frame records inside the bbox (Mapillary API calls)."""
+def candidate_sequences(bbox) -> Iterator[list[dict]]:
+    """Ranked sequences of the area as thinned frame records inside the bbox, fetched one at a time as the caller
+    asks for them (Mapillary API calls)."""
     since = mapillary.ms(SINCE)
     images, _ = mapillary.search_area(tuple(bbox))
-    out = []
     for seq in mapillary.rank_sequences(images, since):
         recs = [mapillary.frame_record(img) for img in mapillary.sequence_frames(seq)
                 if not img.get("is_pano") and img.get("captured_at", 0) >= since]
         recs = thin([r for r in recs if in_bbox(r, bbox)])
         if recs:
-            out.append(recs)
-    return out
+            yield recs
 
 
 def preview(bbox, max_photos: int = config.MAX_PHOTOS_PER_SCAN) -> dict:

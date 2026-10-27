@@ -91,3 +91,19 @@ def test_collect_numbers_frames_and_clips_and_drops_missing_photos(monkeypatch):
     assert frames[0] == {"idx": 0, "clip": 0, "image_id": "a0", "sequence_id": "a", "lat": 37.5, "lng": 127.0,
                          "compass": 0.0, "captured_at": "2025-01-01T00:00:00Z", "creator": "c", "width": 2048,
                          "height": 1536}
+
+
+def test_candidate_sequences_fetch_frames_only_while_plan_clips_needs_them(monkeypatch):
+    fetched = []
+
+    def sequence_frames(seq):
+        fetched.append(seq)
+        return [{"captured_at": 10**13, "rec": r} for r in street(20, 5.0, seq)]
+
+    monkeypatch.setattr(collect.mapillary, "search_area", lambda bbox: ([], None))
+    monkeypatch.setattr(collect.mapillary, "rank_sequences", lambda images, since: ["a", "b", "c"])
+    monkeypatch.setattr(collect.mapillary, "sequence_frames", sequence_frames)
+    monkeypatch.setattr(collect.mapillary, "frame_record", lambda img: img["rec"])
+    monkeypatch.setattr(collect, "in_bbox", lambda rec, bbox: True)
+    clips = collect.plan_clips(collect.candidate_sequences((0, 0, 1, 1)), max_photos=20)
+    assert len(clips) == 1 and fetched == ["a", "b"]  # "b" shows the budget is spent; "c" is never fetched
