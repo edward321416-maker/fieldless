@@ -21,3 +21,9 @@ def test_points_match_one_to_one_and_maximally():
     assert match_points([2, 5], [4, 6], tol=1) == [(1, 0)]
     assert sorted(match_points([2, 5], [4, 6], tol=2)) == [(0, 0), (1, 1)]
     assert match_points([10, 10], [10], tol=0) == [(0, 0)]
+
+
+def test_points_prefer_the_nearer_truth_when_the_count_is_the_same():
+    # Myeongdong idx 172-173: a currency exchange (1 step) next to a bank (3 steps). The prediction at 173 is the bank.
+    assert match_points([173], [172, 173], tol=1) == [(0, 1)]
+    assert sorted(match_points([172, 173], [172, 173], tol=1)) == [(0, 0), (1, 1)]

@@ -26,17 +26,30 @@ def match_spans(pred: list[tuple[int, int]], truth: list[tuple[int, int]], tol: 
 
 
 def match_points(pred: list[int], truth: list[int], tol: int) -> list[tuple[int, int]]:
-    """Maximum one-to-one matching of photo indexes within tol. Each truth point, in order, takes the earliest
-    unused prediction in its window; on a line with equal windows this greedy choice is optimal."""
-    p_order = sorted(range(len(pred)), key=lambda i: pred[i])
-    used: set[int] = set()
-    pairs = []
-    for ti in sorted(range(len(truth)), key=lambda i: truth[i]):
-        for pi in p_order:
-            if pi in used or pred[pi] < truth[ti] - tol:
-                continue
-            if pred[pi] <= truth[ti] + tol:
-                pairs.append((pi, ti))
-                used.add(pi)
-            break
-    return pairs
+    """One-to-one matching of photo indexes within tol: as many pairs as possible, then the smallest total distance,
+    so a prediction pairs with the entrance on its own photo rather than a neighbour (Myeongdong 172-173). On a line
+    an optimal matching never crosses, so a DP over both sorted lists finds it."""
+    ps = sorted(range(len(pred)), key=lambda i: pred[i])
+    ts = sorted(range(len(truth)), key=lambda i: truth[i])
+    best = [[(0, 0)] * (len(ts) + 1) for _ in range(len(ps) + 1)]  # (pairs, -total distance)
+    move = [[""] * (len(ts) + 1) for _ in range(len(ps) + 1)]
+    for i in range(1, len(ps) + 1):
+        for j in range(1, len(ts) + 1):
+            best[i][j], move[i][j] = best[i - 1][j], "p"
+            if best[i][j - 1] > best[i][j]:
+                best[i][j], move[i][j] = best[i][j - 1], "t"
+            gap = abs(pred[ps[i - 1]] - truth[ts[j - 1]])
+            if gap <= tol:
+                paired = (best[i - 1][j - 1][0] + 1, best[i - 1][j - 1][1] - gap)
+                if paired > best[i][j]:
+                    best[i][j], move[i][j] = paired, "m"
+    pairs, i, j = [], len(ps), len(ts)
+    while i and j:
+        if move[i][j] == "m":
+            pairs.append((ps[i - 1], ts[j - 1]))
+            i, j = i - 1, j - 1
+        elif move[i][j] == "p":
+            i -= 1
+        else:
+            j -= 1
+    return sorted(pairs, key=lambda pair: pair[1])
