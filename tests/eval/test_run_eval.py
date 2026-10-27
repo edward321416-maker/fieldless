@@ -1,6 +1,7 @@
 import json
 
 from eval import run_eval
+from eval.metrics import evaluate
 from eval.truth import FORMAT
 from pipeline import config, db
 
@@ -29,3 +30,15 @@ def test_run_eval_writes_json_and_prints_markdown(capsys):
     printed = capsys.readouterr().out
     assert "| cover_cut | 1 | 1 | 1 | 1 |" in printed and "Person labeling" in printed
     assert "50 s processing + 6 s review" in printed and "$0.20 (" in printed
+
+
+def test_markdown_names_fieldless_and_skips_an_untimed_person_line():
+    # Since 2026-10-27 the truth is made without timing (labeling_seconds 0); a "0 s" person line would mislead.
+    frames = [{"idx": i, "clip": 0, "image_id": f"img{i}", "lat": 37.5 + i * 1e-4, "lng": 127.0} for i in range(3)]
+    data = {"scan": {"id": 1, "processing_seconds": 60.0, "review_seconds": 0.0, "cost_usd": 0.1},
+            "frames": frames, "issues": [], "entrances": []}
+    truth = {"run": "r", "scan_id": 1, "labeled_by": "Claude", "labeling_seconds": 0, "photos": {}}
+
+    text = run_eval.to_markdown(evaluate(data, truth))
+
+    assert "Person labeling" not in text and "- Fieldless: 60 s processing" in text

@@ -20,16 +20,18 @@ def to_markdown(r: dict) -> str:
         lines.append(f"| {kind} | {m['truth']} | {m['found']} | {m['predicted']} | {m['hits']} |")
     e, v, s = r["entrances"], r["review"], r["speed"]
     lines += ["",
-              f"- Entrances: truth {e['truth']}, predicted {e['predicted']}, matched {e['matched']}, "
-              f"steps exact {e['steps_exact']}, within one {e['steps_within_one']}, sill agree {e['sill_agree']}",
+              f"- Entrances: truth {e['truth']} (found {e['found']}), predicted {e['predicted']}, matched "
+              f"{e['matched']}, steps exact {e['steps_exact']}, within one {e['steps_within_one']}, "
+              f"sill agree {e['sill_agree']}",
               f"- Review: {v['flagged']} of {v['items']} items flagged ({v['flagged_share']}), median "
               f"{v['review_seconds_median']} s per action, defects confirmed {v['defects_verified']}, "
-              f"rejected {v['defects_rejected']}",
-              f"- Person labeling: {s['human_seconds']} s for {s['photos']} photos, {s['km']} km "
-              f"({s['human_seconds_per_km']} s/km)",
-              f"- Threshold: {s['processing_seconds']:.0f} s processing + {s['review_seconds']:.0f} s review "
-              f"({s['threshold_seconds_per_km']} s/km), ${s['cost_usd']:.2f} (${s['usd_per_km']}/km)"
-              + ("" if s["reviewed"] else " - not reviewed yet")]
+              f"rejected {v['defects_rejected']}"]
+    if s["human_seconds"]:  # the truth is no longer timed since 2026-10-27; skip a misleading "0 s" line
+        lines.append(f"- Person labeling: {s['human_seconds']} s for {s['photos']} photos, {s['km']} km "
+                     f"({s['human_seconds_per_km']} s/km)")
+    lines.append(f"- Fieldless: {s['processing_seconds']:.0f} s processing + {s['review_seconds']:.0f} s review "
+                 f"({s['threshold_seconds_per_km']} s/km), ${s['cost_usd']:.2f} (${s['usd_per_km']}/km), {s['km']} km"
+                 + ("" if s["reviewed"] else " - not reviewed yet"))
     for kind in DEFECTS:
         m = r["defects"][kind]
         if m["false"] or m["missed"]:

@@ -60,6 +60,16 @@ def test_entrances_match_within_one_photo_and_score_steps():
     assert (e["steps_exact"], e["steps_within_one"], e["sill_agree"]) == (0, 1, 1)
 
 
+def test_an_entrance_seen_on_two_walks_counts_once_and_is_found_by_either_sighting():
+    # Myeongdong has several walks over the same street; the pipeline folds repeats into one entrance on one walk.
+    d = data(entrances=[{"frame_idx": 8, "step_count": 1, "sill_possible": False, "review_reasons": []}])
+    t = truth({"img2": photo(2, entrances=[{"steps": 1, "sill_unsure": False, "place": "cafe"}]),
+               "img8": photo(8, entrances=[{"steps": 1, "sill_unsure": False, "place": "cafe"}]),
+               "img5": photo(5, entrances=[{"steps": 0, "sill_unsure": False}])})
+    e = evaluate(d, t)["entrances"]
+    assert (e["predicted"], e["truth"], e["matched"], e["found"]) == (1, 2, 1, 1)
+
+
 def test_review_summary_counts_flags_decisions_and_seconds():
     d = data(issues=[issue("missing_blocks", 1, status="verified", corrections=[{"seconds": 4.0}]),
                      issue("cover_cut", 2, status="rejected", corrections=[{"seconds": 2.0}]),

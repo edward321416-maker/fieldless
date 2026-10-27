@@ -63,8 +63,15 @@ def _obstructions(issues, truth_idx):
 
 
 def _entrances(entrances, truth_idx):
+    """An entrance seen on several walks is labelled once per sighting with a shared "place"; it counts once in
+    "truth" and is "found" if any sighting is matched. "matched" counts predictions, for precision."""
     truth_list = [(idx, e) for idx, p in sorted(truth_idx.items()) for e in p["entrances"]]
     pairs = match_points([e["frame_idx"] for e in entrances], [idx for idx, _ in truth_list], ENTRANCE_TOL)
+
+    def place(ti):
+        return truth_list[ti][1].get("place") or f"#{ti}"
+
+    places, found = {place(ti) for ti in range(len(truth_list))}, {place(ti) for _, ti in pairs}
     exact = within_one = sill_agree = 0
     for pi, ti in pairs:
         pred, t = entrances[pi], truth_list[ti][1]
@@ -72,7 +79,7 @@ def _entrances(entrances, truth_idx):
             exact += pred["step_count"] == t["steps"]
             within_one += abs(pred["step_count"] - t["steps"]) <= 1
         sill_agree += bool(pred.get("sill_possible")) == bool(t["sill_unsure"])
-    return {"predicted": len(entrances), "truth": len(truth_list), "matched": len(pairs),
+    return {"predicted": len(entrances), "truth": len(places), "matched": len(pairs), "found": len(found),
             "steps_exact": exact, "steps_within_one": within_one, "sill_agree": sill_agree}
 
 
