@@ -4,8 +4,10 @@ from pipeline import survey_checks, survey_items
 from pipeline.cost import CostCapReached
 from tests.pipeline.fakes import FakeApi, synthetic_photo
 from tests.pipeline.sam_text import line, record, text
+from tests.pipeline.test_survey_items import INVENTORY as INVENTORY_TOML
 
 CHECK = survey_items.load("US").check("curb_ramp_warning")
+LIGHT = survey_items.parse(INVENTORY_TOML, "us.toml").checks[0]
 NO = {"visible": True, "answer": "no", "box": [400, 600, 600, 900], "confidence": 0.8, "note": "no domes"}
 YES = {"visible": True, "answer": "yes", "box": [100, 600, 300, 900], "confidence": 0.9, "note": "yellow domes"}
 
@@ -41,6 +43,16 @@ def test_status_follows_report_when(answer, expected):
     assert survey_checks.status(CHECK, answer) == expected
 
 
+@pytest.mark.parametrize("answer, expected", [
+    ({**YES}, ("auto", [], "yes")),
+    ({**NO}, None),
+    ({**NO, "answer": "unclear"}, ("needs_review", ["unclear"], "unclear")),
+    ({**YES, "visible": False}, ("needs_review", ["unclear"], "unclear")),
+])
+def test_status_of_an_inventory_check(answer, expected):
+    assert survey_checks.status(LIGHT, answer) == expected
+
+
 def test_the_prompt_carries_the_check_sentences():
     p = survey_checks.prompt(CHECK)
     assert CHECK.ask in p and "whether the curb ramp is visible" in p and "0-1000" in p
@@ -68,7 +80,7 @@ def test_run_check_finds_groups_asks_and_builds_contract_rows(tmp_path):
 
     api = FakeApi(spark=spark, sam=sam)
     rows, missing = survey_checks.run_check(api, CHECK, {0: list(range(9))}, photos, by_idx, workers=1)
-    assert missing == {"find": [0], "ask": []}
+    assert missing == {"find": [0], "ask": [], "not_target": []}
     assert [(r["frame_idx"], r["frame_start"], r["frame_end"]) for r in rows] == [(4, 2, 4), (8, 8, 8)]
     first = rows[0]
     assert first["issue_type"] == "curb_ramp_warning" and first["object_label"] == "no"
@@ -93,7 +105,7 @@ def test_a_wrong_shape_answer_marks_only_its_object(tmp_path):
     answers = iter([{}, YES])  # the first object's answer is empty: reported, the second object is still made
     api = FakeApi(spark=lambda schema_name, parts: next(answers), sam=sam)
     rows, missing = survey_checks.run_check(api, CHECK, {0: list(range(9))}, photos, by_idx, workers=1)
-    assert missing == {"find": [], "ask": [4]}
+    assert missing == {"find": [], "ask": [4], "not_target": []}
     assert [(r["frame_idx"], r["object_label"]) for r in rows] == [(8, "yes")]
 
 
@@ -116,10 +128,29 @@ def test_a_failed_question_is_reported_and_the_cost_cap_stops_the_run(tmp_path):
 
     rows, missing = survey_checks.run_check(FakeApi(spark=broken, sam=lambda p, m: found), CHECK, {0: [0, 1, 2]},
                                             photos, by_idx, workers=1)
-    assert rows == [] and missing == {"find": [], "ask": [0]}
+    assert rows == [] and missing == {"find": [], "ask": [0], "not_target": []}
 
     def capped(prompt, media):
         raise CostCapReached("cap")
 
     with pytest.raises(CostCapReached):
         survey_checks.run_check(FakeApi(sam=capped), CHECK, {0: [0, 1, 2]}, photos, by_idx, workers=1)
+
+
+def test_run_check_drops_inventory_picks_that_are_not_the_target(tmp_path):
+    by_idx = frames(9)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+
+    def sam(prompt, media):
+        return found if media.name in ("2.jpg", "8.jpg") else ""
+
+    answers = iter([YES, NO])  # photo 2 is a streetlight pole, photo 8 is not
+
+    def spark(schema_name, parts):
+        return next(answers)
+
+    rows, missing = survey_checks.run_check(FakeApi(spark=spark, sam=sam), LIGHT, {0: list(range(9))}, photos, by_idx, 1)
+    assert [(r["frame_idx"], r["object_label"], r["review_status"]) for r in rows] == [(2, "yes", "auto")]
+    assert missing == {"find": [], "ask": [], "not_target": [8]}
+    assert rows[0]["issue_type"] == "streetlight" and set(rows[0]["model_outputs"]) == {"check", "find"}

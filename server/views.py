@@ -95,7 +95,7 @@ def check_json(row: dict, std: survey_items.Standard) -> dict | None:
         return None
     return {"id": check.id, "find": check.find, "target": check.target, "question": check.ask,
             "answer": row.get("object_label") or "unclear", "report_when": check.report_when,
-            "label_yes": check.label_yes, "label_no": check.label_no}
+            "label_yes": check.label_yes, "label_no": check.label_no, "inventory": check.inventory}
 
 
 def second_json(row: dict) -> dict | None:
@@ -132,7 +132,7 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
     needs_review = sum(r["review_status"] == "needs_review" for r in [*entrances, *live])
     with_steps = sum(entrance_label(e)["icon"] == "▲" for e in entrances)  # a possible sill is not counted
     checks = [{"id": c.id, "find": c.find, "target": c.target, "report_when": c.report_when,
-               "label_yes": c.label_yes, "label_no": c.label_no,
+               "label_yes": c.label_yes, "label_no": c.label_no, "inventory": c.inventory,
                **{a: sum(i["issue_type"] == c.id and (i.get("object_label") or "unclear") == a for i in live)
                   for a in ("yes", "no", "unclear")}} for c in std.checks]
     return {**{k: scan[k] for k in SCAN_FIELDS},

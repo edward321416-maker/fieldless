@@ -24,6 +24,21 @@ label_yes = "Curb ramp with detectable warning"
 label_no = "Curb ramp without detectable warning"
 '''
 
+INVENTORY = '''
+standard = "US"
+[path]
+surface = "sidewalk"
+name = "the sidewalk walking path"
+describe = "sidewalks"
+[[check]]
+id = "streetlight"
+inventory = true
+find = "utility pole"
+target = "streetlight pole"
+ask = "Is this a streetlight pole (a pole with a lamp head)?"
+label_yes = "Streetlight pole"
+'''
+
 
 def test_parse_reads_the_path_and_the_checks():
     std = survey_items.parse(US, "us.toml")
@@ -47,6 +62,18 @@ def test_a_check_without_target_uses_find_and_icons_follow_report_when():
     assert defect_when_yes.label("yes")[0] == "✖" and defect_when_yes.label("no")[0] == "✓"
     own_icon = survey_items.parse(US + 'icon_yes = "A"', "us.toml")  # the check is the last table
     assert own_icon.checks[0].label("yes")[0] == "A" and own_icon.checks[0].label("no")[0] == "✖"
+
+
+def test_an_inventory_check_needs_no_defect_answer():
+    (check,) = survey_items.parse(INVENTORY, "us.toml").checks
+    assert check.inventory and check.report_when == ""
+    assert check.label("yes") == ("●", "Streetlight pole")
+    assert check.label_no == "Not a streetlight pole"
+    std = survey_items.parse(INVENTORY, "us.toml")
+    assert not std.is_defect({"issue_type": "streetlight", "object_label": "yes"})
+    assert not std.is_defect({"issue_type": "streetlight", "object_label": ""})
+    with pytest.raises(ValueError, match="report_when"):
+        survey_items.parse(INVENTORY.replace('label_yes', 'report_when = "no"\nlabel_yes'), "us.toml")
 
 
 @pytest.mark.parametrize("change, message", [
@@ -73,7 +100,9 @@ def test_the_shipped_standards_load():
     assert kr.path.surface == "yellow tactile paving" and kr.path.fixed == ("bollard", "pole")
     assert kr.path.objects == ("electric scooter", "bicycle")
     assert not us.tactile_defects and us.path.surface == "sidewalk" and us.path.fixed == ()
-    assert [c.id for c in us.checks] == ["curb_ramp_warning"] and us.checks[0].report_when == "no"
+    assert [c.id for c in us.checks] == ["curb_ramp_warning", "streetlight_pole", "street_tree", "litter_can"]
+    assert us.checks[0].report_when == "no" and not us.checks[0].inventory
+    assert all(c.inventory and c.report_when == "" for c in us.checks[1:])
 
 
 def test_load_reads_an_edited_standard_again(tmp_path, monkeypatch):

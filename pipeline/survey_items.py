@@ -3,6 +3,7 @@
 What to survey lives in one TOML file per standard in pipeline/standards/, not in code. A [[check]] names what SAM
 3.1 should find in the photos (`find`), the noun the survey is about (`target`, `find` by default) and the question
 Muse Spark answers about it (`ask`); `report_when` is the answer that makes it a defect for a person to confirm.
+An `inventory = true` check maps assets instead: every confirmed object is a point, with no defect answer.
 [path] names the walking surface and the objects that may block it. KR keeps the tactile defect stage validated on Seongsu (pipeline/defects.py); its file only switches it on.
 """
 import re
@@ -40,6 +41,7 @@ class Check:
     label_unclear: str
     icon_yes: str = ""
     icon_no: str = ""
+    inventory: bool = False  # every confirmed object is an asset point; there is no defect answer
 
     def label(self, answer: str | None) -> tuple[str, str]:
         """(icon, text) for an answer; anything but yes or no is unclear."""
@@ -61,10 +63,10 @@ class Standard:
         return next((c for c in self.checks if c.id == check_id), None)
 
     def is_defect(self, row: dict) -> bool:
-        """A KR defect class, or a check row whose current answer is the check's report_when."""
+        """A KR defect class, or a check row whose current answer is the check's report_when (never an inventory row)."""
         check = self.check(row["issue_type"])
         if check is not None:
-            return row.get("object_label") == check.report_when
+            return not check.inventory and row.get("object_label") == check.report_when
         return row["issue_type"] in KR_DURABLE
 
 
@@ -80,18 +82,28 @@ def _check(table: dict, where: str) -> Check:
         raise ValueError(f"{where}: id {check_id!r} must be lower case letters, digits and _")
     if check_id in RESERVED:
         raise ValueError(f"{where}: id {check_id!r} is reserved for another stage")
-    report = _need(table, "report_when", where)
-    if report not in ANSWERS:
-        raise ValueError(f"{where}: report_when must be 'yes' or 'no', not {report!r}")
+    inventory = bool(table.get("inventory", False))
     find = _need(table, "find", where)
     target = table.get("target") or find
-    defect_icon, ok_icon = "✖", "✓"
-    icon_yes = table.get("icon_yes") or (defect_icon if report == "yes" else ok_icon)
-    icon_no = table.get("icon_no") or (defect_icon if report == "no" else ok_icon)
+    if inventory:
+        if "report_when" in table:
+            raise ValueError(f"{where}: an inventory check has no report_when (every confirmed {target} is an asset)")
+        report = ""
+        label_yes = table.get("label_yes") or target[:1].upper() + target[1:]
+        label_no = table.get("label_no") or f"Not a {target}"
+        icon_yes, icon_no = table.get("icon_yes") or "●", table.get("icon_no") or "–"
+    else:
+        report = _need(table, "report_when", where)
+        if report not in ANSWERS:
+            raise ValueError(f"{where}: report_when must be 'yes' or 'no', not {report!r}")
+        label_yes, label_no = _need(table, "label_yes", where), _need(table, "label_no", where)
+        defect_icon, ok_icon = "✖", "✓"
+        icon_yes = table.get("icon_yes") or (defect_icon if report == "yes" else ok_icon)
+        icon_no = table.get("icon_no") or (defect_icon if report == "no" else ok_icon)
     unclear = table.get("label_unclear") or f"{target[:1].upper()}{target[1:]}: unclear from the photo"
     return Check(id=check_id, find=find, target=target, ask=_need(table, "ask", where), report_when=report,
-                 label_yes=_need(table, "label_yes", where), label_no=_need(table, "label_no", where),
-                 label_unclear=unclear, icon_yes=icon_yes, icon_no=icon_no)
+                 label_yes=label_yes, label_no=label_no, label_unclear=unclear, icon_yes=icon_yes, icon_no=icon_no,
+                 inventory=inventory)
 
 
 def parse(text: str, where: str) -> Standard:

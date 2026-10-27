@@ -47,9 +47,11 @@ export function issueQuestion(issue: Issue): string {
   return QUESTIONS[issue.issue_type as IssueType] ?? "Is this right?";
 }
 
-// The colour class of an issue row: a check row is coloured by whether it is a defect, not by its answer.
+// The colour class of an issue row: a check row is coloured by whether it is a defect, not by its answer; an
+// inventory row is an asset (unless still unclear).
 export function issueTone(issue: Issue): string {
   if (!issue.check) return issue.issue_type;
+  if (issue.check.inventory) return issue.check.answer === "unclear" ? "check-unclear" : "check-asset";
   return issue.defect ? "check-defect" : issue.check.answer === "unclear" ? "check-unclear" : "check-ok";
 }
 

@@ -21,18 +21,20 @@ export interface CheckInfo {
   target: string; // the noun the survey is about; `find` is SAM's phrase and may differ
   question: string; // the check's `ask` sentence (pipeline/standards)
   answer: "yes" | "no" | "unclear";
-  report_when: "yes" | "no";
+  report_when: "yes" | "no" | ""; // "" for an inventory check
   label_yes: string;
   label_no: string;
+  inventory: boolean; // a confirmed object is an asset point, not a defect
 }
 
 export interface CheckCount {
   id: string;
   find: string;
   target: string;
-  report_when: "yes" | "no"; // the answer that is the defect
+  report_when: "yes" | "no" | ""; // the answer that is the defect; "" for an inventory check
   label_yes: string;
   label_no: string;
+  inventory: boolean;
   yes: number;
   no: number;
   unclear: number;

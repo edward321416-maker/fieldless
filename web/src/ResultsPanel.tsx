@@ -72,10 +72,19 @@ export default function ResultsPanel(props: Props) {
           <>
             {props.scan.checks.map((c) => (
               <Fragment key={c.id}>
-                <dt>{cap(c.target)}s checked</dt>
-                <dd>{c.yes + c.no + c.unclear}</dd>
-                <dt>{c.report_when === "no" ? c.label_no : c.label_yes}</dt>
-                <dd>{c.report_when === "no" ? c.no : c.yes}</dd>
+                {c.inventory ? (
+                  <>
+                    <dt>{cap(c.target)}s found</dt>
+                    <dd>{c.yes}{c.unclear ? ` (+${c.unclear} to confirm)` : ""}</dd>
+                  </>
+                ) : (
+                  <>
+                    <dt>{cap(c.target)}s checked</dt>
+                    <dd>{c.yes + c.no + c.unclear}</dd>
+                    <dt>{c.report_when === "no" ? c.label_no : c.label_yes}</dt>
+                    <dd>{c.report_when === "no" ? c.no : c.yes}</dd>
+                  </>
+                )}
               </Fragment>
             ))}
             <dt>Objects in the walking path (at photo time)</dt>

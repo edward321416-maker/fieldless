@@ -4,6 +4,7 @@ import pytest
 
 from pipeline import survey_items
 from server import views
+from tests.pipeline.test_survey_items import INVENTORY as INVENTORY_TOML
 
 NOW = datetime(2026, 10, 27, tzinfo=timezone.utc)
 US = survey_items.load("US")
@@ -143,7 +144,7 @@ def test_issue_json_carries_the_check_and_whether_it_is_a_defect():
     assert out["defect"] is True and out["durable"] is True
     assert out["check"] == {"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp",
                             "question": US.checks[0].ask, "answer": "no", "report_when": "no", "label_yes": "Curb ramp with detectable warning",
-                            "label_no": "Curb ramp without detectable warning"}
+                            "label_no": "Curb ramp without detectable warning", "inventory": False}
     assert views.issue_json(ramp("yes"), NOW, US)["defect"] is False
     assert views.issue_json(issue(), NOW)["check"] is None and views.issue_json(issue(), NOW)["defect"] is False
     assert views.issue_json(issue(), NOW)["second_opinion"] is None
@@ -170,9 +171,30 @@ def test_scan_json_counts_by_the_scans_standard():
     out = views.scan_json(scan, [], issues)
     assert out["standard"] == "US"
     assert out["counts"]["defects"] == 1 and out["counts"]["obstructions"] == 1 and out["counts"]["needs_review"] == 2
-    assert out["checks"] == [{"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp",
-                              "report_when": "no", "label_yes": "Curb ramp with detectable warning",
-                              "label_no": "Curb ramp without detectable warning", "yes": 2, "no": 1, "unclear": 1}]
+    assert out["checks"][0] == {"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp", "inventory": False,
+                                "report_when": "no", "label_yes": "Curb ramp with detectable warning",
+                                "label_no": "Curb ramp without detectable warning", "yes": 2, "no": 1, "unclear": 1}
+    assert [(c["id"], c["inventory"], c["yes"]) for c in out["checks"][1:]] == [
+        ("streetlight_pole", True, 0), ("street_tree", True, 0), ("litter_can", True, 0)]
+
+
+def test_inventory_rows_are_counted_as_found_and_never_as_defects(monkeypatch):
+    light = survey_items.parse(INVENTORY_TOML, "us.toml")
+    rows = [issue(issue_type="streetlight", object_label="yes"), issue(issue_type="streetlight", object_label="yes"),
+            issue(issue_type="streetlight", object_label="unclear", review_status="needs_review")]
+    assert all(not light.is_defect(r) for r in rows)
+    assert views.issue_label(rows[0], light) == {"icon": "●", "text": "Streetlight pole"}
+    assert views.issue_label(rows[2], light) == {"icon": "?", "text": "Streetlight pole: unclear from the photo"}
+    assert views.check_json(rows[0], light)["inventory"] is True
+    assert views.issue_json(rows[0], NOW, light)["defect"] is False
+    monkeypatch.setattr(views, "standard_of", lambda scan: light)
+    scan = {"id": 3, "status": "done", "stage_status": {}, "bbox": [0, 0, 1, 1], "image_count": 90,
+            "captured_from": "a", "captured_to": "b", "cost_usd": 1.0, "processing_seconds": 60.0,
+            "review_seconds": 0.0, "error": None, "jurisdiction": "US"}
+    out = views.scan_json(scan, [], rows)
+    assert out["counts"]["defects"] == 0 and out["counts"]["needs_review"] == 1
+    (summary,) = out["checks"]
+    assert summary["inventory"] is True and (summary["yes"], summary["no"], summary["unclear"]) == (2, 0, 1)
 
 
 def test_a_scan_without_a_standard_is_korean():

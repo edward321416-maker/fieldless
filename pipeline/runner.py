@@ -83,12 +83,12 @@ class Scan:
         return out
 
 
-def meter_for(conn, scan: dict) -> CostMeter:
-    """The scan's cap: SCAN_COST_CAP_USD, and no more than what other scans left of today's DAILY_COST_CAP_USD.
-    Spend from earlier attempts of this scan already counts."""
+def meter_for(conn, scan: dict, scan_cap_usd: float | None = None) -> CostMeter:
+    """The scan's cap: SCAN_COST_CAP_USD (or scan_cap_usd, for a local CLI run the user approved), and no more than
+    what other scans left of today's DAILY_COST_CAP_USD. Spend from earlier attempts of this scan already counts."""
     today = db.now()[:10]
     others = db.daily_cost(conn, today) - (scan["cost_usd"] if scan["created_at"].startswith(today) else 0.0)
-    cap = min(config.SCAN_COST_CAP_USD, config.DAILY_COST_CAP_USD - others)
+    cap = min(scan_cap_usd or config.SCAN_COST_CAP_USD, config.DAILY_COST_CAP_USD - others)
     return CostMeter(cap_usd=max(0.0, cap), spent_usd=scan["cost_usd"])
 
 

@@ -91,6 +91,9 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
   const answerCheck = (issue: Issue, answer: "yes" | "no") =>
     decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(issue.id, { action: "answer", answer, seconds }) }));
 
+  const rejectIssue = (issue: Issue) =>
+    decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(issue.id, { action: "reject", seconds }) }));
+
   const done = times.length > 0 && (
     <p role="status">Reviewed {times.length} item{times.length === 1 ? "" : "s"}, median {median(times).toFixed(1)} s each.</p>
   );
@@ -163,15 +166,23 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
       ) : (
         <>
           <p>{issueQuestion(current.item)}</p>
-          {/* Every check row gets the same three buttons, whatever the model answered (user decision 2026-10-28). */}
-          {current.item.check ? (
+          {/* A defect check row gets the same three buttons, whatever the model answered (user decision 2026-10-28).
+              An inventory row has no defect answer: only an unclear one reaches review, and it is an asset or not. */}
+          {current.item.check?.inventory ? (
+            <div className="row">
+              <button type="button" className="primary" disabled={busy}
+                onClick={() => answerCheck(current.item as Issue, "yes")}>Yes, a {current.item.check.target}</button>
+              <button type="button" disabled={busy} onClick={() => rejectIssue(current.item as Issue)}>
+                Not a {current.item.check.target}
+              </button>
+            </div>
+          ) : current.item.check ? (
             <div className="row">
               <button type="button" className={current.item.check.answer === "yes" ? "primary" : ""} disabled={busy}
                 onClick={() => answerCheck(current.item as Issue, "yes")}>{current.item.check.label_yes}</button>
               <button type="button" className={current.item.check.answer === "no" ? "primary" : ""} disabled={busy}
                 onClick={() => answerCheck(current.item as Issue, "no")}>{current.item.check.label_no}</button>
-              <button type="button" disabled={busy}
-                onClick={() => decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(current.item.id, { action: "reject", seconds }) }))}>
+              <button type="button" disabled={busy} onClick={() => rejectIssue(current.item as Issue)}>
                 Not a {current.item.check.target}
               </button>
             </div>

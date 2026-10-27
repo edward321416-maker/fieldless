@@ -6,6 +6,7 @@
   python -m pipeline.run_scan --bbox ... --standard US       # the survey standard (default: by the area)
   python -m pipeline.run_scan --resume SCAN_ID --rerun defects   # run one stage again, e.g. after editing a standard
   python -m pipeline.run_scan --resume SCAN_ID --rerun defects --check ID   # only that check; others keep their rows
+  python -m pipeline.run_scan --bbox ... --cap-usd 6          # local runs only: this scan's cost cap (default $3)
 
 Results: <data>/runs/<run>/threshold.db, calls with costs in <data>/runs/<run>/calls.jsonl, blurred evidence photos
 in <data>/runs/<run>/evidence/. Exit code 0 when the scan is done, 1 otherwise.
@@ -39,6 +40,16 @@ def positive_int(text: str) -> int:
     return value
 
 
+def positive_float(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        value = 0.0
+    if not value > 0:  # also refuses nan
+        raise argparse.ArgumentTypeError("must be a number above 0")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # D1: Korean names crashed a cp949 console
@@ -52,6 +63,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rerun", choices=STAGES, help="with --resume: run this stage again, then the evidence stages")
     parser.add_argument("--check", action="append", metavar="ID",
                         help="with --rerun defects: run only these checks, keeping the other checks' rows and reviews")
+    parser.add_argument("--cap-usd", type=positive_float,
+                        help="local runs only: this scan's cost cap in dollars (default: the $3 scan cap); "
+                             "the daily cap still applies")
     parser.add_argument("--run", default="dev", help="run folder under <data>/runs")
     parser.add_argument("--max-photos", type=positive_int, default=config.MAX_PHOTOS_PER_SCAN)
     parser.add_argument("--tactile-every", type=positive_int, default=sidewalk.TACTILE_EVERY)
@@ -86,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.rerun:
         db.set_stage(conn, scan_id, args.rerun, "pending")
     scan = db.get_scan(conn, scan_id)
-    api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan))
+    api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan, args.cap_usd))
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,
                            tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir),
                            only_checks=tuple(args.check or ())))

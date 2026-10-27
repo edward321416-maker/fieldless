@@ -207,6 +207,10 @@ def test_meter_for_leaves_room_only_for_what_is_left_of_the_day(tmp_path):
     assert meter.cap_usd == pytest.approx(1.0) and meter.spent_usd == 0
     meter = runner.meter_for(conn, db.get_scan(conn, first))
     assert meter.cap_usd == pytest.approx(3.0) and meter.spent_usd == pytest.approx(9.0)
+    meter = runner.meter_for(conn, db.get_scan(conn, second), scan_cap_usd=6.0)  # a local run's own cap: the day still limits it
+    assert meter.cap_usd == pytest.approx(1.0)
+    meter = runner.meter_for(conn, db.get_scan(conn, first), scan_cap_usd=6.0)
+    assert meter.cap_usd == pytest.approx(6.0)
 
 
 def test_a_failed_evidence_photo_is_a_row_error_and_is_retried_on_the_next_run(setup, monkeypatch):

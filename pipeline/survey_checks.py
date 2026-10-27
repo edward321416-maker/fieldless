@@ -90,11 +90,14 @@ def merge_near(picks: list[dict], by_idx: dict[int, dict], meters: float = MERGE
     return sorted(kept, key=lambda p: p["idx"])
 
 
-def status(check: Check, answer: dict) -> tuple[str, list[str], str]:
-    """(review_status, reasons, current answer) for Spark's answer."""
+def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
+    """(review_status, reasons, current answer) for Spark's answer; None drops the pick (an inventory check's "no":
+    SAM found something that is not the target)."""
     current = answer["answer"] if answer["visible"] else "unclear"
     if current == "unclear":
         return "needs_review", ["unclear"], current
+    if check.inventory:
+        return None if current == "no" else ("auto", [], current)
     if current == check.report_when:
         return "needs_review", ["possible_defect"], current
     return "auto", [], current
@@ -102,7 +105,8 @@ def status(check: Check, answer: dict) -> tuple[str, list[str], str]:
 
 def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, Path], by_idx: dict[int, dict],
               workers: int, every: int = SAMPLE_EVERY) -> tuple[list[dict], dict]:
-    """Rows for one check over every walk, and what could not be analysed: {"find": [photo idx], "ask": [photo idx]}."""
+    """Rows for one check over every walk, and what could not be analysed: {"find": [photo idx], "ask": [photo idx]}.
+    An inventory check also reports "not_target": the photos of picks Spark said are not the target (no row)."""
     picks: list[dict] = []
     failed_find: list[int] = []
     for clip_idxs in clips.values():
@@ -127,11 +131,16 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
 
     rows: list[dict] = []
     failed_ask: list[int] = []
+    not_target: list[int] = []
     for p, answer in zip(picks, run_parallel(one, picks, workers)):
         if "error" in answer:
             failed_ask.append(p["idx"])
             continue
-        review_status, reasons, current = status(check, answer)
+        decided = status(check, answer)
+        if decided is None:
+            not_target.append(p["idx"])
+            continue
+        review_status, reasons, current = decided
         frame = by_idx[p["idx"]]
         rows.append({"issue_type": check.id, "object_label": current, "frame_start": min(p["group"]),
                      "frame_end": max(p["group"]), "frame_idx": p["idx"], "lat": frame["lat"], "lng": frame["lng"],
@@ -139,4 +148,4 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
                      "model_outputs": {"check": answer, "find": {"phrase": check.find, "mask_area": p["area"],
                                                                  "group_idxs": p["group"]}},
                      "captured_at": frame["captured_at"]})
-    return rows, {"find": failed_find, "ask": failed_ask}
+    return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target}

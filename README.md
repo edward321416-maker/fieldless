@@ -122,6 +122,20 @@ python -m pipeline.run_scan --resume SCAN_ID --run RUN --rerun defects --check N
 
 `--check` keeps the other items' rows and reviews.
 
+A check with `inventory = true` maps assets instead of defects: every confirmed object is a point. Use it for things a
+city keeps an inventory of (poles, trees, bins). It has no `report_when`; a "no" answer drops the pick, and the labels
+default from `target`:
+
+```toml
+[[check]]
+id = "streetlight_pole"
+inventory = true
+find = "utility pole"
+target = "streetlight pole"
+ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a streetlight pole, with a lamp head or light fixture on it? Plain utility poles without a light, sign posts and trees are not; for those, set visible to false. If the top of the pole is cut off or too far away to see a light, answer unclear."
+label_yes = "Streetlight pole"
+```
+
 ### Public demo (static)
 
 The public demo is a static site: the web app plus the server's answers for a few surveys already run, read-only. `deploy/static_site.py` asks the real server app for every answer, so the demo shows what the live server shows.

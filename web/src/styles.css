@@ -60,6 +60,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .item-check-defect .item-icon { background: var(--defect); }
 .item-check-ok .item-icon { background: #15803d; }
 .item-check-unclear .item-icon { background: #6b7280; }
+.marker-check-asset, .item-check-asset .item-icon { background: #1d4ed8; }
 .item-label { color: var(--muted); }
 .card-head { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
 .evidence { width: 100%; border-radius: 6px; border: 1px solid var(--line); }

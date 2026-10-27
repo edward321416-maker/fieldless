@@ -86,3 +86,16 @@ def test_check_needs_rerun_defects_and_a_check_of_the_standard(monkeypatch):
     assert run_scan.main(["--resume", str(scan_id), "--run", "only", "--rerun", "defects", "--check",
                           "curb_ramp_warning"]) == 0
     assert captured[1].only_checks == ("curb_ramp_warning",)
+
+
+def test_cap_usd_raises_this_scans_cap_for_a_local_run(monkeypatch):
+    captured = []
+    monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))
+    run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "cap", "--cap-usd", "6"])
+    run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "cap"])
+    assert captured[0].api.meter.cap_usd == 6.0
+    assert captured[1].api.meter.cap_usd == config.SCAN_COST_CAP_USD
+    with pytest.raises(SystemExit):
+        run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "cap", "--cap-usd", "0"])
+    with pytest.raises(SystemExit):
+        run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "cap", "--cap-usd", "lots"])

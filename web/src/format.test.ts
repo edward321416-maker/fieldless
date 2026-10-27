@@ -20,7 +20,8 @@ describe("format", () => {
     expect(issueQuestion({ ...base, issue_type: "missing_blocks", label: { icon: "✖", text: "" } })).toBe("Are tactile blocks missing here?");
     expect(issueQuestion({ ...base, issue_type: "obstruction", label: { icon: "⛔", text: "" } })).toBe("Is the tactile paving blocked here?");
     const check = { id: "curb_ramp_warning", find: "curb cut", target: "curb ramp", question: "Does it have domes?",
-      answer: "no" as const, report_when: "no" as const, label_yes: "Curb ramp with detectable warning", label_no: "Curb ramp without detectable warning" };
+      answer: "no" as const, report_when: "no" as const, label_yes: "Curb ramp with detectable warning", label_no: "Curb ramp without detectable warning",
+      inventory: false };
     const ramp = { ...base, issue_type: "curb_ramp_warning", label: { icon: "✖", text: "Curb ramp without detectable warning" }, check };
     expect(issueQuestion(ramp)).toBe("Does it have domes?");
     expect(issueQuestion({ ...ramp, check: { ...check, answer: "yes" } })).toBe("Does it have domes?");
@@ -28,7 +29,7 @@ describe("format", () => {
   });
   it("colours a check row by whether it is a defect, not by its answer", () => {
     const check = { id: "ramp", find: "curb cut", target: "curb ramp", question: "?", answer: "no" as const,
-      report_when: "no" as const, label_yes: "Y", label_no: "N" };
+      report_when: "no" as const, label_yes: "Y", label_no: "N", inventory: false };
     const row = { id: 1, lat: 0, lng: 0, durable: true, defect: true, object_label: "no", frame_start: 1, frame_end: 1,
       review_status: "needs_review", review_reasons: [], evidence: null, captured_at: null, old_photo: false,
       second_opinion: null, issue_type: "ramp", label: { icon: "✖", text: "N" }, check };
@@ -38,6 +39,10 @@ describe("format", () => {
     // when "yes" is the defect, a "no" answer is fine
     expect(issueTone({ ...row, defect: false, check: { ...check, report_when: "yes" } })).toBe("check-ok");
     expect(issueTone({ ...row, issue_type: "cover_cut", check: null })).toBe("cover_cut");
+    // an inventory row is an asset, unless it is still unclear
+    const asset = { ...check, answer: "yes" as const, report_when: "" as const, inventory: true };
+    expect(issueTone({ ...row, defect: false, check: asset })).toBe("check-asset");
+    expect(issueTone({ ...row, defect: false, check: { ...asset, answer: "unclear" } })).toBe("check-unclear");
   });
   it("explains review reasons in words", () => {
     expect(reasonText("possible_sill")).toContain("cannot be confirmed from photos");
