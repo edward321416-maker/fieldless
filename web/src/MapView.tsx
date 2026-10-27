@@ -10,7 +10,8 @@ import type { Bbox, Entrance, Issue } from "./types";
 maplibregl.setWorkerUrl(workerUrl);
 
 // Street photos credit on the map itself (Mapillary terms 11), next to MapLibre's OSM and OpenFreeMap credits.
-const MAPILLARY_CREDIT = '<a href="https://www.mapillary.com" target="_blank" rel="noreferrer">Street photos: Mapillary</a>';
+const MAPILLARY_CREDIT =
+  'Street photos: <a href="https://www.mapillary.com" target="_blank" rel="noreferrer"><img src="/mapillary-logo.png" alt="Mapillary" class="mapillary-logo"></a>';
 
 export type Picked = { kind: "entrance"; item: Entrance } | { kind: "issue"; item: Issue };
 

@@ -3,11 +3,11 @@ import { labelText, photoMonth, reasonText } from "./format";
 import type { Picked } from "./MapView";
 import type { Evidence } from "./types";
 
-// The official logo is added as web/public/mapillary-logo.svg (plan 2 Task 11); until then the word is shown.
+// The official Mapillary logo (press kit v0.0.4, the light-background version, outer margin trimmed); the word if it fails to load.
 export function MapillaryMark({ alt = "Mapillary" }: { alt?: string }) {
   const [missing, setMissing] = useState(false);
   if (missing) return alt ? <span className="mapillary-word">Mapillary</span> : null;
-  return <img src="/mapillary-logo.svg" alt={alt} className="mapillary-logo" onError={() => setMissing(true)} />;
+  return <img src="/mapillary-logo.png" alt={alt} className="mapillary-logo" onError={() => setMissing(true)} />;
 }
 
 export function PhotoCredit({ evidence }: { evidence: Evidence }) {
