@@ -133,7 +133,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
         bbox = limits.check_bbox(body.bbox, settings.max_bbox_deg2)
         try:
             return preview(bbox, config.photo_budget())
-        except (mapillary.MapillaryError, httpx.HTTPError):
+        except (mapillary.MapillaryError, httpx.HTTPError, ValueError):  # ValueError: a reply that is not JSON
             log.exception("preview failed")
             raise HTTPException(502, "Mapillary did not answer. Try again in a minute.") from None
 

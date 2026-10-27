@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import { PhotoCredit } from "./EvidenceCard";
 import { issueQuestion, labelText, median, reasonText } from "./format";
 import type { Picked } from "./MapView";
@@ -13,16 +13,21 @@ interface Props {
   onClose: () => void;
 }
 
+const keyOf = (p: Picked) => `${p.kind}:${p.item.id}`;
+
 export default function ReviewPanel({ entrances, issues, first = null, onUpdated, onClose }: Props) {
+  // Items someone else reviewed meanwhile (the server answered 409); they leave the queue.
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState<string | null>(null);
   // The item the surveyor picked comes first; then sidewalk items (durable first, server order), then entrances.
   const queue = useMemo<Picked[]>(() => {
     const all: Picked[] = [
       ...issues.filter((i) => i.review_status === "needs_review").map((item) => ({ kind: "issue" as const, item })),
       ...entrances.filter((e) => e.review_status === "needs_review").map((item) => ({ kind: "entrance" as const, item })),
-    ];
+    ].filter((q) => !skipped.has(keyOf(q)));
     const head = first ? all.find((q) => q.kind === first.kind && q.item.id === first.item.id) : undefined;
     return head ? [head, ...all.filter((q) => q !== head)] : all;
-  }, [entrances, issues, first]);
+  }, [entrances, issues, first, skipped]);
   const current = queue[0] ?? null;
   const shownAt = useRef(performance.now());
   const hiddenMs = useRef(0);
@@ -56,12 +61,18 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
     const hidden = hiddenMs.current + (hiddenAt.current !== null ? performance.now() - hiddenAt.current : 0);
     const seconds = Math.min(3600, Math.round((performance.now() - shownAt.current - hidden) / 100) / 10);
     setBusy(true);
+    setNotice(null);
     try {
       const updated = await send(seconds);
       setTimes((t) => [...t, seconds]);
       onUpdated(updated);
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiError && e.status === 409 && current) {
+        setSkipped((s) => new Set(s).add(keyOf(current)));
+        setNotice("That item was already reviewed, so it was skipped.");
+      } else {
+        setError((e as Error).message);
+      }
     } finally {
       setBusy(false);
     }
@@ -85,6 +96,7 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
       <section className="card" aria-labelledby="review-title">
         <h2 id="review-title">Review</h2>
         <p>Nothing left to review.</p>
+        {notice && <p className="hint" role="status">{notice}</p>}
         {done}
         <button type="button" onClick={onClose}>Back to results</button>
       </section>
@@ -99,6 +111,7 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
         <button type="button" onClick={onClose} aria-label="Close review">×</button>
       </div>
       {done}
+      {notice && <p className="hint" role="status">{notice}</p>}
       <h3>{current.kind === "entrance" ? current.item.name || "Unnamed entrance" : labelText(current.item.label)}</h3>
       {item.evidence ? (
         <>

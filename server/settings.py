@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+RAILWAY_MARKERS = ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID")  # any one means Railway
 
 
 @dataclass(frozen=True)
@@ -34,7 +35,7 @@ def _demo_scans(text: str) -> tuple[tuple[int, str], ...]:
 
 
 def load() -> Settings:
-    if os.environ.get("RAILWAY_ENVIRONMENT") and not os.environ.get("IP_HASH_SALT"):
+    if any(os.environ.get(name) for name in RAILWAY_MARKERS) and not os.environ.get("IP_HASH_SALT"):
         raise RuntimeError("IP_HASH_SALT must be set on Railway; the default salt is public")
     return Settings(
         run_name=os.environ.get("THRESHOLD_RUN") or "server",

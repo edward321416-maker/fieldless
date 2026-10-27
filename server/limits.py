@@ -10,7 +10,15 @@ from pipeline import db
 
 # Trusted proxies in front of the server that append to X-Forwarded-For (Railway's edge: one). Check one request's
 # header after the first deploy; behind no proxy (a bare `docker run -p`), set PROXY_HOPS=0 so the header is ignored.
-PROXY_HOPS = int(os.environ.get("PROXY_HOPS") or 1)
+def _proxy_hops() -> int:
+    text = os.environ.get("PROXY_HOPS") or "1"
+    try:
+        return int(text)
+    except ValueError:
+        raise ValueError(f"PROXY_HOPS: {text!r} is not a number") from None
+
+
+PROXY_HOPS = _proxy_hops()
 MAX_SIDE_DEG = 0.02  # about 1.8 km of longitude and 2.2 km of latitude in Seoul: no long slivers
 
 

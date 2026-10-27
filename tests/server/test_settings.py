@@ -38,6 +38,13 @@ def test_bad_numbers_name_their_variable(monkeypatch):
         settings.load()
 
 
+@pytest.mark.parametrize("marker", ["RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID"])
+def test_any_railway_variable_needs_a_salt(monkeypatch, marker):
+    monkeypatch.setenv(marker, "x")
+    with pytest.raises(RuntimeError, match="IP_HASH_SALT"):
+        settings.load()
+
+
 def test_railway_needs_a_salt(monkeypatch):
     monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
     with pytest.raises(RuntimeError, match="IP_HASH_SALT"):
