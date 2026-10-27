@@ -1,6 +1,6 @@
 """Server settings from environment variables (spec 13). Secrets stay in the environment and are never printed."""
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parent.parent
 @dataclass(frozen=True)
 class Settings:
     run_name: str = "server"  # data folder: <THRESHOLD_DATA>/runs/<run_name>
-    invite_code: str | None = None
-    ip_hash_salt: str = "threshold"
+    invite_code: str | None = field(default=None, repr=False)
+    ip_hash_salt: str = field(default="threshold", repr=False)
     scans_per_ip_per_day: int = 3  # spec 13
     max_bbox_deg2: float = 0.0001  # about 1.1 x 0.9 km in Seoul; a scan stops at 400 photos anyway
     demo_scans: tuple[tuple[int, str], ...] = ()  # spec 13 demo mode: pre-processed areas shown first

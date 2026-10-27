@@ -252,6 +252,7 @@ def clear_issues(conn, scan_id: int, issue_types: tuple[str, ...]) -> None:
                  (scan_id, *issue_types))
     conn.commit()
 
+
 def get_entrance(conn, entrance_id: int) -> dict:
     row = conn.execute("SELECT * FROM entrance WHERE id = ?", (entrance_id,)).fetchone()
     if row is None:
@@ -272,7 +273,7 @@ def list_scans(conn, limit: int = 50) -> list[dict]:
 
 
 def scans_since(conn, client_ip_hash: str, since: str) -> int:
+    """Scans started from this hashed address at or after since, a UTC time in the "%Y-%m-%dT%H:%M:%SZ" form that db.now() writes."""
     row = conn.execute("SELECT COUNT(*) FROM scan WHERE client_ip_hash = ? AND created_at >= ?",
                        (client_ip_hash, since)).fetchone()
     return int(row[0])
-

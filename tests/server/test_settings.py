@@ -21,3 +21,10 @@ def test_environment_overrides(monkeypatch):
 def test_an_empty_invite_code_means_none(monkeypatch):
     monkeypatch.setenv("INVITE_CODE", "")
     assert settings.load().invite_code is None
+
+
+def test_secrets_never_appear_in_the_settings_repr(monkeypatch):
+    monkeypatch.setenv("INVITE_CODE", "letmein")
+    monkeypatch.setenv("IP_HASH_SALT", "pepper")
+    text = repr(settings.load())
+    assert "letmein" not in text and "pepper" not in text

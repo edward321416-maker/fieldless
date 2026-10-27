@@ -118,6 +118,7 @@ def test_unknown_column_names_are_refused_before_any_sql(conn):
         db.add_issue(conn, scan_id, {"issue_type": "obstruction", "colour": "red"})
     assert db.entrances(conn, scan_id)[0]["review_status"] == "auto"
 
+
 def test_get_entrance_and_issue(conn):
     scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
     entrance_id = db.add_entrance(conn, scan_id, {"frame_idx": 1, "place_name": "A"})
