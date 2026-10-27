@@ -5,21 +5,22 @@ from assist import agent
 from assist.responder import make_responder
 from pipeline.cost import CostCapReached, CostMeter
 
-DRAFT = [{"id": "warning_present", "target": "curb ramp", "find": "curb ramp", "ask": "Domes?", "report_when": "no"}]
+DRAFT = [{"id": "warning_present", "target": "curb ramp", "find": "curb ramp", "ask": "Domes?", "report_when": "no",
+          "section": "705.1"}]
 
 
 class FakeBench:
     def __init__(self):
-        self.ts = SimpleNamespace(name="t", photos=(1, 2, 3), target="curb ramp",
-                                  questions={"warning_present": "has domes"})
+        self.ts = SimpleNamespace(name="t", photos=(1, 2, 3), target="curb ramp", questions={
+            "warning_present": SimpleNamespace(means="has domes", sections=("705.1",), defect_when="no")})
         self.calls = []
 
     def find(self, phrase):
         self.calls.append(("find", phrase))
         return {"phrase": phrase, "found_visible": 2}
 
-    def ask(self, find, ask, key, polarity):
-        self.calls.append(("ask", find, key))
+    def ask(self, item_id, find, ask, polarity):
+        self.calls.append(("ask", item_id, find))
         return {"right": 2, "decidable": 2}
 
 
@@ -39,18 +40,21 @@ def scripted(turns):
 
 def test_agent_calls_tools_sends_results_back_and_stops_at_finish():
     bench = FakeBench()
-    final = {"id": "warning_present", "find": "curb cut", "ask": "Domes?", "key": "warning_present",
-             "polarity": "same", "tested": True, "note": "curb cut finds more ramps"}
+    final = {"id": "warning_present", "find": "curb cut", "ask": "Domes?", "polarity": "same", "tested": True,
+             "note": "curb cut finds more ramps"}
     respond, seen = scripted([
         [call("score_find", {"phrase": "curb cut"}, "c1")],
-        [call("score_ask", {"find": "curb cut", "ask": "Domes?", "key": "warning_present", "polarity": "same"}, "c2")],
+        [call("score_ask", {"item_id": "warning_present", "find": "curb cut", "ask": "Domes?", "polarity": "same"},
+              "c2")],
         [call("finish", {"items": [final]}, "c3")]])
     r = agent.run(respond, bench, DRAFT)
     assert r["finished"] and r["calls"] == 2 and r["items"] == [final] and r["stopped"] == ""
-    assert bench.calls == [("find", "curb cut"), ("ask", "curb cut", "warning_present")]
+    assert bench.calls == [("find", "curb cut"), ("ask", "warning_present", "curb cut")]
     outputs = [i for i in seen[2] if i.get("type") == "function_call_output"]
     assert [o["call_id"] for o in outputs] == ["c1", "c2"] and json.loads(outputs[1]["output"])["right"] == 2
-    assert "curb ramp" in seen[0][0]["content"][0]["text"]
+    prompt = seen[0][0]["content"][0]["text"]
+    assert "curb ramp" in prompt and "Do not change what an item checks" in prompt
+    assert '"warning_present" (sections 705.1): a yes means: has domes' in prompt and '"section": "705.1"' in prompt
 
 
 def test_agent_refuses_tools_past_the_limit_and_reports_a_missing_finish():

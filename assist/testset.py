@@ -1,11 +1,22 @@
 """Labelled test photos for the authoring agent (plan 5): which photos show the target, and the true answer to each
-labelled question. Scores are computed here, by code, so the agent never grades its own work."""
+labelled question. Scores are computed here, by code, so the agent never grades its own work.
+
+Each labelled question lists the rule sections it covers and the answer that is a defect. An item can be scored only
+against the question for its own section, so the agent cannot rewrite an item into a different requirement to fit the
+labels (it did on the first real run, 2026-10-28)."""
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
 FOLDER = Path(__file__).resolve().parent / "testsets"
 VALUES = ("yes", "no", "unclear")
+
+
+@dataclass(frozen=True)
+class Question:
+    means: str  # what a "yes" means
+    sections: tuple  # rule sections this question checks, matched exactly
+    defect_when: str  # the answer that is a defect: yes | no
 
 
 @dataclass(frozen=True)
@@ -20,7 +31,7 @@ class Photo:
 class TestSet:
     name: str
     target: str
-    questions: dict  # key -> what a "yes" means
+    questions: dict  # key -> Question
     photos: tuple
 
     def visible(self) -> list[Photo]:
@@ -29,19 +40,30 @@ class TestSet:
     def negatives(self) -> list[Photo]:
         return [p for p in self.photos if p.target_visible == "no"]
 
+    def key_for(self, section: str) -> str | None:
+        """The labelled question that checks this rule section, or None if no label covers it."""
+        return next((k for k, q in self.questions.items() if section in q.sections), None)
+
+
+def _question(name: str, key: str, q: dict) -> Question:
+    if q.get("defect_when") not in ("yes", "no") or not q.get("sections"):
+        raise ValueError(f"{name}: question {key}: needs sections and a defect_when of yes or no")
+    return Question(str(q["means"]), tuple(str(s) for s in q["sections"]), q["defect_when"])
+
 
 def load(name: str, folder: Path = FOLDER) -> TestSet:
     data = json.loads((Path(folder) / f"{name}.json").read_text(encoding="utf-8"))
+    questions = {k: _question(name, k, q) for k, q in data["questions"].items()}
     photos = []
     for p in data["photos"]:
         answers = dict(p.get("answers", {}))
         if p["target_visible"] not in VALUES or any(v not in VALUES for v in answers.values()):
             raise ValueError(f"{name}: photo {p['id']}: values must be yes, no or unclear")
-        unknown = set(answers) - set(data["questions"])
+        unknown = set(answers) - set(questions)
         if unknown:
             raise ValueError(f"{name}: photo {p['id']}: unknown question keys {sorted(unknown)}")
         photos.append(Photo(str(p["id"]), p["target_visible"], answers, p.get("note", "")))
-    return TestSet(data["name"], data["target"], dict(data["questions"]), tuple(photos))
+    return TestSet(data["name"], data["target"], questions, tuple(photos))
 
 
 def score_find(ts: TestSet, found: dict) -> dict:

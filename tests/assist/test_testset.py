@@ -4,9 +4,12 @@ import pytest
 
 from assist import testset
 
+QUESTIONS = {"warning_present": {"means": "has domes", "sections": ["705.1"], "defect_when": "no"},
+             "warning_contrast": {"means": "domes contrast", "sections": ["705.1.3"], "defect_when": "no"}}
 
-def write(tmp_path, photos):
-    data = {"name": "t", "target": "curb ramp", "questions": {"warning_present": "has domes"}, "photos": photos}
+
+def write(tmp_path, photos, questions=QUESTIONS):
+    data = {"name": "t", "target": "curb ramp", "questions": questions, "photos": photos}
     (tmp_path / "t.json").write_text(json.dumps(data), encoding="utf-8")
     return testset.load("t", tmp_path)
 
@@ -33,11 +36,22 @@ def test_answer_score_uses_decidable_visible_photos_and_polarity(tmp_path):
     assert (flipped["right"], flipped["unclear"], flipped["unchecked"]) == (2, 1, 0)
 
 
+def test_a_labelled_question_covers_only_the_sections_it_lists(tmp_path):
+    # An item may be scored only against the question for its own requirement (2026-10-28 run: the agent rewrote a
+    # 406.5 "projects into traffic" item into a detectable-warning question to fit the labels).
+    ts = write(tmp_path, [p("a", "yes", "yes")])
+    assert ts.key_for("705.1.3") == "warning_contrast" and ts.key_for("705.1") == "warning_present"
+    assert ts.key_for("406.5") is None and ts.key_for("705.1.1") is None
+    assert ts.questions["warning_contrast"].defect_when == "no"
+
+
 def test_bad_values_and_unknown_keys_are_refused(tmp_path):
     with pytest.raises(ValueError, match="yes, no or unclear"):
         write(tmp_path, [p("a", "maybe")])
     with pytest.raises(ValueError, match="unknown question keys"):
         write(tmp_path, [{"id": "a", "target_visible": "yes", "answers": {"colour": "yes"}}])
+    with pytest.raises(ValueError, match="defect_when"):
+        write(tmp_path, [], {"q": {"means": "x", "sections": ["1"], "defect_when": "maybe"}})
     ts = write(tmp_path, [p("a", "yes", "yes")])
     with pytest.raises(ValueError, match="unknown question key"):
         testset.score_answers(ts, "colour", {})
@@ -46,4 +60,5 @@ def test_bad_values_and_unknown_keys_are_refused(tmp_path):
 def test_the_seattle_set_loads():
     ts = testset.load("seattle_ramps")
     assert ts.target == "curb ramp" and {"warning_present", "warning_contrast"} <= set(ts.questions)
+    assert ts.key_for("705.1.3") == "warning_contrast"
     assert len(ts.visible()) >= 10 and len(ts.negatives()) >= 4

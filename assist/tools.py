@@ -34,8 +34,9 @@ SCHEMA = {
 
 
 class Bench:
-    def __init__(self, api, testset, photo=collect.photo_path, workers: int = 4):
+    def __init__(self, api, testset, items: list[dict] = (), photo=collect.photo_path, workers: int = 4):
         self.api, self.ts, self.photo, self.workers = api, testset, photo, workers
+        self.items = {i["id"]: i for i in items}  # the drafted items, so an item is scored by its own section
         self.areas: dict[str, dict[str, float]] = {}  # phrase -> photo id -> largest mask share of the photo
         self.answers: dict[tuple[str, str, str], tuple[str, str]] = {}  # (find, ask, photo id) -> (answer, note)
         self.history: list[dict] = []
@@ -64,7 +65,15 @@ class Bench:
         self.history.append({"tool": "score_find", **result})
         return result
 
-    def ask(self, find: str, ask: str, key: str, polarity: str = "same") -> dict:
+    def ask(self, item_id: str, find: str, ask: str, polarity: str = "same") -> dict:
+        """Score item_id's question against the labelled question for the item's own rule section. Raises
+        ValueError if no label covers that section: the agent may reword an item, not change what it checks."""
+        if item_id not in self.items:
+            raise ValueError(f"unknown item {item_id!r}")
+        section = self.items[item_id]["section"]
+        key = self.ts.key_for(section)
+        if key is None:
+            raise ValueError(f"no labelled question covers section {section}: return {item_id} untested")
         find = find.strip()
         self.find(find)
         hits = [p.id for p in self.ts.visible() if self.areas[find].get(p.id, 0) > 0]
@@ -84,7 +93,7 @@ class Bench:
         score = scoring.score_answers(self.ts, key, {i: a for i, (a, _) in rows.items()}, polarity)
         for w in score["wrong"]:
             w["note"] = rows[w["photo_id"]][1]
-        result = {"find": find, "ask": ask, "key": key, "polarity": polarity, **score}
+        result = {"item_id": item_id, "find": find, "ask": ask, "key": key, "polarity": polarity, **score}
         self.history.append({"tool": "score_ask", **result})
         return result
 

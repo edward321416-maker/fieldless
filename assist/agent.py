@@ -15,35 +15,36 @@ TOOLS = [
                     "properties": {"phrase": {"type": "string"}}}},
     {"type": "function", "name": "score_ask", "strict": True,
      "description": "Ask Muse Spark a yes/no question about the target on each test photo where SAM found it with "
-                    "`find`, and score the answers against the labelled question `key`. polarity is 'same' if a yes "
-                    "to your question means a yes to the labelled question, otherwise 'opposite'.",
+                    "`find`, and score the answers against the labelled question for this item's own rule section. "
+                    "polarity is 'same' if a yes to your question means a yes to that labelled question, otherwise "
+                    "'opposite'. Fails if no labelled question covers the item's section.",
      "parameters": {"type": "object", "additionalProperties": False,
-                    "required": ["find", "ask", "key", "polarity"],
-                    "properties": {"find": {"type": "string"}, "ask": {"type": "string"},
-                                   "key": {"type": "string"},
+                    "required": ["item_id", "find", "ask", "polarity"],
+                    "properties": {"item_id": {"type": "string"}, "find": {"type": "string"},
+                                   "ask": {"type": "string"},
                                    "polarity": {"type": "string", "enum": ["same", "opposite"]}}}},
     {"type": "function", "name": "finish", "strict": True,
      "description": "Finish with the final version of every drafted item, in the drafted order, ids unchanged.",
      "parameters": {"type": "object", "additionalProperties": False, "required": ["items"],
                     "properties": {"items": {"type": "array", "items": {
                         "type": "object", "additionalProperties": False,
-                        "required": ["id", "find", "ask", "key", "polarity", "tested", "note"],
+                        "required": ["id", "find", "ask", "polarity", "tested", "note"],
                         "properties": {"id": {"type": "string"}, "find": {"type": "string"},
-                                       "ask": {"type": "string"}, "key": {"type": "string"},
+                                       "ask": {"type": "string"},
                                        "polarity": {"type": "string", "enum": ["same", "opposite"]},
                                        "tested": {"type": "boolean"}, "note": {"type": "string"}}}}}}},
 ]
 
 PROMPT = """You turn drafted survey items into items that work. Each item has `find`, a phrase SAM 3.1 segments in a street photo, and `ask`, a yes/no question Muse Spark answers about one photo of it.
-Test set "{name}": {count} labelled street photos about the target "{target}". Labelled questions you can score against:
+Test set "{name}": {count} labelled street photos about the target "{target}". Labelled questions, each covering the rule sections listed:
 {questions}
 Drafted items:
 {items}
-For each drafted item whose target is "{target}":
+For each drafted item whose rule section is covered by a labelled question:
 1) score_find with its find phrase. If SAM misses many photos that show the target, try one or two other short phrases.
-2) score_ask with the best phrase, its ask, the labelled question key it corresponds to, and the polarity.
-3) If answers are wrong, rewrite the ask to say more clearly what to look at, and test again. Revise an item at most 3 times.
-Items about another target cannot be tested here: return them as drafted with tested=false and key "".
+2) score_ask with the item id, the best phrase, its ask and the polarity.
+3) If answers are wrong, reword the ask to say more clearly what to look at, and test again. Revise an item at most 3 times.
+Do not change what an item checks: the reworded ask must still test the item's own requirement and section. An item whose section no labelled question covers cannot be tested here: return it as drafted with tested=false.
 You have at most {max_calls} tool calls in total. Then call finish with every item."""
 
 
@@ -51,7 +52,7 @@ def _dispatch(bench, name: str, args: dict) -> dict:
     if name == "score_find":
         return bench.find(args["phrase"])
     if name == "score_ask":
-        return bench.ask(args["find"], args["ask"], args["key"], args["polarity"])
+        return bench.ask(args["item_id"], args["find"], args["ask"], args["polarity"])
     return {"error": f"unknown tool {name}"}
 
 
@@ -59,8 +60,9 @@ def run(respond, bench, drafts: list[dict], max_calls: int = MAX_TOOL_CALLS) -> 
     """{"finished": bool, "items": finish's items ([] if it never finished), "calls": tool calls made,
     "stopped": why it stopped without finishing, or ""}."""
     ts = bench.ts
-    questions = "\n".join(f'- "{k}": a yes means: {v}' for k, v in ts.questions.items())
-    shown = [{k: d[k] for k in ("id", "target", "find", "ask", "report_when")} for d in drafts]
+    questions = "\n".join(f'- "{k}" (sections {", ".join(q.sections)}): a yes means: {q.means}'
+                          for k, q in ts.questions.items())
+    shown = [{k: d[k] for k in ("id", "section", "target", "find", "ask", "report_when")} for d in drafts]
     text = PROMPT.format(name=ts.name, count=len(ts.photos), target=ts.target, questions=questions,
                          items=json.dumps(shown, ensure_ascii=False, indent=1), max_calls=max_calls)
     history = [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}]

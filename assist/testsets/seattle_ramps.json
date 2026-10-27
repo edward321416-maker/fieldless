@@ -3,8 +3,20 @@
  "target": "curb ramp",
  "labelled_by": "Claude (2d session) from full-resolution crops, 2026-10-28; gray pads relabelled unclear after the plan 4 gate. Mapillary photos, Seattle Capitol Hill.",
  "questions": {
-  "warning_present": "The curb ramp has a detectable warning surface (raised truncated domes) at its bottom edge.",
-  "warning_contrast": "The curb ramp has a detectable warning surface that contrasts visually with the walking surface around it (for example yellow domes on gray concrete)."
+  "warning_present": {
+   "means": "The curb ramp has a detectable warning surface (raised truncated domes) at its bottom edge.",
+   "sections": [
+    "705.1"
+   ],
+   "defect_when": "no"
+  },
+  "warning_contrast": {
+   "means": "The curb ramp has a detectable warning surface that contrasts visually with the walking surface around it (for example yellow domes on gray concrete).",
+   "sections": [
+    "705.1.3"
+   ],
+   "defect_when": "no"
+  }
  },
  "photos": [
   {

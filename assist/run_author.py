@@ -30,15 +30,20 @@ def draft(api, rule) -> dict:
 
 
 def _final(valid: list[dict], finished: dict, bench) -> list[dict]:
-    """The drafted items with the agent's final find and ask, and the scores code measured for exactly those."""
+    """The drafted items with the agent's final find and ask, and the scores code measured for exactly those. A tested
+    item's report_when comes from code: the labelled question's defect answer, flipped if the ask is the opposite
+    question (the agent may reword an ask, and its yes may then mean the defect)."""
     by_id = {i["id"]: i for i in finished.get("items", [])}
     out = []
     for d in valid:
         f = by_id.get(d["id"], {})
         item = {**d, "find": (f.get("find") or d["find"]).strip(), "ask": f.get("ask") or d["ask"],
-                "agent_note": f.get("note", ""), "tested": bool(f.get("tested"))}
+                "agent_note": f.get("note", ""), "tested": False}
         found = bench.last("score_find", phrase=item["find"])
-        asked = bench.last("score_ask", find=item["find"], ask=item["ask"])
+        asked = bench.last("score_ask", item_id=d["id"], find=item["find"], ask=item["ask"])
+        if f.get("tested") and asked:
+            defect = bench.ts.questions[asked["key"]].defect_when
+            item.update(tested=True, report_when=defect if asked["polarity"] == "same" else testset.flip(defect))
         if found:
             item["test_find"] = (f"SAM found {found['found_visible']} of {found['total_visible']} photos showing the "
                                  f"target; fired on {found['false_on_negatives']} of {found['total_negatives']} "
@@ -75,7 +80,7 @@ def author(api, respond, rule, ts, out_dir: Path, photo=collect.photo_path, work
            stamp: str | None = None) -> dict:
     drafted = draft(api, rule)
     valid, problems = items_mod.validate(drafted, rule.read_text())
-    bench = Bench(api, ts, photo=photo, workers=workers)
+    bench = Bench(api, ts, items=valid, photo=photo, workers=workers)
     result = agent.run(respond, bench, valid)
     final = _final(valid, result, bench)
     stamp = stamp or datetime.now().strftime("%Y%m%d-%H%M")
@@ -84,7 +89,7 @@ def author(api, respond, rule, ts, out_dir: Path, photo=collect.photo_path, work
     stem = out_dir / f"{rule.name}-{stamp}"
     header = [f"Drafted by Muse Spark from {rule.title}", f"source: {rule.source_url}",
               f"tested by the assist agent on {ts.name}; add accepted [[check]] tables to pipeline/standards/<code>.toml"]
-    accepted = [i for i in final if i.get("tested")] or final
+    accepted = [i for i in final if i["tested"]]  # untested items stay in the report only
     paths = {"toml": stem.with_suffix(".toml"), "md": stem.with_suffix(".md"), "json": stem.with_suffix(".json")}
     paths["toml"].write_text(items_mod.to_toml(accepted, header), encoding="utf-8")
     paths["md"].write_text(_report(rule, ts, drafted, final, problems, result, api.meter.spent_usd),
