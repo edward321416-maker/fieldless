@@ -134,7 +134,16 @@ def _decode(row: sqlite3.Row) -> dict:
     return out
 
 
+def _check_columns(conn, table: str, fields: dict) -> None:
+    """Column names go into the SQL text, so only the table's real columns are allowed."""
+    known = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    unknown = sorted(set(fields) - known)
+    if unknown:
+        raise ValueError(f"unknown {table} columns: {unknown}")
+
+
 def _insert(conn, table: str, fields: dict) -> int:
+    _check_columns(conn, table, fields)
     fields = _encode(fields)
     names = ", ".join(fields)
     marks = ", ".join("?" for _ in fields)
@@ -146,6 +155,7 @@ def _insert(conn, table: str, fields: dict) -> int:
 def _update(conn, table: str, row_id: int, fields: dict) -> None:
     if not fields:
         return
+    _check_columns(conn, table, fields)
     fields = _encode(fields)
     sets = ", ".join(f"{name} = ?" for name in fields)
     conn.execute(f"UPDATE {table} SET {sets} WHERE id = ?", [*fields.values(), row_id])

@@ -107,3 +107,13 @@ def test_clear_issues_deletes_only_the_given_types_of_one_scan(conn):
     db.clear_issues(conn, scan_id, ("missing_blocks", "cover_cut"))
     assert [i["issue_type"] for i in db.issues(conn, scan_id)] == ["obstruction", "fixed_obstruction"]
     assert [i["issue_type"] for i in db.issues(conn, other)] == ["cover_cut"]
+
+
+def test_unknown_column_names_are_refused_before_any_sql(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    entrance_id = db.add_entrance(conn, scan_id, {"frame_idx": 1})
+    with pytest.raises(ValueError, match="unknown entrance columns"):
+        db.update_entrance(conn, entrance_id, **{"step_count = 0, review_status": "x"})
+    with pytest.raises(ValueError, match="unknown sidewalk_issue columns"):
+        db.add_issue(conn, scan_id, {"issue_type": "obstruction", "colour": "red"})
+    assert db.entrances(conn, scan_id)[0]["review_status"] == "auto"
