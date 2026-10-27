@@ -27,6 +27,27 @@ MODEL_API_KEY=<your Meta Model API key>
 MAPILLARY_TOKEN=<your Mapillary client token>
 ```
 
+## Survey items from a rule (Muse Spark agent)
+
+A survey item is two sentences: what SAM 3.1 should find, and the yes/no question Muse Spark answers about it. The
+`assist` agent writes them from the rule itself:
+
+1. Muse Spark reads a rule excerpt (PDF) and drafts the requirements a pedestrian photo can settle, each with its
+   section, page and an exact quote. It also lists the ones a photo cannot settle (slopes, widths) and why.
+2. Code drops any draft whose section or quote is not in the rule.
+3. Muse Spark then tests each item with two tools on labelled photos: SAM 3.1 tries the `find` phrase, Muse Spark
+   answers the `ask`, and code scores both. It revises the phrase or the question and tests again, within 20 tool
+   calls and a spend cap.
+
+```
+.venv/Scripts/python -m assist.run_author --rule ada2010 --testset seattle_ramps --run author-ada
+```
+
+The result is a TOML file of `[[check]]` items with their source and measured scores, and a report. A person adds the
+items they accept to `pipeline/standards/us.toml`. The excerpt in `assist/rules/` is from the 2010 ADA Standards for
+Accessible Design (U.S. Department of Justice, public domain). The test set `assist/testsets/seattle_ramps.json` lists
+Mapillary image ids with labels made from the photos.
+
 ## Run the app
 
 The app is one FastAPI server (`server/`) that also serves the built web app (`web/`).
