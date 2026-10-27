@@ -53,3 +53,12 @@ def test_unknown_actions_are_refused():
         review.entrance_update(row(), "reject", {}, 1.0, AT)
     with pytest.raises(ValueError):
         review.issue_update({"corrections": []}, "Confirm", 1.0, AT)
+
+
+def test_an_answer_sets_the_check_and_keeps_the_previous_one():
+    fields = review.issue_update({"corrections": [], "object_label": "unclear"}, "answer", 4.0, AT, "no")
+    assert fields == {"object_label": "no", "review_status": "verified",
+                      "corrections": [{"at": AT, "action": "answer", "answer": "no", "before": "unclear",
+                                       "seconds": 4.0}]}
+    with pytest.raises(ValueError):
+        review.issue_update({"corrections": [], "object_label": "unclear"}, "answer", 4.0, AT, "maybe")

@@ -2,9 +2,11 @@ from datetime import datetime, timezone
 
 import pytest
 
+from pipeline import survey_items
 from server import views
 
 NOW = datetime(2026, 10, 27, tzinfo=timezone.utc)
+US = survey_items.load("US")
 EVIDENCE = {"image": "scan1_entrance4.jpg", "image_id": "123", "creator": "filipb",
             "captured_at": "2025-09-24T07:21:37Z", "link": "https://www.mapillary.com/app/?pKey=123",
             "license": "CC BY-SA 4.0", "blurred_regions": 1}
@@ -118,3 +120,57 @@ def test_surveyed_km_follows_each_walk_and_skips_gaps():
     ]
     assert views.surveyed_km(frames) == pytest.approx(0.033, abs=0.002)
     assert views.surveyed_km([]) == 0
+
+
+def ramp(answer="no", **overrides):
+    return issue(issue_type="curb_ramp_warning", object_label=answer, **overrides)
+
+
+def test_check_rows_are_labelled_from_the_standard():
+    assert views.issue_label(ramp("no"), US) == {"icon": "✖", "text": "Curb ramp without detectable warning"}
+    assert views.issue_label(ramp("yes"), US) == {"icon": "✓", "text": "Curb ramp with detectable warning"}
+    assert views.issue_label(ramp("unclear"), US) == {"icon": "?", "text": "Curb ramp: detectable warning unclear"}
+
+
+def test_issue_json_carries_the_check_and_whether_it_is_a_defect():
+    out = views.issue_json(ramp("no", review_status="needs_review"), NOW, US)
+    assert out["defect"] is True and out["durable"] is True
+    assert out["check"] == {"id": "curb_ramp_warning", "find": "curb cut", "question": US.checks[0].ask,
+                            "answer": "no", "report_when": "no", "label_yes": "Curb ramp with detectable warning",
+                            "label_no": "Curb ramp without detectable warning"}
+    assert views.issue_json(ramp("yes"), NOW, US)["defect"] is False
+    assert views.issue_json(issue(), NOW)["check"] is None and views.issue_json(issue(), NOW)["defect"] is False
+    assert views.issue_json(issue(), NOW)["second_opinion"] is None
+
+
+def test_issue_json_carries_the_second_opinion_only_when_it_answered():
+    answered = ramp("no", model_outputs={"second_opinion": {"model": "m", "answer": "yes", "agree": False}})
+    assert views.issue_json(answered, NOW, US)["second_opinion"] == {"answer": "yes", "agree": False}
+    failed = ramp("no", model_outputs={"second_opinion": {"model": "m", "error": "boom"}})
+    assert views.issue_json(failed, NOW, US)["second_opinion"] is None
+
+
+def test_issue_order_puts_check_defects_first_then_checked_objects_then_obstructions():
+    rows = [issue(id=1), ramp("yes", id=2), ramp("no", id=3), ramp("unclear", id=4)]
+    assert [r["id"] for r in sorted(rows, key=lambda r: views.issue_order(r, US))] == [3, 2, 4, 1]
+
+
+def test_scan_json_counts_by_the_scans_standard():
+    scan = {"id": 2, "status": "done", "stage_status": {}, "bbox": [0, 0, 1, 1], "image_count": 200,
+            "captured_from": "a", "captured_to": "b", "cost_usd": 2.5, "processing_seconds": 900.0,
+            "review_seconds": 0.0, "error": None, "jurisdiction": "US"}
+    issues = [ramp("no", review_status="needs_review"), ramp("yes"), ramp("yes"), ramp("unclear", review_status="needs_review"),
+              ramp("no", review_status="rejected"), issue(object_label="traffic cone")]
+    out = views.scan_json(scan, [], issues)
+    assert out["standard"] == "US"
+    assert out["counts"]["defects"] == 1 and out["counts"]["obstructions"] == 1 and out["counts"]["needs_review"] == 2
+    assert out["checks"] == [{"id": "curb_ramp_warning", "find": "curb cut",
+                              "label_yes": "Curb ramp with detectable warning",
+                              "label_no": "Curb ramp without detectable warning", "yes": 2, "no": 1, "unclear": 1}]
+
+
+def test_a_scan_without_a_standard_is_korean():
+    scan = {"id": 1, "status": "done", "stage_status": {}, "bbox": [0, 0, 1, 1], "image_count": 1,
+            "captured_from": None, "captured_to": None, "cost_usd": 0.0, "processing_seconds": 0.0,
+            "review_seconds": 0.0, "error": None}
+    assert views.scan_json(scan, [], [])["standard"] == "KR" and views.scan_json(scan, [], [])["checks"] == []

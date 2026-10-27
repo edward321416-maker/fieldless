@@ -48,8 +48,9 @@ class EntranceReview(BaseModel):
 
 
 class IssueReview(BaseModel):
-    action: Literal["confirm", "reject"]
+    action: Literal["confirm", "reject", "answer"]
     seconds: float = Field(ge=0, le=3600)
+    answer: Literal["yes", "no"] | None = None  # only with action "answer", on a survey check row
 
     model_config = {"extra": "forbid"}
 
@@ -176,9 +177,9 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     @app.get("/api/scans/{scan_id}/issues")
     def get_issues(scan_id: int):
         with connect() as conn:
-            found(db.get_scan, conn, scan_id, "scan")
+            std = views.standard_of(found(db.get_scan, conn, scan_id, "scan"))
             rows = [row for row in db.issues(conn, scan_id) if row["review_status"] != "rejected"]
-            return [views.issue_json(row) for row in sorted(rows, key=views.issue_order)]
+            return [views.issue_json(row, std=std) for row in sorted(rows, key=lambda r: views.issue_order(r, std))]
 
     @app.get("/api/evidence/{name}")
     def get_evidence(name: str):
@@ -209,11 +210,18 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         with review_lock, connect() as conn:
             row = found(db.get_issue, conn, issue_id, "sidewalk issue")
             check_reviewable(row)
-            db.update_issue(conn, issue_id, **review.issue_update(row, body.action, body.seconds, db.now()))
+            std = views.standard_of(db.get_scan(conn, row["scan_id"]))
+            if body.action == "answer":
+                if std.check(row["issue_type"]) is None:
+                    raise HTTPException(422, "Only a survey check takes an answer")
+                if body.answer is None:
+                    raise HTTPException(422, "An answer needs yes or no")
+            db.update_issue(conn, issue_id,
+                            **review.issue_update(row, body.action, body.seconds, db.now(), body.answer))
             db.add_review_seconds(conn, row["scan_id"], body.seconds)
             if store:
                 store.request_save()
-            return views.issue_json(db.get_issue(conn, issue_id))
+            return views.issue_json(db.get_issue(conn, issue_id), std=std)
 
     if settings.static_dir.is_dir():
         app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="web")

@@ -285,3 +285,43 @@ def test_a_new_scan_gets_the_standard_of_its_area(make):
     seoul = client.post("/api/scans", json={"bbox": BBOX}).json()["id"]
     assert db.get_scan(store(), seattle)["jurisdiction"] == "US"
     assert db.get_scan(store(), seoul)["jurisdiction"] == "KR"
+
+
+def seed_us():
+    conn = store()
+    scan_id = db.create_scan(conn, "mapillary", [-122.3230, 47.6130, -122.3170, 47.6175], "US")
+    db.update_scan(conn, scan_id, status="done", image_count=200)
+    unclear = db.add_issue(conn, scan_id, {
+        "issue_type": "curb_ramp_warning", "object_label": "unclear", "frame_start": 2, "frame_end": 4,
+        "frame_idx": 4, "lat": 47.614, "lng": -122.32, "review_status": "needs_review", "review_reasons": ["unclear"],
+        "model_outputs": {"check": {"visible": True, "answer": "unclear", "box": [], "confidence": 0.4, "note": ""}},
+        "captured_at": "2022-08-30T10:00:00Z"})
+    cone = db.add_issue(conn, scan_id, {
+        "issue_type": "obstruction", "object_label": "traffic cone", "frame_start": 6, "frame_end": 7,
+        "frame_idx": 6, "lat": 47.615, "lng": -122.32, "review_status": "needs_review",
+        "review_reasons": ["low_confidence"], "captured_at": "2022-08-30T10:00:05Z"})
+    return scan_id, unclear, cone
+
+
+def test_an_unclear_check_is_answered_by_the_reviewer(make):
+    client, _ = make()
+    scan_id, unclear, cone = seed_us()
+    out = client.post(f"/api/issues/{unclear}/review", json={"action": "answer", "answer": "no", "seconds": 5}).json()
+    assert out["check"]["answer"] == "no" and out["defect"] is True and out["review_status"] == "verified"
+    assert out["label"] == {"icon": "✖", "text": "Curb ramp without detectable warning"}
+    assert client.get(f"/api/scans/{scan_id}").json()["counts"]["defects"] == 1
+    assert client.post(f"/api/issues/{cone}/review",
+                       json={"action": "answer", "answer": "no", "seconds": 1}).status_code == 422  # not a check
+    _, other, _ = seed_us()
+    assert client.post(f"/api/issues/{other}/review", json={"action": "answer", "seconds": 1}).status_code == 422
+
+
+def test_issues_of_a_us_scan_list_check_defects_first(make):
+    client, _ = make()
+    scan_id, unclear, cone = seed_us()
+    conn = store()
+    no_warning = db.add_issue(conn, scan_id, {"issue_type": "curb_ramp_warning", "object_label": "no",
+                                              "frame_idx": 8, "lat": 47.616, "lng": -122.32,
+                                              "review_status": "needs_review", "review_reasons": ["possible_defect"]})
+    ids = [r["id"] for r in client.get(f"/api/scans/{scan_id}/issues").json()]
+    assert ids == [no_warning, unclear, cone]

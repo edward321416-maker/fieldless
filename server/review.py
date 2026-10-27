@@ -5,7 +5,7 @@ revision 4)."""
 
 EDITABLE = ("step_count",)  # spec revision 4: the only entrance field a reviewer edits
 ENTRANCE_ACTIONS = ("confirm", "correct")
-ISSUE_ACTIONS = ("confirm", "reject")
+ISSUE_ACTIONS = ("confirm", "reject", "answer")
 
 
 def entrance_update(row: dict, action: str, changes: dict, seconds: float, at: str) -> dict:
@@ -20,8 +20,15 @@ def entrance_update(row: dict, action: str, changes: dict, seconds: float, at: s
     return fields
 
 
-def issue_update(row: dict, action: str, seconds: float, at: str) -> dict:
+def issue_update(row: dict, action: str, seconds: float, at: str, answer: str | None = None) -> dict:
+    """confirm/reject a sidewalk row; answer sets a check row's yes/no (design 2026-10-28 §6), keeping the old one."""
     if action not in ISSUE_ACTIONS:
         raise ValueError(f"issue action must be one of {ISSUE_ACTIONS}, not {action!r}")
+    if action == "answer":
+        if answer not in ("yes", "no"):
+            raise ValueError(f"an answer is 'yes' or 'no', not {answer!r}")
+        return {"object_label": answer, "review_status": "verified",
+                "corrections": [*row["corrections"], {"at": at, "action": "answer", "answer": answer,
+                                                      "before": row.get("object_label"), "seconds": seconds}]}
     return {"review_status": "verified" if action == "confirm" else "rejected",
             "corrections": [*row["corrections"], {"at": at, "action": action, "seconds": seconds}]}
