@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from pipeline import collect, config, db, mapillary
+from pipeline import collect, config, db, mapillary, survey_items
 from pipeline.runner import RESUME_MIN_USD
 from server import limits, review, views
 from server.jobs import ScanWorker
@@ -155,7 +155,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             if config.DAILY_COST_CAP_USD - db.daily_cost(conn, db.now()[:10]) < RESUME_MIN_USD:
                 raise HTTPException(503, "Today's survey budget is used up. Try again tomorrow (UTC).")
             limits.check_daily_scans(conn, hashed, settings.scans_per_ip_per_day)
-            scan_id = db.create_scan(conn, "mapillary", bbox)
+            scan_id = db.create_scan(conn, "mapillary", bbox, survey_items.standard_for(bbox))
             db.update_scan(conn, scan_id, client_ip_hash=hashed)
         worker.submit(scan_id)
         return {"id": scan_id}

@@ -87,6 +87,28 @@ Then open http://localhost:8000.
 
 Keys are read only from the environment and are never logged. In production, mount a persistent volume at `/data`: the database, photo cache and evidence photos live there. The server runs one process (`--workers 1`), because surveys run one at a time on a background thread. The image installs the tested package versions in constraints.txt.
 
+### Survey standards
+
+What a scan looks for is written in sentences, one file per standard in `pipeline/standards/` (`us.toml` for the
+United States, `kr.toml` for Korea). A scan uses KR when its area is in Korea and US elsewhere (`--standard` overrides).
+Each `[[check]]` names what SAM 3.1 finds in the photos and the question Muse Spark answers about it:
+
+```toml
+[[check]]
+id = "curb_ramp_warning"
+find = "curb cut"
+ask = "Look at the curb ramp where the sidewalk meets the street. Does it have a detectable warning surface (a panel of raised truncated domes, usually yellow) at its bottom edge?"
+report_when = "no"
+label_yes = "Curb ramp with detectable warning"
+label_no = "Curb ramp without detectable warning"
+```
+
+To survey something new, add a `[[check]]` and run the checks again on a finished scan (no training data is needed):
+
+```bash
+python -m pipeline.run_scan --resume SCAN_ID --run RUN --rerun defects
+```
+
 ### Public demo (static)
 
 The public demo is a static site: the web app plus the server's answers for a few surveys already run, read-only. `deploy/static_site.py` asks the real server app for every answer, so the demo shows what the live server shows.

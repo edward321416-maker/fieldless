@@ -3,6 +3,8 @@
   python -m pipeline.run_scan --preview --bbox MIN_LNG,MIN_LAT,MAX_LNG,MAX_LAT [--max-photos N]
   python -m pipeline.run_scan --bbox MIN_LNG,MIN_LAT,MAX_LNG,MAX_LAT [--run NAME] [--max-photos N] [--tactile-every N]
   python -m pipeline.run_scan --resume SCAN_ID [--run NAME]
+  python -m pipeline.run_scan --bbox ... --standard US       # the survey standard (default: by the area)
+  python -m pipeline.run_scan --resume SCAN_ID --rerun defects   # run one stage again, e.g. after editing a standard
 
 Results: <data>/runs/<run>/threshold.db, calls with costs in <data>/runs/<run>/calls.jsonl, blurred evidence photos
 in <data>/runs/<run>/evidence/. Exit code 0 when the scan is done, 1 otherwise.
@@ -11,9 +13,9 @@ import argparse
 import json
 import sys
 
-from pipeline import collect, config, db, second_opinion, sidewalk
+from pipeline import collect, config, db, second_opinion, sidewalk, survey_items
 from pipeline.meta_api import MetaApi
-from pipeline.runner import Scan, meter_for, run_scan
+from pipeline.runner import STAGES, Scan, meter_for, run_scan
 
 
 def parse_bbox(text: str) -> list[float]:
@@ -39,11 +41,14 @@ def positive_int(text: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # D1: Korean names crashed a cp949 console
-    parser = argparse.ArgumentParser(description="Scan an area's Mapillary photos for tactile paving defects, "
-                                                 "obstacles on tactile paving and entrance steps.")
+    parser = argparse.ArgumentParser(description="Scan an area's Mapillary photos for the items of a survey standard "
+                                                 "(pipeline/standards).")
     parser.add_argument("--bbox", type=parse_bbox)
     parser.add_argument("--resume", type=positive_int)
     parser.add_argument("--preview", action="store_true", help="count photos and estimate cost; no model calls")
+    parser.add_argument("--standard", choices=["KR", "US"],
+                        help="survey standard for a new scan (default: KR when the area is in Korea, else US)")
+    parser.add_argument("--rerun", choices=STAGES, help="with --resume: run this stage again, then the evidence stages")
     parser.add_argument("--run", default="dev", help="run folder under <data>/runs")
     parser.add_argument("--max-photos", type=positive_int, default=config.MAX_PHOTOS_PER_SCAN)
     parser.add_argument("--tactile-every", type=positive_int, default=sidewalk.TACTILE_EVERY)
@@ -56,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if (args.bbox is None) == (args.resume is None):
         parser.error("give --bbox for a new scan or --resume SCAN_ID")
+    if args.rerun and args.resume is None:
+        parser.error("--rerun needs --resume")
     run_dir = config.run_dir(args.run)
     conn = db.connect(run_dir / "threshold.db")
     if args.resume is not None:
@@ -65,7 +72,9 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"no scan {args.resume} in run {args.run}")
         scan_id = args.resume
     else:
-        scan_id = db.create_scan(conn, "mapillary", args.bbox)
+        scan_id = db.create_scan(conn, "mapillary", args.bbox, args.standard or survey_items.standard_for(args.bbox))
+    if args.rerun:
+        db.set_stage(conn, scan_id, args.rerun, "pending")
     scan = db.get_scan(conn, scan_id)
     api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan))
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,

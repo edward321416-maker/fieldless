@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from pipeline import run_scan
+from pipeline import config, db, run_scan
 
 
 def test_preview_prints_the_estimate_without_spending(monkeypatch, capsys):
@@ -41,3 +41,28 @@ def test_the_cli_turns_on_the_second_opinion_only_with_a_baseten_key(monkeypatch
     run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "open"])
     assert captured[0].second_opinion is None
     assert isinstance(captured[1].second_opinion, second_opinion.OpenModel)
+
+
+def test_a_new_scan_takes_its_standard_from_the_area_or_the_flag(monkeypatch, capsys):
+    captured = []
+    monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))
+    assert run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "std"]) == 0
+    assert run_scan.main(["--bbox", "126.98,37.56,126.99,37.565", "--run", "std"]) == 0
+    assert run_scan.main(["--bbox", "126.98,37.56,126.99,37.565", "--run", "std", "--standard", "US"]) == 0
+    conn = db.connect(config.run_dir("std") / "threshold.db")
+    assert [db.get_scan(conn, s.scan_id)["jurisdiction"] for s in captured] == ["US", "KR", "US"]
+
+
+def test_rerun_marks_one_stage_pending_and_needs_resume(monkeypatch, capsys):
+    captured = []
+    monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))
+    run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "again"])
+    conn = db.connect(config.run_dir("again") / "threshold.db")
+    scan_id = captured[0].scan_id
+    db.set_stage(conn, scan_id, "defects", "done")
+    assert run_scan.main(["--resume", str(scan_id), "--run", "again", "--rerun", "defects"]) == 0
+    assert db.get_scan(conn, scan_id)["stage_status"]["defects"] == "pending"
+    with pytest.raises(SystemExit):
+        run_scan.main(["--bbox", "126.98,37.56,126.99,37.565", "--rerun", "defects"])
+    with pytest.raises(SystemExit):
+        run_scan.main(["--resume", str(scan_id), "--run", "again", "--rerun", "nonsense"])

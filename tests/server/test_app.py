@@ -277,3 +277,11 @@ def test_the_dataset_store_restores_at_start_and_saves_after_a_review(tmp_path):
         client.post(f"/api/entrances/{sill}/review", json={"action": "correct", "seconds": 1, "step_count": 0})
         client.post(f"/api/issues/{broken}/review", json={"action": "confirm", "seconds": 1})
     assert store.saves == 2
+
+
+def test_a_new_scan_gets_the_standard_of_its_area(make):
+    client, _ = make()
+    seattle = client.post("/api/scans", json={"bbox": [-122.3230, 47.6130, -122.3170, 47.6175]}).json()["id"]
+    seoul = client.post("/api/scans", json={"bbox": BBOX}).json()["id"]
+    assert db.get_scan(store(), seattle)["jurisdiction"] == "US"
+    assert db.get_scan(store(), seoul)["jurisdiction"] == "KR"
