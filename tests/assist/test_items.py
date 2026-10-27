@@ -1,6 +1,6 @@
 import tomllib
 
-from assist.items import DRAFT_SCHEMA, to_toml, validate
+from assist.items import DRAFT_PROMPT, DRAFT_SCHEMA, to_toml, validate
 
 RULE = ("406.5 Location. Curb ramps shall be located so that they do not project into vehicular traffic lanes.\n"
         "705.1.3 Contrast. Detectable warning surfaces shall contrast visually with adjacent walking surfaces.")
@@ -35,10 +35,19 @@ def test_toml_round_trips_and_carries_the_source():
     out = to_toml([{**item(), "test_ask": "right on 9 of 9"}], ["drafted by Muse Spark"])
     check = tomllib.loads(out)["check"][0]
     assert check["id"] == "warning_contrast" and check["report_when"] == "no" and check["find"] == "curb cut"
+    assert check["target"] == "curb ramp"  # the noun Spark is asked about (pipeline.survey_items key `target`)
     assert check["source_section"] == "705.1.3" and check["source_page"] == 196
     assert check["test_ask"] == "right on 9 of 9" and out.startswith("# drafted by Muse Spark")
 
 
 def test_the_draft_schema_requires_the_fields_the_pipeline_and_the_checks_need():
     required = set(DRAFT_SCHEMA["properties"]["checkable"]["items"]["required"])
-    assert {"id", "find", "ask", "report_when", "label_yes", "label_no", "section", "page", "quote"} <= required
+    assert {"id", "target", "find", "ask", "report_when", "label_yes", "label_no", "section", "page",
+            "quote"} <= required
+
+
+def test_the_draft_prompt_asks_for_a_definition_and_the_unclear_rule():
+    # The Seattle scan showed driveways answered as curb ramps and far corners answered anyway (2026-10-28).
+    text = DRAFT_PROMPT.format(title="t", max_items=3)
+    assert "Start the ask with a one-sentence definition" in text and "set visible to false" in text
+    assert "too far away or too small to see, answer unclear" in text

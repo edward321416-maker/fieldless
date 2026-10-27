@@ -7,7 +7,8 @@ from assist.tools import Bench
 from tests.pipeline import sam_text
 from tests.pipeline.fakes import FakeApi, synthetic_photo
 
-ITEMS = [{"id": "warning_present", "section": "705.1"}, {"id": "ramp_projection", "section": "406.5"}]
+ITEMS = [{"id": "warning_present", "section": "705.1", "target": "curb ramp"},
+         {"id": "ramp_projection", "section": "406.5", "target": "curb ramp"}]
 
 
 def make(tmp_path, spark_answer):
@@ -44,6 +45,7 @@ def test_ask_scores_an_item_against_the_question_for_its_own_section(tmp_path):
     r = bench.ask("warning_present", "curb cut", "Does it have domes?")
     assert r["key"] == "warning_present" and (r["right"], r["decidable"], r["unchecked"]) == (1, 2, 1)
     assert [c for c in api.calls if c[0] == "spark"] == [("spark", "survey_check")]
+    assert "whether the curb ramp is visible" in bench.prompts[0]  # Spark is asked about the target, not "curb cut"
     assert bench.last("score_ask", item_id="warning_present", find="curb cut")["right"] == 1
     assert bench.last("score_ask", item_id="ramp_projection") is None
 

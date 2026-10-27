@@ -1,6 +1,7 @@
 """The two tools the authoring agent calls: SAM 3.1 finds a phrase in the labelled photos, and Muse Spark answers a
 question on the photos where SAM found it, with the same prompt and schema as the pipeline's check stage
-(pipeline/survey_checks.py @ f07aad6). Every result is scored by assist.testset and kept in history, so the report
+(pipeline/survey_checks.py; since plan 4's final review Spark is asked about the item's `target` noun, such as "curb
+ramp", not the SAM phrase: "whether the curb cut is visible" let driveway cuts pass as visible). Every result is scored by assist.testset and kept in history, so the report
 shows measured scores, never the agent's own claims."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -15,9 +16,9 @@ from pipeline.sam_output import confident, parse
 PROMPT = """A pedestrian took this photo on a sidewalk.
 {ask}
 Answer as JSON:
-- visible: whether the {find} is visible in the photo.
+- visible: whether the {target} is visible in the photo.
 - answer: "yes", "no", or "unclear" if the photo does not show it well enough to tell.
-- box: the {find} as [x1, y1, x2, y2] on a 0-1000 scale of the image, or [] if it is not visible.
+- box: the {target} as [x1, y1, x2, y2] on a 0-1000 scale of the image, or [] if it is not visible.
 - confidence: 0 to 1 for your answer.
 - note: one sentence on what you see."""
 SCHEMA = {
@@ -40,6 +41,7 @@ class Bench:
         self.areas: dict[str, dict[str, float]] = {}  # phrase -> photo id -> largest mask share of the photo
         self.answers: dict[tuple[str, str, str], tuple[str, str]] = {}  # (find, ask, photo id) -> (answer, note)
         self.history: list[dict] = []
+        self.prompts: list[str] = []  # each distinct question text sent, for tests and the report
 
     def _map(self, fn, items: list) -> list:
         if self.workers <= 1:
@@ -77,7 +79,9 @@ class Bench:
         find = find.strip()
         self.find(find)
         hits = [p.id for p in self.ts.visible() if self.areas[find].get(p.id, 0) > 0]
-        prompt = PROMPT.format(ask=ask, find=find)
+        prompt = PROMPT.format(ask=ask, target=self.items[item_id].get("target") or find)
+        if prompt not in self.prompts:
+            self.prompts.append(prompt)
 
         def one(photo_id: str) -> tuple[str, str]:
             cached = self.answers.get((find, ask, photo_id))

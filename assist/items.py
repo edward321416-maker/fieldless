@@ -38,7 +38,9 @@ A surveyor will check streets only from ordinary photos taken by a pedestrian on
    - id: a short lower_snake_case name.
    - target: the thing the requirement is about, as a short noun phrase (for example "curb ramp").
    - find: a short noun phrase an image segmentation model (SAM 3.1) can find in the photo. For curb ramps use "curb cut".
-   - ask: one yes/no question about one photo of that thing.
+   - ask: one yes/no question about one photo of that thing. Start the ask with a one-sentence definition of the target
+     that names the look-alikes it is not, and say that if the photo shows only those, set visible to false. End it
+     with: "If it is too far away or too small to see, answer unclear."
    - report_when: the answer, "yes" or "no", that means the requirement is NOT met.
    - label_yes, label_no: short map labels for the two answers.
    - section: the section number; page: the page number printed on the page; quote: a short exact quote of the requirement.
@@ -86,7 +88,7 @@ def to_toml(items: list[dict], header: list[str]) -> str:
     out = [f"# {line}" for line in header] + [""]
     for item in items:
         out.append("[[check]]")
-        for key in ("id", "find", "ask", "report_when", "label_yes", "label_no"):
+        for key in ("id", "target", "find", "ask", "report_when", "label_yes", "label_no"):
             out.append(f"{key} = {_toml_str(item[key])}")
         out.append(f"source_section = {_toml_str(item['section'])}")
         out.append(f"source_page = {int(item['page'])}")
