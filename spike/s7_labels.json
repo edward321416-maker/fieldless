@@ -10,6 +10,7 @@
     "45": "T-shaped entrance branch with no main line before or after it (photos 44 and 46 show none)",
     "63": "warning-block area at the crossing has blocks missing and filled with grey pavers, bar blocks misaligned",
     "64": "same crossing as 63 from closer: missing warning blocks replaced by grey pavers",
+    "81": "POST-HOC CORRECTION (2026-10-27, after re-run 2): the same manhole cover as 82 cuts the guide line in the distance. Missed at first because the labelling crops showed only the lower 60% of each photo; found through Spark's box in re-run 2 and checked on the full photo",
     "82": "guide line interrupted by a manhole cover sitting in the line"
   },
   "worn": {
@@ -21,7 +22,7 @@
     "75": "guide line faded brown",
     "76": "guide line faded brown"
   },
-  "intact": [0, 1, 2, 3, 4, 5, 6, 7, 78, 81, 83, 84, 85, 86, 87, 88, 90, 91],
+  "intact": [0, 1, 2, 3, 4, 5, 6, 7, 78, 83, 84, 85, 86, 87, 88, 90, 91],
   "excluded": {
     "8": "tactile line not visible in the ground part; the sequence may have changed side",
     "49": "short stub ending in a dot block near a crossing; cannot tell if it is a normal end",

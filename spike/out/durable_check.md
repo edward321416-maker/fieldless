@@ -27,6 +27,21 @@ Reading: Spark rarely raises false structural alarms on intact paving (0 of 18),
 
 Cost in production: at $0.012 per photo, checking every tactile photo would add about $0.36 per 100 photos (about 30% of photos show tactile paving) on top of the plan-1 estimate of $0.57. Run it only on candidates (ends of SAM tactile runs, and a sample of the rest), or test a smaller image size first.
 
+### Re-run 2: shown classes only, with a fixed-cover value (2026-10-27)
+
+After the user decided to show only defects a surveyor can confirm at a glance, the schema gained a damage value `cut_by_cover` ("a manhole, utility cover or metal plate sits in the tactile paving and cuts it"), and `covered` now means a mat, paint or debris. The prompt was otherwise unchanged. The same 38 stills were run in the same order (run by the plan-1 session, $0.49; raw answers were kept outside the repo).
+
+| Shown class | Labelled spots | Found |
+|---|---|---|
+| `missing_blocks` (damage `missing`) | crossing at 63/64 | yes, at 64 (63, farther, came back `none`) |
+| `cover_cut` (damage `cut_by_cover`) | manhole at 81/82 | yes, at 81 and 82 |
+| either class, on intact or worn photos | 17 intact, 7 worn | 0 flags |
+
+- Excluded photo 56 came back `missing` ("interrupted by plain paving and a manhole"), which is plausible.
+- Answers that are not shown (`worn`, `broken`, `abrupt`, `unclear`) stay in the run log only.
+- **Label correction:** photo 81 was first labelled intact. Spark's box in re-run 2 pointed at a manhole cover in the distance, the same one as in 82, and the full photo confirms it. The labelling crops showed only the lower 60% of each photo, so distant parts of the line were not labelled. 81 now counts as structural (`spike/s7_labels.json`). The run-1 table above uses the original labels; with the corrected label, run 1 found the cover at 82 only.
+- Both labelled spots in the shown classes are found, with no false flags. That is still two spots, so it is a sanity check, not an accuracy figure.
+
 ## B. Repeat spots: photos of the same spot from different dates
 
 `spike/run_repeat_coverage.py`, metadata only (free). Flat (non-panorama) photos since 2020, 15 m grid cells.
