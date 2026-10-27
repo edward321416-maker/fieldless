@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pipeline import config, db
+from server import limits
 from server.app import create_app
 from server.settings import Settings
 
@@ -88,7 +89,8 @@ def test_starting_a_scan_queues_it_and_keeps_only_a_hashed_address(make):
     assert worker.submitted == [scan_id]
     stored = db.get_scan(store(), scan_id)
     assert stored["status"] == "queued" and len(stored["client_ip_hash"]) == 32
-    assert "testclient" not in stored["client_ip_hash"]
+    assert stored["client_ip_hash"] == limits.ip_hash("testclient", "threshold")  # the default salt in tests
+    assert "client_ip_hash" not in client.get(f"/api/scans/{scan_id}").json()
 
 
 def test_invite_code_is_required_when_set(make):
@@ -141,11 +143,15 @@ def test_evidence_is_served_only_by_its_name(make):
     folder = config.run_dir("server") / "evidence"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "scan1_entrance1.jpg").write_bytes(b"\xff\xd8\xffjpeg")
+    (folder / "notes.txt").write_text("not a photo", encoding="utf-8")
+    (folder / "secret.jpg").write_bytes(b"\xff\xd8\xffjpeg")
     ok = client.get("/api/evidence/scan1_entrance1.jpg")
     assert ok.status_code == 200 and ok.headers["content-type"] == "image/jpeg"
     assert client.get("/api/evidence/scan1_issue9.jpg").status_code == 404
     assert client.get("/api/evidence/threshold.db").status_code == 404
     assert client.get("/api/evidence/..%2Fthreshold.db").status_code == 404
+    assert client.get("/api/evidence/notes.txt").status_code == 404
+    assert client.get("/api/evidence/secret.jpg").status_code == 404  # exists, but the name is not an evidence name
 
 
 def test_reviewing_an_entrance_fixes_it_and_adds_the_time(make):
@@ -187,3 +193,34 @@ def test_the_built_web_app_is_served_when_present(make, tmp_path):
     client, _ = make(static_dir=web)
     assert "Threshold" in client.get("/").text
     assert client.get("/api/health").json() == {"ok": True}
+
+
+def test_validation_errors_carry_a_text_detail(make):
+    client, _ = make()
+    response = client.post("/api/scans", json={"bbox": "not a list"})
+    assert response.status_code == 422 and isinstance(response.json()["detail"], str)
+    bad = client.post("/api/issues/1/review", json={"action": "confirm", "seconds": 1, "extra": True})
+    assert bad.status_code == 422 and isinstance(bad.json()["detail"], str)
+
+
+def test_a_correction_needs_a_step_count(make):
+    client, _ = make()
+    _, _, sill, *_ = seed()
+    response = client.post(f"/api/entrances/{sill}/review", json={"action": "correct", "seconds": 1})
+    assert response.status_code == 422 and "step count" in response.json()["detail"]
+
+
+def test_demo_surveys_are_read_only(make):
+    scan_id, stairs, _, issue, _ = seed()
+    client, _ = make(demo_scans=((scan_id, "Seongsu"),))
+    assert client.post(f"/api/entrances/{stairs}/review", json={"action": "confirm", "seconds": 1}).status_code == 403
+    assert client.post(f"/api/issues/{issue}/review", json={"action": "reject", "seconds": 1}).status_code == 403
+    assert client.get(f"/api/scans/{scan_id}").json()["review_seconds"] == 0
+
+
+def test_parallel_starts_from_one_address_stop_at_the_daily_limit(make):
+    from concurrent.futures import ThreadPoolExecutor
+    client, worker = make()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        codes = list(pool.map(lambda _: client.post("/api/scans", json={"bbox": BBOX}).status_code, range(8)))
+    assert codes.count(202) == 3 and codes.count(429) == 5
