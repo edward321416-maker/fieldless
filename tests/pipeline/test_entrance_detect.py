@@ -30,6 +30,15 @@ def test_the_other_side_of_the_street_stays_apart():
     assert len(ed.merge_candidates([cand(10, side="left"), cand(10, side="right")], FRAMES)) == 2
 
 
+def test_opposite_sides_in_one_walk_never_merge_even_with_the_same_name():
+    assert len(ed.merge_candidates([cand(10, side="left"), cand(15, side="right")], FRAMES)) == 2
+
+
+def test_same_name_same_side_a_few_photos_apart_merges_within_10_m():
+    kept = ed.merge_candidates([cand(10), cand(15)], FRAMES)  # 5 photos, about 5.6 m
+    assert [(k.frame_idx, k.merged) for k in kept] == [(10, [15])]
+
+
 def test_an_unnamed_neighbour_merges():
     assert len(ed.merge_candidates([cand(10, name="Cafe"), cand(11, name="")], FRAMES)) == 1
 

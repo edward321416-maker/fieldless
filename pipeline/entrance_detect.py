@@ -31,8 +31,11 @@ def name_key(name: str) -> str:
 
 def _same(a: Candidate, b: Candidate, frames_by_idx: dict[int, dict]) -> bool:
     ka, kb = name_key(a.name), name_key(b.name)
-    if a.clip == b.clip and abs(a.frame_idx - b.frame_idx) <= MERGE_GAP:
-        return a.side == b.side and (not ka or not kb or ka == kb)
+    if a.clip == b.clip:
+        if a.side != b.side:
+            return False  # one walk never swaps left and right
+        if abs(a.frame_idx - b.frame_idx) <= MERGE_GAP:
+            return not ka or not kb or ka == kb
     if not ka or ka != kb:
         return False
     fa, fb = frames_by_idx[a.frame_idx], frames_by_idx[b.frame_idx]
