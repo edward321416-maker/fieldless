@@ -251,3 +251,28 @@ def clear_issues(conn, scan_id: int, issue_types: tuple[str, ...]) -> None:
     conn.execute(f"DELETE FROM sidewalk_issue WHERE scan_id = ? AND issue_type IN ({marks})",
                  (scan_id, *issue_types))
     conn.commit()
+
+def get_entrance(conn, entrance_id: int) -> dict:
+    row = conn.execute("SELECT * FROM entrance WHERE id = ?", (entrance_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"entrance {entrance_id} not found")
+    return _decode(row)
+
+
+def get_issue(conn, issue_id: int) -> dict:
+    row = conn.execute("SELECT * FROM sidewalk_issue WHERE id = ?", (issue_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"sidewalk issue {issue_id} not found")
+    return _decode(row)
+
+
+def list_scans(conn, limit: int = 50) -> list[dict]:
+    rows = conn.execute("SELECT * FROM scan ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [_decode(r) for r in rows]
+
+
+def scans_since(conn, client_ip_hash: str, since: str) -> int:
+    row = conn.execute("SELECT COUNT(*) FROM scan WHERE client_ip_hash = ? AND created_at >= ?",
+                       (client_ip_hash, since)).fetchone()
+    return int(row[0])
+

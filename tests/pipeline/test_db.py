@@ -117,3 +117,25 @@ def test_unknown_column_names_are_refused_before_any_sql(conn):
     with pytest.raises(ValueError, match="unknown sidewalk_issue columns"):
         db.add_issue(conn, scan_id, {"issue_type": "obstruction", "colour": "red"})
     assert db.entrances(conn, scan_id)[0]["review_status"] == "auto"
+
+def test_get_entrance_and_issue(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    entrance_id = db.add_entrance(conn, scan_id, {"frame_idx": 1, "place_name": "A"})
+    issue_id = db.add_issue(conn, scan_id, {"issue_type": "obstruction", "object_label": "bicycle"})
+    assert db.get_entrance(conn, entrance_id)["place_name"] == "A"
+    assert db.get_issue(conn, issue_id)["object_label"] == "bicycle"
+    with pytest.raises(KeyError):
+        db.get_entrance(conn, 999)
+    with pytest.raises(KeyError):
+        db.get_issue(conn, 999)
+
+
+def test_list_scans_newest_first_and_scans_since(conn):
+    a = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    b = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    db.update_scan(conn, a, client_ip_hash="h1")
+    db.update_scan(conn, b, client_ip_hash="h1")
+    assert [s["id"] for s in db.list_scans(conn)] == [b, a]
+    assert db.scans_since(conn, "h1", "2000-01-01T00:00:00Z") == 2
+    assert db.scans_since(conn, "h1", "2999-01-01T00:00:00Z") == 0
+    assert db.scans_since(conn, "other", "2000-01-01T00:00:00Z") == 0
