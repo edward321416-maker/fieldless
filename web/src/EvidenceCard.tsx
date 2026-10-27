@@ -18,6 +18,7 @@ export function PhotoCredit({ evidence }: { evidence: Evidence }) {
         <MapillaryMark alt="" /> View on Mapillary
       </a>{" "}
       · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">{evidence.license}</a>
+      {" "}· {evidence.blurred ? "Edited: people and plates blurred, resized" : "Edited: resized"}
     </p>
   );
 }

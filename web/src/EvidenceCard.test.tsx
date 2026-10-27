@@ -5,7 +5,7 @@ import { PhotoCredit } from "./EvidenceCard";
 
 const evidence = {
   url: "/api/evidence/scan1_issue1.jpg", creator: "West9876", captured_at: "2023-02-08T23:11:57Z",
-  link: "https://www.mapillary.com/app/?pKey=1154200575281762", license: "CC BY-SA 4.0",
+  link: "https://www.mapillary.com/app/?pKey=1154200575281762", license: "CC BY-SA 4.0", blurred: true,
 };
 
 describe("attribution", () => {
@@ -15,6 +15,7 @@ describe("attribution", () => {
     expect(html).toContain("2023-02");
     expect(html).toContain('href="https://www.mapillary.com/app/?pKey=1154200575281762"');
     expect(html).toContain("CC BY-SA 4.0");
+    expect(html).toContain("people and plates blurred");
   });
   it("falls back when the creator is unknown", () => {
     const html = renderToStaticMarkup(<PhotoCredit evidence={{ ...evidence, creator: null }} />);

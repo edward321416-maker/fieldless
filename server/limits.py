@@ -22,12 +22,20 @@ class LimitError(Exception):
 
 
 def _address_key(addr: str | None) -> str | None:
-    """A parsed address as a stable key: IPv4 as is, IPv6 as its /64 network (one household's block). None if the
-    text is not an address."""
+    """A parsed address as a stable key: IPv4 as is, IPv6 as its /64 network (one household's block). A port
+    ("1.2.3.4:5678", "[2001:db8::1]:443") is dropped and an IPv4-mapped IPv6 address is read as IPv4. None if the text
+    is not an address."""
+    text = (addr or "").strip()
+    if text.startswith("[") and "]" in text:
+        text = text[1:text.index("]")]
+    elif text.count(":") == 1:
+        text = text.split(":", 1)[0]
     try:
-        ip = ipaddress.ip_address((addr or "").strip())
+        ip = ipaddress.ip_address(text)
     except ValueError:
         return None
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
     if ip.version == 6:
         return str(ipaddress.ip_network(f"{ip}/64", strict=False))
     return str(ip)

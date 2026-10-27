@@ -81,6 +81,27 @@ def test_preview_checks_the_area(make):
     assert client.post("/api/preview", json={"bbox": [126.99, 37.56, 126.98, 37.57]}).status_code == 422
 
 
+def test_a_failed_preview_is_a_502_with_a_message(tmp_path):
+    from pipeline.mapillary import MapillaryError
+
+    def boom(bbox, max_photos):
+        raise MapillaryError("Mapillary HTTP 500 for /images: split depth")
+
+    client = TestClient(create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(), preview=boom))
+    response = client.post("/api/preview", json={"bbox": BBOX})
+    assert response.status_code == 502 and "Mapillary did not answer" in response.json()["detail"]
+
+
+def test_no_survey_starts_when_todays_budget_is_used_up(make):
+    client, worker = make()
+    conn = store()
+    spent = db.create_scan(conn, "mapillary", BBOX)
+    db.update_scan(conn, spent, status="done", cost_usd=config.DAILY_COST_CAP_USD)
+    response = client.post("/api/scans", json={"bbox": BBOX})
+    assert response.status_code == 503 and "budget" in response.json()["detail"]
+    assert worker.submitted == []
+
+
 def test_starting_a_scan_queues_it_and_keeps_only_a_hashed_address(make):
     client, worker = make()
     response = client.post("/api/scans", json={"bbox": BBOX})
@@ -165,6 +186,10 @@ def test_reviewing_an_entrance_fixes_it_and_adds_the_time(make):
     assert entry["before"] == {"step_count": 1} and entry["seconds"] == 12.5
     client.post(f"/api/entrances/{stairs}/review", json={"action": "confirm", "seconds": 3.0})
     assert db.get_scan(store(), scan_id)["review_seconds"] == 15.5
+    again = client.post(f"/api/entrances/{stairs}/review", json={"action": "confirm", "seconds": 3600})
+    assert again.status_code == 409  # an item is reviewed once, so review time cannot be inflated
+    assert db.get_scan(store(), scan_id)["review_seconds"] == 15.5
+    assert len(db.get_entrance(store(), stairs)["corrections"]) == 1
     assert client.post("/api/entrances/999/review", json={"action": "confirm", "seconds": 1}).status_code == 404
     assert client.post(f"/api/entrances/{stairs}/review", json={"action": "delete", "seconds": 1}).status_code == 422
     ramp = client.post(f"/api/entrances/{stairs}/review", json={"action": "correct", "seconds": 1, "has_ramp": True})
@@ -192,6 +217,8 @@ def test_the_built_web_app_is_served_when_present(make, tmp_path):
     (web / "index.html").write_text("<!doctype html><title>Threshold</title>", encoding="utf-8")
     client, _ = make(static_dir=web)
     assert "Threshold" in client.get("/").text
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert client.get("/docs").status_code == 404
     assert client.get("/api/health").json() == {"ok": True}
 
 
@@ -224,11 +251,3 @@ def test_parallel_starts_from_one_address_stop_at_the_daily_limit(make):
     with ThreadPoolExecutor(max_workers=8) as pool:
         codes = list(pool.map(lambda _: client.post("/api/scans", json={"bbox": BBOX}).status_code, range(8)))
     assert codes.count(202) == 3 and codes.count(429) == 5
-
-
-def test_a_scan_shows_its_measured_hand_time(make):
-    scan_id, *_ = seed()
-    client, _ = make(measured_hand_seconds=((scan_id, 1260.0),))
-    assert client.get(f"/api/scans/{scan_id}").json()["hand_seconds"] == 1260.0
-    other, _ = make()
-    assert other.get(f"/api/scans/{scan_id}").json()["hand_seconds"] is None

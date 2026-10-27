@@ -4,7 +4,6 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
 import { useEffect, useRef } from "react";
 import { bboxFromCorners, bboxPolygon, viewToBbox } from "./bbox";
-import { labelText } from "./format";
 import type { Bbox, Entrance, Issue } from "./types";
 
 // MapLibre 6 looks for its worker next to its own module, which bundling moves; point it at the emitted file.
@@ -124,13 +123,13 @@ export default function MapView(props: Props) {
     };
     if (props.showEntrances) {
       for (const e of props.entrances) {
-        add(e.lat, e.lng, "marker-entrance", e.label.icon, `${e.name || "Entrance"}: ${labelText(e.label)}`,
+        add(e.lat, e.lng, "marker-entrance", e.label.icon, `${e.name || "Entrance"}: ${e.label.text}`,
           () => latest.current.onPick({ kind: "entrance", item: e }));
       }
     }
     if (props.showIssues) {
       for (const i of props.issues) {
-        add(i.lat, i.lng, `marker-${i.issue_type}${i.durable ? " marker-durable" : ""}`, i.label.icon, labelText(i.label),
+        add(i.lat, i.lng, `marker-${i.issue_type}${i.durable ? " marker-durable" : ""}`, i.label.icon, i.label.text,
           () => latest.current.onPick({ kind: "issue", item: i }));
       }
     }

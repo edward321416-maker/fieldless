@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  dollars, isFinished, issueQuestion, labelText, median, minutes, photoMonth, reasonText, stageState, yearsSpan,
+  dollars, isFinished, issueQuestion, km, labelText, median, minutes, photoMonth, reasonText, stageState, yearsSpan,
 } from "./format";
 import type { Scan } from "./types";
 
 const scan = (stage_status: Record<string, string>, status = "running"): Scan => ({
   id: 1, status, stage_status, bbox: [0, 0, 1, 1], image_count: 0, captured_from: null, captured_to: null,
-  cost_usd: 0, processing_seconds: 0, review_seconds: 0, hand_seconds: null, error: null,
+  cost_usd: 0, processing_seconds: 0, review_seconds: 0, km: null, usd_per_km: null, error: null,
   counts: { defects: 0, obstructions: 0, entrances: 0, entrances_with_steps: 0, needs_review: 0 },
 });
 
@@ -31,6 +31,9 @@ describe("format", () => {
     expect(yearsSpan(null, null)).toBe("no photos");
     expect(minutes(222)).toBe("3.7 min");
     expect(dollars(0.5)).toBe("$0.50");
+  });
+  it("formats the street length", () => {
+    expect(km(0.4234)).toBe("0.42 km");
   });
   it("lists every stage with its state", () => {
     const states = stageState(scan({ collect: "done", chunks: "running", scene: "failed: SamStreamError" }));

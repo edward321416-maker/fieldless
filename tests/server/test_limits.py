@@ -24,6 +24,13 @@ def test_one_ipv6_household_is_one_address():
     assert a == limits.client_ip({"x-forwarded-for": "2001:db8::ffff"}, None) == "2001:db8::/64"
 
 
+def test_ports_and_ipv4_mapped_addresses_keep_one_key_per_client():
+    assert limits.client_ip({"x-forwarded-for": "::ffff:203.0.113.5"}, None) == "203.0.113.5"
+    assert limits.client_ip({"x-forwarded-for": "::ffff:198.51.100.7"}, None) == "198.51.100.7"
+    assert limits.client_ip({"x-forwarded-for": "1.2.3.4:5678"}, "10.0.0.2") == "1.2.3.4"
+    assert limits.client_ip({"x-forwarded-for": "[2001:db8::1]:443"}, None) == "2001:db8::/64"
+
+
 def test_ip_hash_is_a_keyed_hash():
     a = limits.ip_hash("1.2.3.4", "salt")
     assert a == hmac.new(b"salt", b"1.2.3.4", hashlib.sha256).hexdigest()[:32]

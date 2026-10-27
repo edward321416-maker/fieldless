@@ -3,9 +3,12 @@ step 8). Every label is an icon plus text, so colour is never the only signal (s
 never "violation", "illegal" or "accessible" (spec 9.4)."""
 from datetime import datetime, timezone
 
+from pipeline import geo
+
 OLD_PHOTO_YEARS = 3  # spec 9.3: photos older than this get an "old photo" badge
 DURABLE = ("missing_blocks", "cover_cut", "fixed_obstruction")  # spec 9.3: the three classes the user chose
 ISSUE_ICONS = {"missing_blocks": "✖", "cover_cut": "◼", "fixed_obstruction": "▮", "obstruction": "⛔"}
+MAX_STEP_M = 50.0  # a longer jump between consecutive photos of one walk is a gap in coverage, not surveyed street
 SCAN_FIELDS = ("id", "status", "stage_status", "bbox", "image_count", "captured_from", "captured_to", "cost_usd",
                "processing_seconds", "review_seconds", "error")
 
@@ -22,7 +25,21 @@ def evidence_json(evidence: dict | None) -> dict | None:
     if not evidence or "image" not in evidence:
         return None
     return {"url": f"/api/evidence/{evidence['image']}", "creator": evidence.get("creator"),
-            "captured_at": evidence.get("captured_at"), "link": evidence["link"], "license": evidence["license"]}
+            "captured_at": evidence.get("captured_at"), "link": evidence["link"], "license": evidence["license"],
+            "blurred": bool(evidence.get("blurred_regions"))}
+
+
+def surveyed_km(frames: list[dict]) -> float:
+    """Length of street the scan's photos cover: the path through each walk's photos in order (clip, idx)."""
+    total, last = 0.0, {}
+    for f in sorted(frames, key=lambda f: (f["clip"], f["idx"])):
+        prev = last.get(f["clip"])
+        if prev and None not in (prev["lat"], prev["lng"], f["lat"], f["lng"]):
+            step = geo.haversine_m(prev["lat"], prev["lng"], f["lat"], f["lng"])
+            if step <= MAX_STEP_M:
+                total += step
+        last[f["clip"]] = f
+    return round(total / 1000, 3)
 
 
 def entrance_label(row: dict) -> dict:
@@ -73,12 +90,13 @@ def issue_json(row: dict, now: datetime | None = None) -> dict:
             "old_photo": is_old(row.get("captured_at"), now)}
 
 
-def scan_json(scan: dict, entrances: list[dict], issues: list[dict], hand_seconds: float | None = None) -> dict:
+def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float | None = None) -> dict:
     live = [i for i in issues if i["review_status"] != "rejected"]
     defects = sum(i["issue_type"] in DURABLE for i in live)
     needs_review = sum(r["review_status"] == "needs_review" for r in [*entrances, *live])
     with_steps = sum(entrance_label(e)["icon"] == "▲" for e in entrances)  # a possible sill is not counted
     return {**{k: scan[k] for k in SCAN_FIELDS},
-            "hand_seconds": hand_seconds,
+            "km": km,
+            "usd_per_km": round(scan["cost_usd"] / km, 2) if km else None,
             "counts": {"defects": defects, "obstructions": len(live) - defects, "entrances": len(entrances),
                        "entrances_with_steps": with_steps, "needs_review": needs_review}}

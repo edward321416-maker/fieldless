@@ -1,6 +1,6 @@
 """One scan at a time on a background thread. Spend is capped per scan and per day (spec 13), so scans never run
-side by side. Scans a restart left queued or running are picked up when the worker starts; the runner resumes them
-at the stage that stopped."""
+side by side. Queued scans are picked up when the worker starts. A scan a restart left running is marked failed, not
+resumed, because resuming would pay again for the stage that was cut off. Its spend so far is already saved."""
 import logging
 import queue
 import threading
@@ -11,6 +11,31 @@ from pipeline.meta_api import MetaApi, error_text
 from pipeline.runner import Scan, meter_for, run_scan
 
 log = logging.getLogger(__name__)
+
+SAVE_EVERY_USD = 0.05  # spend is written to the scan this often, so a killed run still counts toward the caps
+
+
+def spend_saver(db_path: Path, scan_id: int, saved_usd: float):
+    """A CostMeter hook that writes the scan's spend to the database each time it has grown by SAVE_EVERY_USD. It
+    opens its own connection (settle runs on the pipeline's request threads) and never raises."""
+    lock = threading.Lock()
+    last = [saved_usd]
+
+    def save(spent_usd: float) -> None:
+        with lock:
+            if spent_usd - last[0] < SAVE_EVERY_USD:
+                return
+            last[0] = spent_usd
+            try:
+                conn = db.connect(db_path)
+                try:
+                    db.update_scan(conn, scan_id, cost_usd=spent_usd)
+                finally:
+                    conn.close()
+            except Exception:
+                log.exception("could not save the spend of scan %s", scan_id)
+
+    return save
 
 
 class ScanWorker:
@@ -26,11 +51,19 @@ class ScanWorker:
             return  # one worker thread only: scans never run side by side
         conn = db.connect(self.db_path)
         try:
-            waiting = [s["id"] for s in db.list_scans(conn, limit=1000) if s["status"] in ("queued", "running")]
+            scans = list(reversed(db.list_scans(conn, limit=1000)))  # oldest first
+            for s in scans:
+                if s["status"] == "running":  # cut off by a restart: its spend so far is saved, re-running would pay again
+                    for stage, state in s["stage_status"].items():
+                        if state == "running":
+                            db.set_stage(conn, s["id"], stage, "stopped")
+                    db.update_scan(conn, s["id"], status="failed",
+                                   error="interrupted by a server restart; start a new survey")
         finally:
             conn.close()
-        for scan_id in reversed(waiting):  # list_scans is newest first
-            self._queue.put(scan_id)
+        for s in scans:
+            if s["status"] == "queued":
+                self._queue.put(s["id"])
         self._thread = threading.Thread(target=self._loop, name="scan-worker", daemon=True)
         self._thread.start()
 
@@ -53,7 +86,7 @@ class ScanWorker:
                 if scan_id is None:
                     return
                 self._run(scan_id)
-            except Exception as exc:  # one broken scan must not stop the worker
+            except BaseException as exc:  # RunAborted is a BaseException; one broken scan must not stop the worker
                 log.exception("scan %s crashed", scan_id)
                 self._mark_failed(scan_id, exc)
             finally:
@@ -76,7 +109,9 @@ class ScanWorker:
         conn = db.connect(self.db_path)
         try:
             scan = db.get_scan(conn, scan_id)
-            api = MetaApi(self.run_dir / "calls.jsonl", meter_for(conn, scan))
+            meter = meter_for(conn, scan)
+            meter.on_spend = spend_saver(self.db_path, scan_id, scan["cost_usd"])
+            api = MetaApi(self.run_dir / "calls.jsonl", meter)
             run_scan(Scan(conn, scan_id, api, self.run_dir, scan["bbox"]))
         finally:
             conn.close()

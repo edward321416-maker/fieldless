@@ -64,6 +64,10 @@ export function dollars(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
+export function km(value: number): string {
+  return `${value.toFixed(2)} km`;
+}
+
 export function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);

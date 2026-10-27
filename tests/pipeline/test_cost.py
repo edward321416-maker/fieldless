@@ -26,3 +26,13 @@ def test_prices():
     assert sam_video_cost(5) == pytest.approx(0.01)  # 50-frame minimum
     assert sam_video_cost(60) == pytest.approx(0.012)
     assert sam_image_cost(2) == pytest.approx(0.005)
+
+
+def test_the_spend_hook_sees_the_running_total():
+    seen = []
+    meter = CostMeter(cap_usd=1.0, spent_usd=0.1, on_spend=seen.append)
+    meter.reserve(0.2)
+    meter.settle(0.2, 0.15)
+    meter.reserve(0.2)
+    meter.settle(0.2, 0.05)
+    assert seen == pytest.approx([0.25, 0.30])

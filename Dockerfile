@@ -12,8 +12,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt constraints.txt ./
+# Runtime packages only (no pytest), at the tested versions.
+RUN grep -v '^pytest' requirements.txt > runtime.txt \
+    && pip install --no-cache-dir -r runtime.txt -c constraints.txt \
+    && rm runtime.txt
 COPY pipeline/ pipeline/
 COPY server/ server/
 COPY --from=web /web/dist web/dist

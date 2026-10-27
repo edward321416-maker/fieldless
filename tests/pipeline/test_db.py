@@ -98,6 +98,14 @@ def test_daily_cost_sums_scans_created_that_day(conn):
     assert db.daily_cost(conn, "1999-01-01") == 0
 
 
+def test_review_seconds_add_up(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 1, 1])
+    db.add_review_seconds(conn, scan_id, 2.5)
+    db.add_review_seconds(conn, scan_id, 4.0)
+    assert db.get_scan(conn, scan_id)["review_seconds"] == 6.5
+
+
 def test_clear_issues_deletes_only_the_given_types_of_one_scan(conn):
     scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
     other = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])

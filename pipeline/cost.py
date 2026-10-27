@@ -9,11 +9,13 @@ class CostCapReached(RuntimeError):
 
 
 class CostMeter:
-    """reserve() before a request and settle() after it, so parallel requests cannot pass the cap together."""
+    """reserve() before a request and settle() after it, so parallel requests cannot pass the cap together.
+    on_spend, if set, is called with the running total after each settle."""
 
-    def __init__(self, cap_usd: float, spent_usd: float = 0.0):
+    def __init__(self, cap_usd: float, spent_usd: float = 0.0, on_spend=None):
         self.cap_usd = cap_usd
         self.spent_usd = spent_usd
+        self.on_spend = on_spend
         self.reserved_usd = 0.0
         self._lock = threading.Lock()
 
@@ -28,6 +30,9 @@ class CostMeter:
         with self._lock:
             self.reserved_usd = max(0.0, self.reserved_usd - reserved_usd)
             self.spent_usd += actual_usd
+            spent = self.spent_usd
+        if self.on_spend:
+            self.on_spend(spent)
 
 
 def spark_cost(usage: dict | None) -> float:

@@ -61,7 +61,6 @@ Then open http://localhost:8000.
 | `SCANS_PER_IP_PER_DAY` | no | default 3 |
 | `DEMO_SCANS` | no | surveys listed first, as `id:Name;id:Name` |
 | `THRESHOLD_RUN` | no | run folder under `<data>/runs`, default `server` |
-| `MEASURED_HAND_SECONDS` | no | measured by-hand survey time per survey, as `id:seconds;id:seconds` |
 | `PROXY_HOPS` | no | trusted proxies that append to `X-Forwarded-For`, default 1 (Railway); 0 when no proxy |
 
-Keys are read only from the environment and are never logged. In production, mount a persistent volume at `/data`: the database, photo cache and evidence photos live there. The server runs one process (`--workers 1`), because surveys run one at a time on a background thread.
+Keys are read only from the environment and are never logged. In production, mount a persistent volume at `/data`: the database, photo cache and evidence photos live there. The server runs one process (`--workers 1`), because surveys run one at a time on a background thread. The image installs the tested package versions in constraints.txt.

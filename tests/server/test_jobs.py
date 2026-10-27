@@ -56,12 +56,14 @@ def test_a_failure_to_mark_a_crash_does_not_stop_the_worker(tmp_path, monkeypatc
     assert ran == [1, 2]
 
 
-def test_a_running_scan_left_by_a_restart_is_picked_up_and_a_second_start_adds_no_thread(tmp_path):
+def test_a_scan_a_restart_cut_off_is_marked_failed_not_rerun_and_a_second_start_adds_no_thread(tmp_path):
     path = tmp_path / "t.db"
     conn = db.connect(path)
-    scan_id = db.create_scan(conn, "mapillary", BBOX)
-    db.update_scan(conn, scan_id, status="running")
-    conn.close()
+    cut = db.create_scan(conn, "mapillary", BBOX)
+    db.update_scan(conn, cut, status="running", cost_usd=0.4)
+    db.set_stage(conn, cut, "collect", "done")
+    db.set_stage(conn, cut, "chunks", "running")
+    waiting = db.create_scan(conn, "mapillary", BBOX)
     ran = []
     worker = ScanWorker(path, tmp_path, run=ran.append)
     worker.start()
@@ -70,4 +72,41 @@ def test_a_running_scan_left_by_a_restart_is_picked_up_and_a_second_start_adds_n
     assert worker._thread is first
     worker.join()
     worker.stop()
-    assert ran == [scan_id]
+    assert ran == [waiting]
+    row = db.get_scan(conn, cut)
+    assert row["status"] == "failed" and "restart" in row["error"] and row["cost_usd"] == 0.4
+    assert row["stage_status"] == {"collect": "done", "chunks": "stopped"}
+    conn.close()
+
+
+def test_spend_is_saved_in_steps_and_never_goes_back(tmp_path):
+    from server.jobs import spend_saver
+    path = tmp_path / "t.db"
+    conn = db.connect(path)
+    scan_id = db.create_scan(conn, "mapillary", BBOX)
+    save = spend_saver(path, scan_id, 0.0)
+    save(0.01)
+    assert db.get_scan(conn, scan_id)["cost_usd"] == 0
+    save(0.06)
+    assert db.get_scan(conn, scan_id)["cost_usd"] == 0.06
+    save(0.05)  # an earlier total arriving late
+    assert db.get_scan(conn, scan_id)["cost_usd"] == 0.06
+    conn.close()
+
+
+def test_a_base_exception_from_a_scan_does_not_stop_the_worker(tmp_path):
+    from pipeline.meta_api import RunAborted
+    ran = []
+
+    def run(scan_id):
+        ran.append(scan_id)
+        if scan_id == 1:
+            raise RunAborted("stop")
+
+    worker = ScanWorker(tmp_path / "t.db", tmp_path, run=run)
+    worker.start()
+    worker.submit(1)
+    worker.submit(2)
+    worker.join()
+    worker.stop()
+    assert ran == [1, 2]

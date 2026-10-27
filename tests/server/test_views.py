@@ -34,7 +34,7 @@ def test_evidence_json_points_at_the_evidence_route_and_keeps_attribution():
     assert views.evidence_json(EVIDENCE) == {"url": "/api/evidence/scan1_entrance4.jpg", "creator": "filipb",
                                              "captured_at": "2025-09-24T07:21:37Z",
                                              "link": "https://www.mapillary.com/app/?pKey=123",
-                                             "license": "CC BY-SA 4.0"}
+                                             "license": "CC BY-SA 4.0", "blurred": True}
     assert views.evidence_json({}) is None
     assert views.evidence_json({"error": "SamStreamError: boom"}) is None
 
@@ -100,9 +100,21 @@ def test_scan_json_counts_defects_obstructions_and_items_to_review():
     assert out["id"] == 1 and out["status"] == "done" and out["image_count"] == 60
 
 
-def test_scan_json_carries_the_measured_hand_time_when_there_is_one():
+def test_scan_json_carries_the_surveyed_km_and_the_cost_per_km():
     scan = {"id": 1, "status": "done", "stage_status": {}, "bbox": [0, 0, 1, 1], "image_count": 60,
             "captured_from": "a", "captured_to": "b", "cost_usd": 0.3, "processing_seconds": 100.0,
             "review_seconds": 5.0, "error": None}
-    assert views.scan_json(scan, [], [])["hand_seconds"] is None
-    assert views.scan_json(scan, [], [], hand_seconds=1260.0)["hand_seconds"] == 1260.0
+    assert views.scan_json(scan, [], [], km=0.5)["usd_per_km"] == 0.6
+    assert views.scan_json(scan, [], [])["usd_per_km"] is None
+
+
+def test_surveyed_km_follows_each_walk_and_skips_gaps():
+    frames = [
+        {"clip": 0, "idx": 0, "lat": 37.5600, "lng": 126.9800},
+        {"clip": 0, "idx": 1, "lat": 37.5601, "lng": 126.9800},  # about 11 m
+        {"clip": 0, "idx": 2, "lat": 37.5701, "lng": 126.9800},  # about 1.1 km jump: a gap, not counted
+        {"clip": 1, "idx": 3, "lat": 37.5600, "lng": 126.9900},
+        {"clip": 1, "idx": 4, "lat": 37.5602, "lng": 126.9900},  # about 22 m
+    ]
+    assert views.surveyed_km(frames) == pytest.approx(0.033, abs=0.002)
+    assert views.surveyed_km([]) == 0

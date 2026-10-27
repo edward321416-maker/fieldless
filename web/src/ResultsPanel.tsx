@@ -1,4 +1,4 @@
-import { dollars, minutes, photoMonth } from "./format";
+import { dollars, km, minutes, photoMonth } from "./format";
 import type { Picked } from "./MapView";
 import type { Entrance, Issue, Scan } from "./types";
 
@@ -38,18 +38,26 @@ export default function ResultsPanel(props: Props) {
       <dl className="stats">
         <dt>Street photos surveyed</dt>
         <dd>{props.scan.image_count}</dd>
-        <dt>Processing time</dt>
-        <dd>{minutes(props.scan.processing_seconds)}</dd>
-        <dt>Your review time</dt>
-        <dd>{minutes(props.scan.review_seconds)}</dd>
-        {props.scan.hand_seconds !== null && (
+        {props.scan.km !== null && props.scan.km > 0 && (
           <>
-            <dt>By hand (measured)</dt>
-            <dd>{minutes(props.scan.hand_seconds)}</dd>
+            <dt>Street length covered</dt>
+            <dd>{km(props.scan.km)}</dd>
           </>
         )}
+        <dt>Processing time</dt>
+        <dd>{minutes(props.scan.processing_seconds)}</dd>
+        <dt>Review time</dt>
+        <dd>{minutes(props.scan.review_seconds)}</dd>
+        <dt>Fieldless total</dt>
+        <dd>{minutes(props.scan.processing_seconds + props.scan.review_seconds)}</dd>
         <dt>Cost</dt>
         <dd>{dollars(props.scan.cost_usd)}</dd>
+        {props.scan.usd_per_km !== null && (
+          <>
+            <dt>Cost per km</dt>
+            <dd>{dollars(props.scan.usd_per_km)}</dd>
+          </>
+        )}
         <dt>To confirm (?)</dt>
         <dd>{counts.needs_review}</dd>
       </dl>

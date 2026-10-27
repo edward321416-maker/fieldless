@@ -26,7 +26,8 @@ export interface Scan {
   cost_usd: number;
   processing_seconds: number;
   review_seconds: number;
-  hand_seconds: number | null; // measured: a person surveying the same photos by hand (plan 3)
+  km: number | null; // street length the photos cover
+  usd_per_km: number | null;
   error: string | null;
   counts: { defects: number; obstructions: number; entrances: number; entrances_with_steps: number; needs_review: number };
 }
@@ -37,6 +38,7 @@ export interface Evidence {
   captured_at: string | null;
   link: string;
   license: string;
+  blurred: boolean;
 }
 
 // Every label is an icon plus text, so colour is never the only signal (spec 15).

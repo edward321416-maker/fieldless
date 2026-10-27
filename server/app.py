@@ -11,16 +11,20 @@ import threading
 from contextlib import asynccontextmanager, closing
 from typing import Literal
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from pipeline import collect, config, db
+from pipeline import collect, config, db, mapillary
+from pipeline.runner import RESUME_MIN_USD
 from server import limits, review, views
 from server.jobs import ScanWorker
 from server.settings import Settings, load
+
+log = logging.getLogger(__name__)
 
 EVIDENCE_NAME = re.compile(r"scan\d+_(entrance|issue)\d+\.jpg", re.ASCII)  # used with fullmatch
 
@@ -52,18 +56,21 @@ class IssueReview(BaseModel):
 def create_app(settings: Settings | None = None, worker=None, preview=None) -> FastAPI:
     settings = settings or load()
     if settings.ip_hash_salt == "threshold":
-        logging.getLogger(__name__).warning("IP_HASH_SALT is not set; set a random salt in production")
+        log.warning("IP_HASH_SALT is not set; set a random salt in production")
     run_dir = config.run_dir(settings.run_name)
     db_path = run_dir / "threshold.db"
     worker = worker or ScanWorker(db_path, run_dir)
     preview = preview or collect.preview
 
     start_lock = threading.Lock()  # the per-address check, the new scan and its address tag happen as one step
+    review_lock = threading.Lock()  # the "not reviewed yet" check and the review's write happen as one step
     demo_ids = {scan_id for scan_id, _ in settings.demo_scans}
 
-    def check_reviewable(scan_id: int) -> None:
-        if scan_id in demo_ids:
+    def check_reviewable(row: dict) -> None:
+        if row["scan_id"] in demo_ids:
             raise HTTPException(403, "Demo surveys are read-only")
+        if row["review_status"] in ("verified", "rejected"):
+            raise HTTPException(409, "This item has already been reviewed")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -71,7 +78,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
         yield
         worker.stop()
 
-    app = FastAPI(title="Dotline", lifespan=lifespan)
+    app = FastAPI(title="Fieldless", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
     def connect():
         return closing(db.connect(db_path))
@@ -81,10 +88,6 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
             return getter(conn, key)
         except KeyError:
             raise HTTPException(404, f"{what} {key} not found") from None
-
-    def add_review_time(conn, scan_id: int, seconds: float) -> None:
-        scan = db.get_scan(conn, scan_id)
-        db.update_scan(conn, scan_id, review_seconds=scan["review_seconds"] + seconds)
 
     @app.exception_handler(limits.LimitError)
     async def limit_error(request: Request, exc: limits.LimitError):
@@ -96,6 +99,14 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
         where = ".".join(str(p) for p in first.get("loc", ()) if p != "body")
         message = first.get("msg", "invalid request")
         return JSONResponse(status_code=422, content={"detail": f"{where}: {message}" if where else message})
+
+    @app.middleware("http")
+    async def html_is_never_cached(request: Request, call_next):
+        """index.html names the hashed asset files of one build, so a stale copy after a redeploy is a blank page."""
+        response = await call_next(request)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @app.get("/api/health")
     def health():
@@ -120,7 +131,11 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
     @app.post("/api/preview")
     def post_preview(body: BboxBody):
         bbox = limits.check_bbox(body.bbox, settings.max_bbox_deg2)
-        return preview(bbox, config.photo_budget())
+        try:
+            return preview(bbox, config.photo_budget())
+        except (mapillary.MapillaryError, httpx.HTTPError):
+            log.exception("preview failed")
+            raise HTTPException(502, "Mapillary did not answer. Try again in a minute.") from None
 
     @app.post("/api/scans", status_code=202)
     def post_scan(body: ScanBody, request: Request):
@@ -129,6 +144,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
         peer = request.client.host if request.client else None
         hashed = limits.ip_hash(limits.client_ip(request.headers, peer), settings.ip_hash_salt)
         with start_lock, connect() as conn:
+            if config.DAILY_COST_CAP_USD - db.daily_cost(conn, db.now()[:10]) < RESUME_MIN_USD:
+                raise HTTPException(503, "Today's survey budget is used up. Try again tomorrow (UTC).")
             limits.check_daily_scans(conn, hashed, settings.scans_per_ip_per_day)
             scan_id = db.create_scan(conn, "mapillary", bbox)
             db.update_scan(conn, scan_id, client_ip_hash=hashed)
@@ -139,8 +156,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
     def get_scan(scan_id: int):
         with connect() as conn:
             scan = found(db.get_scan, conn, scan_id, "scan")
-            hand = dict(settings.measured_hand_seconds).get(scan_id)
-            return views.scan_json(scan, db.entrances(conn, scan_id), db.issues(conn, scan_id), hand)
+            return views.scan_json(scan, db.entrances(conn, scan_id), db.issues(conn, scan_id),
+                                   km=views.surveyed_km(db.frames(conn, scan_id)))
 
     @app.get("/api/scans/{scan_id}/entrances")
     def get_entrances(scan_id: int):
@@ -166,24 +183,24 @@ def create_app(settings: Settings | None = None, worker=None, preview=None) -> F
 
     @app.post("/api/entrances/{entrance_id}/review")
     def review_entrance(entrance_id: int, body: EntranceReview):
-        with connect() as conn:
+        with review_lock, connect() as conn:
             row = found(db.get_entrance, conn, entrance_id, "entrance")
-            check_reviewable(row["scan_id"])
+            check_reviewable(row)
             if body.action == "correct" and body.step_count is None:
                 raise HTTPException(422, "A correction needs the step count")
             changes = {"step_count": body.step_count}
             db.update_entrance(conn, entrance_id,
                                **review.entrance_update(row, body.action, changes, body.seconds, db.now()))
-            add_review_time(conn, row["scan_id"], body.seconds)
+            db.add_review_seconds(conn, row["scan_id"], body.seconds)
             return views.entrance_json(db.get_entrance(conn, entrance_id))
 
     @app.post("/api/issues/{issue_id}/review")
     def review_issue(issue_id: int, body: IssueReview):
-        with connect() as conn:
+        with review_lock, connect() as conn:
             row = found(db.get_issue, conn, issue_id, "sidewalk issue")
-            check_reviewable(row["scan_id"])
+            check_reviewable(row)
             db.update_issue(conn, issue_id, **review.issue_update(row, body.action, body.seconds, db.now()))
-            add_review_time(conn, row["scan_id"], body.seconds)
+            db.add_review_seconds(conn, row["scan_id"], body.seconds)
             return views.issue_json(db.get_issue(conn, issue_id))
 
     if settings.static_dir.is_dir():

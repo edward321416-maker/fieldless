@@ -178,6 +178,12 @@ def update_scan(conn, scan_id: int, **fields) -> None:
     _update(conn, "scan", scan_id, fields)
 
 
+def add_review_seconds(conn, scan_id: int, seconds: float) -> None:
+    """Add a reviewer's seconds in one statement, so two reviews at once both count."""
+    conn.execute("UPDATE scan SET review_seconds = review_seconds + ? WHERE id = ?", (seconds, scan_id))
+    conn.commit()
+
+
 def set_stage(conn, scan_id: int, stage: str, status: str) -> None:
     stages = get_scan(conn, scan_id)["stage_status"]
     stages[stage] = status

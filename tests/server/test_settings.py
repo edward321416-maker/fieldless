@@ -1,3 +1,5 @@
+import pytest
+
 from server import settings
 
 
@@ -30,16 +32,15 @@ def test_secrets_never_appear_in_the_settings_repr(monkeypatch):
     assert "letmein" not in text and "pepper" not in text
 
 
-def test_measured_hand_seconds(monkeypatch):
-    monkeypatch.setenv("MEASURED_HAND_SECONDS", "3:1260; 7:905.5")
-    assert settings.load().measured_hand_seconds == ((3, 1260.0), (7, 905.5))
-    monkeypatch.setenv("MEASURED_HAND_SECONDS", "")
-    assert settings.load().measured_hand_seconds == ()
+def test_bad_numbers_name_their_variable(monkeypatch):
+    monkeypatch.setenv("DEMO_SCANS", "three:Seongsu")
+    with pytest.raises(ValueError, match="DEMO_SCANS"):
+        settings.load()
 
 
-def test_measured_hand_seconds_must_be_a_real_measurement(monkeypatch):
-    import pytest
-    for bad in ("3:nan", "3:inf", "3:-5"):
-        monkeypatch.setenv("MEASURED_HAND_SECONDS", bad)
-        with pytest.raises(ValueError):
-            settings.load()
+def test_railway_needs_a_salt(monkeypatch):
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+    with pytest.raises(RuntimeError, match="IP_HASH_SALT"):
+        settings.load()
+    monkeypatch.setenv("IP_HASH_SALT", "a-random-salt")
+    assert settings.load().ip_hash_salt == "a-random-salt"

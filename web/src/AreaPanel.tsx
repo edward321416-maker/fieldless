@@ -17,6 +17,18 @@ interface Props {
 
 const STATE_ICON: Record<string, string> = { done: "✓", running: "…", failed: "✕", stopped: "■", pending: "○" };
 
+// What a survey's status means for the person waiting; the raw error stays available under Details.
+function statusNote(scan: Scan): string | null {
+  if (scan.status === "queued") return "Waiting for the survey ahead of it to finish.";
+  if (scan.status === "stopped_cost_cap")
+    return "Stopped at the spending cap ($3 per survey, $10 per day across all surveys). Results so far are shown.";
+  if (scan.status === "failed")
+    return scan.error?.startsWith("NoPhotos")
+      ? "No recent pedestrian photos were found here. Try a nearby street."
+      : "The survey did not finish every step. Any results it produced are shown.";
+  return null;
+}
+
 function StageList({ scan }: { scan: Scan }) {
   return (
     <ol>
@@ -86,7 +98,7 @@ export default function AreaPanel(props: Props) {
         </button>
         <button type="button" onClick={props.onUseView}>Use this map view</button>
       </div>
-      {props.selecting && <p className="hint">Drag on the map to draw the survey area.</p>}
+      {props.selecting && <p className="hint">Drag on the map to draw the survey area. On a phone, move the map to the streets and use "Use this map view".</p>}
       {loading && <p role="status">Counting street photos…</p>}
       {message && <p className="error" role="alert">{message}</p>}
       {preview && (
@@ -109,6 +121,9 @@ export default function AreaPanel(props: Props) {
               <input value={invite} onChange={(e) => setInvite(e.target.value)} autoComplete="off" />
             </label>
           )}
+          {preview.photos > 0 && (
+            <p className="hint">Starting sends these street photos to Meta's Muse Spark and SAM 3.1 for analysis.</p>
+          )}
           <button type="button" className="primary" onClick={start} disabled={preview.photos === 0 || running || starting}>
             Start survey
           </button>
@@ -127,7 +142,13 @@ export default function AreaPanel(props: Props) {
               <StageList scan={props.scan} />
             </>
           )}
-          {props.scan.error && <p className="error">{props.scan.error}</p>}
+          {statusNote(props.scan) && <p className={props.scan.status === "queued" ? "hint" : "error"}>{statusNote(props.scan)}</p>}
+          {props.scan.error && (
+            <details>
+              <summary>Details</summary>
+              <p className="hint">{props.scan.error}</p>
+            </details>
+          )}
         </div>
       )}
     </section>

@@ -25,19 +25,36 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
   }, [entrances, issues, first]);
   const current = queue[0] ?? null;
   const shownAt = useRef(performance.now());
+  const hiddenMs = useRef(0);
+  const hiddenAt = useRef<number | null>(null);
   const [steps, setSteps] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [times, setTimes] = useState<number[]>([]);
 
   useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) hiddenAt.current = performance.now();
+      else if (hiddenAt.current !== null) {
+        hiddenMs.current += performance.now() - hiddenAt.current;
+        hiddenAt.current = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  useEffect(() => {
     shownAt.current = performance.now();
+    hiddenMs.current = 0;
+    hiddenAt.current = document.hidden ? performance.now() : null;
     setError(null);
     if (current?.kind === "entrance") setSteps(current.item.step_count ?? 0);
   }, [current?.kind, current?.item.id]);
 
   async function decide(send: (seconds: number) => Promise<Picked>) {
-    const seconds = Math.round((performance.now() - shownAt.current) / 100) / 10;
+    const hidden = hiddenMs.current + (hiddenAt.current !== null ? performance.now() - hiddenAt.current : 0);
+    const seconds = Math.min(3600, Math.round((performance.now() - shownAt.current - hidden) / 100) / 10);
     setBusy(true);
     try {
       const updated = await send(seconds);
@@ -49,6 +66,15 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
       setBusy(false);
     }
   }
+
+  // A possible sill gets a yes or no answer: the model's own step count is a confirm, any other answer a correction.
+  const answerSteps = (entrance: Entrance, n: number) =>
+    decide(async (seconds) => ({
+      kind: "entrance",
+      item: await api.reviewEntrance(entrance.id, n === entrance.step_count
+        ? { action: "confirm", seconds }
+        : { action: "correct", seconds, step_count: n }),
+    }));
 
   const done = times.length > 0 && (
     <p role="status">Reviewed {times.length} item{times.length === 1 ? "" : "s"}, median {median(times).toFixed(1)} s each.</p>
@@ -76,7 +102,7 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
       <h3>{current.kind === "entrance" ? current.item.name || "Unnamed entrance" : labelText(current.item.label)}</h3>
       {item.evidence ? (
         <>
-          <img src={item.evidence.url} alt="Street photo to check" className="evidence" />
+          <img src={item.evidence.url} alt={`Street photo to check: ${current.kind === "entrance" ? `${current.item.name || "Entrance"}, ${current.item.label.text}` : current.item.label.text}`} className="evidence" />
           <PhotoCredit evidence={item.evidence} />
         </>
       ) : (
@@ -89,12 +115,19 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
       {current.kind === "entrance" ? (
         <>
           <p>Model: {labelText(current.item.label)}</p>
-          <div className="row">
-            <button type="button" className="primary" disabled={busy}
-              onClick={() => decide(async (seconds) => ({ kind: "entrance", item: await api.reviewEntrance(current.item.id, { action: "confirm", seconds }) }))}>
-              Correct as shown
-            </button>
-          </div>
+          {current.item.review_reasons.includes("possible_sill") ? (
+            <div className="row">
+              <button type="button" className="primary" disabled={busy} onClick={() => answerSteps(current.item, 1)}>Yes, one step</button>
+              <button type="button" disabled={busy} onClick={() => answerSteps(current.item, 0)}>No step</button>
+            </div>
+          ) : (
+            <div className="row">
+              <button type="button" className="primary" disabled={busy}
+                onClick={() => decide(async (seconds) => ({ kind: "entrance", item: await api.reviewEntrance(current.item.id, { action: "confirm", seconds }) }))}>
+                Correct as shown
+              </button>
+            </div>
+          )}
           <fieldset>
             <legend>Or fix the step count</legend>
             <label className="field">
