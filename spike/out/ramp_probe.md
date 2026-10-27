@@ -35,3 +35,6 @@ Spark on visible ramps whose domes were judged yes/no by eye: 9/11 right, 1 uncl
 - The city record (2015) agrees on 7/11; at least 3 of the 4 differences are ramps the 2022 photos show with yellow domes, so the record is out of date there (2d labels).
 
 Re-scored on 2d's relabelled probe set (2026-10-28: 3 gray pads now 'unclear', 1938591246337969 now 'no'): Spark is right on 7/9 decidable visible ramps, 1 unclear.
+- What the pipeline will see: Spark is only asked on photos where SAM found a curb cut. On those, decidable ramps: 6/6 right, plus 1 unclear (1026866854691216, distant). The one miss above (481649606865551, domes seen, Spark "no" at 0.88) is a photo SAM did not pick (area 0).
+- Spark is not stable on that photo: it answered "yes" in run 1 (curb-ramp prompt) and "no" in run 2. A second model on the "defect" answers (Muse Spark Open, plan 4 Task 3b) targets exactly these low-margin cases.
+- The three gray pads relabelled "unclear" got a confident "no" (0.85-0.90). Under ADA 705.1.3, detectable warnings must contrast visually with the adjacent surface, so a gray pad on gray concrete is a finding either way; a "contrast" check is the natural second US item.
