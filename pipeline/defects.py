@@ -93,7 +93,8 @@ def defect_of(answer: dict) -> str | None:
 
 def find_defects(api, cands: list[tuple[int, str]], photos: dict[int, Path], frames_by_idx: dict[int, dict],
                  clip_idxs: list[int], workers: int) -> tuple[list[dict], list[int], list[dict]]:
-    """Issue rows for the candidates of one clip that Spark flags, the candidates whose check failed, and every answer (for evaluation)."""
+    """Issue rows for the candidates of one clip that Spark flags, the candidates whose check failed, and every
+    answer Spark gave (kept for evaluation)."""
     def one(item):
         try:
             return check_photo(api, photos[item[0]])
