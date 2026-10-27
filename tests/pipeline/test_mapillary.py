@@ -65,6 +65,37 @@ def test_search_splits_on_reduce_the_amount_of_data(monkeypatch):
     assert found and not capped
 
 
+def test_grid_tiles_the_bbox_without_gaps():
+    cells = mapillary.grid(BBOX, 4)
+    assert len(cells) == 16
+    assert min(c[0] for c in cells) == BBOX[0] and min(c[1] for c in cells) == BBOX[1]
+    assert max(c[2] for c in cells) == pytest.approx(BBOX[2]) and max(c[3] for c in cells) == pytest.approx(BBOX[3])
+    area = sum((c[2] - c[0]) * (c[3] - c[1]) for c in cells)
+    assert area == pytest.approx((BBOX[2] - BBOX[0]) * (BBOX[3] - BBOX[1]))
+
+
+def test_search_grid_searches_every_cell_and_keeps_each_photo_once(monkeypatch):
+    def handler(url, params):
+        cell = params["bbox"]
+        # every cell returns its own photo plus one photo that every cell sees (a walk along a cell edge)
+        return 200, {"data": images(1, start=hash(cell) % 10**9 + 10) + images(1, start=0)}
+
+    calls = respond(monkeypatch, handler)
+    found, capped = mapillary.search_grid(BBOX, n=4)
+    assert len(calls) == 16 and not capped
+    assert len(found) == 16 + 1
+
+
+def test_search_grid_is_capped_if_any_cell_is(monkeypatch):
+    def handler(url, params):
+        return 200, {"data": images(2000)}
+
+    respond(monkeypatch, handler)
+    monkeypatch.setattr(mapillary, "MAX_SPLIT_DEPTH", 0)
+    _, capped = mapillary.search_grid(BBOX, n=2)
+    assert capped
+
+
 def test_error_messages_never_contain_the_token(monkeypatch):
     respond(monkeypatch, lambda url, params: (400, "bad token MLY|secret-token here"))
     with pytest.raises(mapillary.MapillaryError) as err:

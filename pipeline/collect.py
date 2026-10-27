@@ -78,7 +78,7 @@ def candidate_sequences(bbox) -> Iterator[list[dict]]:
     """Ranked sequences of the area as thinned frame records inside the bbox, fetched one at a time as the caller
     asks for them (Mapillary API calls)."""
     since = mapillary.ms(SINCE)
-    images, _ = mapillary.search_area(tuple(bbox))
+    images, _ = mapillary.search_grid(tuple(bbox))
     for seq in mapillary.rank_sequences(images, since):
         recs = [mapillary.frame_record(img) for img in mapillary.sequence_frames(seq)
                 if not img.get("is_pano") and img.get("captured_at", 0) >= since]

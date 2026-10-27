@@ -14,10 +14,15 @@ import cv2
 import httpx
 
 from pipeline import config
+from pipeline.parallel import run_parallel
 
 MAX_BBOX_DEG2 = 0.01
 MAX_RESULTS = 2000  # per request; a page this long may be truncated
 MAX_SPLIT_DEPTH = 3
+# A single bbox search returns only part of the photos, even well under MAX_RESULTS: Seattle Capitol Hill gave 262-372
+# pedestrian photos as one box and 506-552 as a 4 x 4 grid (2026-10-28), so an area is always searched cell by cell.
+SEARCH_GRID = 4
+SEARCH_WORKERS = 4
 RETRY_ATTEMPTS = 5
 SEARCH_FIELDS = "id,sequence,captured_at,is_pano,on_foot"
 FRAME_FIELDS = ("id,sequence,captured_at,compass_angle,computed_compass_angle,geometry,computed_geometry,"
@@ -118,6 +123,25 @@ def search_area(bbox: tuple[float, float, float, float], depth: int = 0) -> tupl
         for img in part:
             merged.setdefault(str(img["id"]), img)
     return list(merged.values()), still_capped
+
+
+def grid(bbox: tuple[float, float, float, float], n: int) -> list[tuple[float, float, float, float]]:
+    min_lng, min_lat, max_lng, max_lat = bbox
+    w, h = (max_lng - min_lng) / n, (max_lat - min_lat) / n
+    return [(min_lng + i * w, min_lat + j * h, min_lng + (i + 1) * w, min_lat + (j + 1) * h)
+            for j in range(n) for i in range(n)]
+
+
+def search_grid(bbox: tuple[float, float, float, float], n: int = SEARCH_GRID) -> tuple[list[dict], bool]:
+    """(images, capped) of search_area over an n x n grid of the bbox, each photo once; capped if any cell was."""
+    check_bbox(bbox)
+    merged: dict[str, dict] = {}
+    capped = False
+    for found, cell_capped in run_parallel(search_area, grid(bbox, n), SEARCH_WORKERS):
+        capped = capped or cell_capped
+        for img in found:
+            merged.setdefault(str(img["id"]), img)
+    return list(merged.values()), capped
 
 
 def _flat(img: dict) -> bool:

@@ -108,7 +108,7 @@ def test_candidate_sequences_fetch_frames_only_while_plan_clips_needs_them(monke
         fetched.append(seq)
         return [{"captured_at": 10**13, "rec": r} for r in street(20, 5.0, seq)]
 
-    monkeypatch.setattr(collect.mapillary, "search_area", lambda bbox: ([], None))
+    monkeypatch.setattr(collect.mapillary, "search_grid", lambda bbox: ([], None))
     monkeypatch.setattr(collect.mapillary, "rank_sequences", lambda images, since: ["a", "b", "c"])
     monkeypatch.setattr(collect.mapillary, "sequence_frames", sequence_frames)
     monkeypatch.setattr(collect.mapillary, "frame_record", lambda img: img["rec"])
