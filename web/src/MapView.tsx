@@ -56,7 +56,13 @@ export default function MapView(props: Props) {
       if (latest.current.selecting) start = [e.lngLat.lng, e.lngLat.lat];
     });
     map.on("mousemove", (e: maplibregl.MapMouseEvent) => {
-      if (start) setArea(map, bboxFromCorners(start, [e.lngLat.lng, e.lngLat.lat]));
+      if (!start) return;
+      if (e.originalEvent.buttons === 0 || !latest.current.selecting) {
+        start = null; // released outside the map, or drawing was cancelled: stop following the cursor
+        setArea(map, latest.current.bbox);
+        return;
+      }
+      setArea(map, bboxFromCorners(start, [e.lngLat.lng, e.lngLat.lat]));
     });
     map.on("mouseup", (e: maplibregl.MapMouseEvent) => {
       if (!start) return;

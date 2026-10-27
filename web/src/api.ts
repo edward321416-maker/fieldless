@@ -5,11 +5,17 @@ import type {
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
+    this.name = "ApiError";
   }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
+  let res: Response;
+  try {
+    res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
+  } catch {
+    throw new ApiError(0, "Could not reach the server. Check the connection and try again.");
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -20,7 +26,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, detail);
   }
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError(res.status, "The server sent an unexpected answer.");
+  }
 }
 
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
