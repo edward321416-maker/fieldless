@@ -48,6 +48,15 @@ items they accept to `pipeline/standards/us.toml`. The excerpt in `assist/rules/
 Accessible Design (U.S. Department of Justice, public domain). The test set `assist/testsets/seattle_ramps.json` lists
 Mapillary image ids with labels made from the photos.
 
+Inventory items record where something is (streetlight poles, street trees, litter cans), not a defect, so they need no
+rule: Muse Spark drafts one from the target's name, and the agent picks the SAM 3.1 phrase and tests that Muse Spark
+confirms what SAM found ("yes" is an asset point, "no" drops a false find) on photos labelled only by whether they show
+the target, within 12 tool calls. The TOML item has `inventory = true` and no `report_when`.
+
+```
+.venv/Scripts/python -m assist.run_inventory --target "streetlight pole" --testset seattle_poles --run inv-poles
+```
+
 ## Run the app
 
 The app is one FastAPI server (`server/`) that also serves the built web app (`web/`).
