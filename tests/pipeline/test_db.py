@@ -1,0 +1,77 @@
+import pytest
+
+from pipeline import db
+
+
+@pytest.fixture
+def conn(tmp_path):
+    return db.connect(tmp_path / "t.db")
+
+
+def frame(i, clip=0):
+    return {"idx": i, "clip": clip, "image_id": f"img{i}", "sequence_id": "seq", "lat": 37.5, "lng": 127.0,
+            "compass": 90.0, "captured_at": "2025-09-24T10:00:00Z", "creator": "someone", "width": 2048,
+            "height": 1536}
+
+
+def test_a_new_scan_is_queued_with_its_bbox(conn):
+    scan_id = db.create_scan(conn, "mapillary", [126.98, 37.56, 126.99, 37.57])
+    scan = db.get_scan(conn, scan_id)
+    assert scan["status"] == "queued"
+    assert scan["bbox"] == [126.98, 37.56, 126.99, 37.57]
+    assert scan["stage_status"] == {}
+    assert scan["cost_usd"] == 0
+
+
+def test_missing_scan_raises_key_error(conn):
+    with pytest.raises(KeyError):
+        db.get_scan(conn, 99)
+
+
+def test_set_stage_keeps_the_other_stages(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    db.set_stage(conn, scan_id, "collect", "done")
+    db.set_stage(conn, scan_id, "chunks", "running")
+    assert db.get_scan(conn, scan_id)["stage_status"] == {"collect": "done", "chunks": "running"}
+
+
+def test_frames_round_trip_in_index_order(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    db.add_frames(conn, scan_id, [frame(1), frame(0)])
+    rows = db.frames(conn, scan_id)
+    assert [r["idx"] for r in rows] == [0, 1]
+    assert rows[0] == frame(0)
+
+
+def test_entrance_json_and_bool_columns_round_trip(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    entrance_id = db.add_entrance(conn, scan_id, {
+        "frame_idx": 3, "place_name": "Cafe", "step_count": 2, "stairs_detected": True, "has_ramp": False,
+        "review_reasons": ["count_mismatch"], "model_outputs": {"reading": {"step_count": 2}}})
+    db.update_entrance(conn, entrance_id, evidence={"image": "e.jpg"})
+    (row,) = db.entrances(conn, scan_id)
+    assert row["stairs_detected"] is True and row["has_ramp"] is False and row["sill_possible"] is None
+    assert row["review_reasons"] == ["count_mismatch"]
+    assert row["model_outputs"] == {"reading": {"step_count": 2}}
+    assert row["evidence"] == {"image": "e.jpg"}
+    assert row["review_status"] == "auto"
+
+
+def test_issues_and_clear_rows(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    db.add_issue(conn, scan_id, {"issue_type": "obstruction", "object_label": "bicycle", "frame_start": 1,
+                                 "frame_end": 3})
+    assert db.issues(conn, scan_id)[0]["object_label"] == "bicycle"
+    db.clear_rows(conn, scan_id, "sidewalk_issue")
+    assert db.issues(conn, scan_id) == []
+    with pytest.raises(ValueError):
+        db.clear_rows(conn, scan_id, "scan")
+
+
+def test_daily_cost_sums_scans_created_that_day(conn):
+    a = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    b = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    db.update_scan(conn, a, cost_usd=1.25)
+    db.update_scan(conn, b, cost_usd=0.5)
+    assert db.daily_cost(conn, db.now()[:10]) == pytest.approx(1.75)
+    assert db.daily_cost(conn, "1999-01-01") == 0
