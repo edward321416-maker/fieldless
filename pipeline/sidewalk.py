@@ -26,7 +26,7 @@ def tactile_segs(api, idxs: list[int], photos: dict[int, Path], workers: int) ->
         except CostCapReached:
             raise
         except Exception:
-            return None  # unavailable (spec 14); the failure is in calls.jsonl
+            return None  # unavailable (spec 14); request failures are in calls.jsonl, unusable answers are not
 
     return dict(zip(idxs, run_parallel(one, idxs, workers)))
 
@@ -40,18 +40,23 @@ def obstacle_labels(spark_types: list[str]) -> list[str]:
 def obstacle_segs(api, chunk: Chunk, labels: list[str]) -> dict[str, dict[int, list[Seg]] | None]:
     """Per label, confident segments by frame idx in video pixels; None when that label's request failed."""
     out: dict[str, dict[int, list[Seg]] | None] = {}
-    with api.uploaded(Path(chunk.video)) as file_id:
-        for label in labels:
-            try:
-                segs = confident(parse(api.sam_video(label, file_id, frames=len(chunk.idxs)), video=True))
-                check_frames(segs, len(chunk.idxs))
-            except CostCapReached:
-                raise
-            except Exception:
-                out[label] = None
-                continue
-            by_idx: dict[int, list[Seg]] = {}
-            for s in segs:
-                by_idx.setdefault(chunk.idxs[s.frame], []).append(s)
-            out[label] = by_idx
+    try:
+        with api.uploaded(Path(chunk.video)) as file_id:
+            for label in labels:
+                try:
+                    segs = confident(parse(api.sam_video(label, file_id, frames=len(chunk.idxs)), video=True))
+                    check_frames(segs, len(chunk.idxs))
+                except CostCapReached:
+                    raise
+                except Exception:
+                    out[label] = None
+                    continue
+                by_idx: dict[int, list[Seg]] = {}
+                for s in segs:
+                    by_idx.setdefault(chunk.idxs[s.frame], []).append(s)
+                out[label] = by_idx
+    except CostCapReached:
+        raise
+    except Exception:
+        return {label: None for label in labels}  # the upload failed: this chunk is unavailable (spec 14)
     return out

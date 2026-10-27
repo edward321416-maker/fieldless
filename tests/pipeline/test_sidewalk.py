@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import pytest
 
 from pipeline import sidewalk
@@ -58,4 +60,29 @@ def test_obstacle_segs_uploads_the_chunk_once_and_maps_frames_to_idx():
     assert sorted(out["bicycle"]) == [10, 12]
     assert out["traffic cone"] == {}
     assert [c for c in api.calls if c[0] == "upload"] == [("upload", "chunk_0010.mp4")]
+    assert api.deleted == ["file:chunk_0010.mp4"]
+
+
+class UploadFailsApi(FakeApi):
+    @contextmanager
+    def uploaded(self, path):
+        raise RuntimeError("upload failed")
+        yield
+
+
+def test_obstacle_segs_marks_every_label_unavailable_when_the_upload_fails():
+    api = UploadFailsApi()
+    chunk = Chunk(0, [10, 11, 12], "dir/chunk_0010.mp4", "s.mp4", 1280, 960)
+    out = sidewalk.obstacle_segs(api, chunk, ["bicycle", "traffic cone"])
+    assert out == {"bicycle": None, "traffic cone": None}
+
+
+def test_obstacle_segs_lets_the_cost_cap_stop_the_run_and_still_deletes_the_upload():
+    def sam(prompt, media):
+        raise CostCapReached("cap")
+
+    api = FakeApi(sam=sam)
+    chunk = Chunk(0, [10, 11, 12], "dir/chunk_0010.mp4", "s.mp4", 1280, 960)
+    with pytest.raises(CostCapReached):
+        sidewalk.obstacle_segs(api, chunk, ["bicycle"])
     assert api.deleted == ["file:chunk_0010.mp4"]
