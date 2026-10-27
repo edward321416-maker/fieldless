@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from pipeline import db
@@ -41,6 +43,25 @@ def test_frames_round_trip_in_index_order(conn):
     rows = db.frames(conn, scan_id)
     assert [r["idx"] for r in rows] == [0, 1]
     assert rows[0] == frame(0)
+
+
+def test_a_failed_frame_insert_leaves_no_rows_behind(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    with pytest.raises(sqlite3.IntegrityError):
+        db.add_frames(conn, scan_id, [frame(0), frame(1), frame(1)])
+    assert db.frames(conn, scan_id) == []
+    db.update_scan(conn, scan_id, status="running")
+    assert db.frames(conn, scan_id) == []
+
+
+def test_clear_rows_removes_frames_of_one_scan_only(conn):
+    a = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    b = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    db.add_frames(conn, a, [frame(0), frame(1)])
+    db.add_frames(conn, b, [frame(0)])
+    db.clear_rows(conn, a, "frame")
+    assert db.frames(conn, a) == []
+    assert [r["idx"] for r in db.frames(conn, b)] == [0]
 
 
 def test_entrance_json_and_bool_columns_round_trip(conn):

@@ -95,7 +95,7 @@ CREATE INDEX IF NOT EXISTS issue_scan ON sidewalk_issue(scan_id);
 
 JSON_COLUMNS = {"bbox", "sequence_ids", "stage_status", "review_reasons", "evidence", "model_outputs", "corrections"}
 BOOL_COLUMNS = {"stairs_detected", "sill_possible", "has_ramp", "has_handrail"}
-ROW_TABLES = {"entrance", "sidewalk_issue"}
+ROW_TABLES = {"frame", "entrance", "sidewalk_issue"}
 
 
 def now() -> str:
@@ -179,12 +179,12 @@ def daily_cost(conn, day: str) -> float:
 
 
 def add_frames(conn, scan_id: int, frames: list[dict]) -> None:
-    conn.executemany(
-        "INSERT INTO frame (scan_id, idx, clip, mapillary_image_id, sequence_id, lat, lng, compass, captured_at, "
-        "creator, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [(scan_id, f["idx"], f["clip"], f["image_id"], f["sequence_id"], f["lat"], f["lng"], f["compass"],
-          f["captured_at"], f["creator"], f["width"], f["height"]) for f in frames])
-    conn.commit()
+    with conn:  # commits on success, rolls back every row on any exception
+        conn.executemany(
+            "INSERT INTO frame (scan_id, idx, clip, mapillary_image_id, sequence_id, lat, lng, compass, captured_at, "
+            "creator, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(scan_id, f["idx"], f["clip"], f["image_id"], f["sequence_id"], f["lat"], f["lng"], f["compass"],
+              f["captured_at"], f["creator"], f["width"], f["height"]) for f in frames])
 
 
 def frames(conn, scan_id: int) -> list[dict]:
@@ -225,7 +225,8 @@ def issues(conn, scan_id: int) -> list[dict]:
 
 
 def clear_rows(conn, scan_id: int, table: str) -> None:
-    """Delete a stage's rows before the stage runs again, so a resumed stage starts clean."""
+    """Delete one scan's rows in a stage table ("frame", "entrance" or "sidewalk_issue") before the stage runs
+    again, so a resumed stage starts clean. Other scans are untouched."""
     if table not in ROW_TABLES:
         raise ValueError(f"not a stage table: {table}")
     conn.execute(f"DELETE FROM {table} WHERE scan_id = ?", (scan_id,))
