@@ -1,0 +1,168 @@
+{
+ "name": "seattle_ramps",
+ "target": "curb ramp",
+ "labelled_by": "Claude (2d session) from full-resolution crops, 2026-10-28; gray pads relabelled unclear after the plan 4 gate. Mapillary photos, Seattle Capitol Hill.",
+ "questions": {
+  "warning_present": "The curb ramp has a detectable warning surface (raised truncated domes) at its bottom edge.",
+  "warning_contrast": "The curb ramp has a detectable warning surface that contrasts visually with the walking surface around it (for example yellow domes on gray concrete)."
+ },
+ "photos": [
+  {
+   "id": "421513123303632",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "unclear",
+    "warning_contrast": "no"
+   },
+   "note": "RELABELLED 2026-10-28: gray pad with a diamond grid of small bumps; could be gray domes; no visual contrast",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "1859712874536378",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "no",
+    "warning_contrast": "no"
+   },
+   "note": "flush ramp, no domes",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "1388622938294798",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "unclear",
+    "warning_contrast": "no"
+   },
+   "note": "RELABELLED 2026-10-28: gray stippled pad; grooves vs gray domes not judgeable at this resolution; no visual contrast",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "443029557885136",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "unclear",
+    "warning_contrast": "no"
+   },
+   "note": "RELABELLED 2026-10-28 after 2b gate: gray pad with a dotted diagonal-grid texture; grooves vs gray truncated domes not judgeable at 2048 px. Gray on gray concrete would still fail ADA 705.1.3 visual contrast",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "1135494587384233",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "yes",
+    "warning_contrast": "yes"
+   },
+   "note": "yellow truncated domes; city record says N (record likely stale)",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "5362983597112956",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "yes",
+    "warning_contrast": "yes"
+   },
+   "note": "yellow domes; city record says N (record likely stale)",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "1026866854691216",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "yes",
+    "warning_contrast": "yes"
+   },
+   "note": "small yellow dome strip; city record says N (record likely stale)",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "3490854744471068",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "yes",
+    "warning_contrast": "yes"
+   },
+   "note": "yellow truncated domes",
+   "city_detwarn_exists": "Y"
+  },
+  {
+   "id": "481649606865551",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "yes",
+    "warning_contrast": "yes"
+   },
+   "note": "yellow domes",
+   "city_detwarn_exists": "Y"
+  },
+  {
+   "id": "1064667781086560",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "yes",
+    "warning_contrast": "yes"
+   },
+   "note": "yellow domes",
+   "city_detwarn_exists": "Y"
+  },
+  {
+   "id": "620695656318142",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "yes",
+    "warning_contrast": "yes"
+   },
+   "note": "yellow domes, small",
+   "city_detwarn_exists": "Y"
+  },
+  {
+   "id": "1938591246337969",
+   "target_visible": "yes",
+   "answers": {
+    "warning_present": "no",
+    "warning_contrast": "no"
+   },
+   "note": "RELABELLED 2026-10-28: zoom shows rows of short linear grooves, not domes; dark gray, no yellow",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "3124848857805811",
+   "target_visible": "unclear",
+   "answers": {
+    "warning_present": "no"
+   },
+   "note": "looks like a plain curb, ramp not certain; no domes",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "390830589688145",
+   "target_visible": "no",
+   "answers": {},
+   "note": "faces a shopfront; negative example for find",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "371994845128583",
+   "target_visible": "no",
+   "answers": {},
+   "note": "cafe tables; negative example for find",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "1137016157203072",
+   "target_visible": "no",
+   "answers": {},
+   "note": "covered scaffold walkway; negative example for find",
+   "city_detwarn_exists": "N"
+  },
+  {
+   "id": "857040605681079",
+   "target_visible": "no",
+   "answers": {},
+   "note": "sidewalk with bins; negative example for find",
+   "city_detwarn_exists": "N"
+  }
+ ]
+}
