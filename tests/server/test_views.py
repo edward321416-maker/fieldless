@@ -175,7 +175,7 @@ def test_scan_json_counts_by_the_scans_standard():
                                 "report_when": "no", "label_yes": "Curb ramp with detectable warning",
                                 "label_no": "Curb ramp without detectable warning", "yes": 2, "no": 1, "unclear": 1}
     assert [(c["id"], c["inventory"], c["yes"]) for c in out["checks"][1:]] == [
-        ("streetlight_pole", True, 0), ("street_tree", True, 0), ("litter_can", True, 0)]
+        ("utility_pole", True, 0), ("street_tree", True, 0), ("litter_can", True, 0)]
 
 
 def test_inventory_rows_are_counted_as_found_and_never_as_defects(monkeypatch):

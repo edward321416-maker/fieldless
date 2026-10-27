@@ -321,7 +321,7 @@ def test_an_inventory_row_is_confirmed_with_yes_not_answered_no(make):
     client, _ = make()
     scan_id, _, _ = seed_us()
     conn = store()
-    pole = db.add_issue(conn, scan_id, {"issue_type": "streetlight_pole", "object_label": "unclear", "frame_idx": 9,
+    pole = db.add_issue(conn, scan_id, {"issue_type": "utility_pole", "object_label": "unclear", "frame_idx": 9,
                                         "lat": 47.617, "lng": -122.32, "review_status": "needs_review",
                                         "review_reasons": ["unclear"]})
     refused = client.post(f"/api/issues/{pole}/review", json={"action": "answer", "answer": "no", "seconds": 1})
