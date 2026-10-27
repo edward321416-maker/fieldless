@@ -1,5 +1,6 @@
 """SQLite store for scans, frames, entrances and sidewalk issues (spec section 12).
-Verdicts are not stored; they are computed on request (spec 7.4 step 8, pipeline.judge)."""
+Rows hold facts only; display labels are made on request (spec 7.4 step 8). The entrance columns for rise, ramp,
+door and handrail predate spec revision 4 (steps only) and stay empty."""
 import json
 import sqlite3
 from datetime import datetime, timezone
