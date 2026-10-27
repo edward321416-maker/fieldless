@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { STATIC_DEMO } from "./api";
 import { labelText, photoMonth, reasonText } from "./format";
 import type { Picked } from "./MapView";
 import type { Evidence } from "./types";
@@ -75,7 +76,7 @@ export default function EvidenceCard({ picked, onClose, onReview }: Props) {
           </ul>
         </>
       )}
-      {item.review_status === "needs_review" && (
+      {item.review_status === "needs_review" && !STATIC_DEMO && (
         <button type="button" className="primary" onClick={onReview}>Review now</button>
       )}
       {item.review_status === "verified" && <p className="badge">Checked by a surveyor</p>}

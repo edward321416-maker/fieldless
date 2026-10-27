@@ -1,3 +1,4 @@
+import { STATIC_DEMO } from "./api";
 import { dollars, km, minutes, photoMonth } from "./format";
 import type { Picked } from "./MapView";
 import type { Entrance, Issue, Scan } from "./types";
@@ -70,7 +71,7 @@ export default function ResultsPanel(props: Props) {
         <dt>Entrances with steps</dt>
         <dd>{counts.entrances_with_steps} of {counts.entrances}</dd>
       </dl>
-      {counts.needs_review > 0 && (
+      {counts.needs_review > 0 && !STATIC_DEMO && (
         <button type="button" className="primary" onClick={props.onReview}>
           Confirm {counts.needs_review} finding{counts.needs_review === 1 ? "" : "s"}
         </button>

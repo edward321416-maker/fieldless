@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, STATIC_DEMO } from "./api";
 import AreaPanel from "./AreaPanel";
 import Attribution from "./Attribution";
+import DemoNotice from "./DemoNotice";
 import EvidenceCard from "./EvidenceCard";
 import { isFinished } from "./format";
 import MapView, { type Picked } from "./MapView";
@@ -37,7 +38,13 @@ export default function App() {
 
   useEffect(() => {
     api.config().then(setConfig).catch((e: Error) => setError(e.message));
-    api.demo().then(setDemos).catch(() => setDemos([]));
+    api.demo()
+      .then((areas) => {
+        setDemos(areas);
+        // A first visit opens the first surveyed area, so results are on screen at once.
+        if (areas.length > 0) setScanId((id) => id ?? areas[0].scan_id);
+      })
+      .catch(() => setDemos([]));
   }, []);
 
   // Poll the survey until it finishes. A failed poll is retried; only a missing survey (404) stops it.
@@ -161,16 +168,20 @@ export default function App() {
             <EvidenceCard picked={picked} onClose={() => setPicked(null)} onReview={() => setReviewing(true)} />
           ) : null}
         </div>
-        <AreaPanel
-          bbox={bbox}
-          selecting={selecting}
-          maxDeg2={config?.max_bbox_deg2 ?? 0.0001}
-          inviteRequired={config?.invite_required ?? false}
-          scan={scan}
-          onToggleSelect={() => setSelecting((s) => !s)}
-          onUseView={() => getView.current && setBbox(getView.current())}
-          onStarted={openScan}
-        />
+        {STATIC_DEMO ? (
+          <DemoNotice />
+        ) : (
+          <AreaPanel
+            bbox={bbox}
+            selecting={selecting}
+            maxDeg2={config?.max_bbox_deg2 ?? 0.0001}
+            inviteRequired={config?.invite_required ?? false}
+            scan={scan}
+            onToggleSelect={() => setSelecting((s) => !s)}
+            onUseView={() => getView.current && setBbox(getView.current())}
+            onStarted={openScan}
+          />
+        )}
         {scan && finished && (
           <ResultsPanel
             scan={scan}

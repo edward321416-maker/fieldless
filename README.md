@@ -66,13 +66,15 @@ Then open http://localhost:8000.
 
 Keys are read only from the environment and are never logged. In production, mount a persistent volume at `/data`: the database, photo cache and evidence photos live there. The server runs one process (`--workers 1`), because surveys run one at a time on a background thread. The image installs the tested package versions in constraints.txt.
 
-### On a free Hugging Face Space
+### Public demo (static)
 
-A free Space (Docker, 2 vCPU, 16 GB) has no disk that survives a restart, so the server keeps its database and evidence photos in a private Hugging Face dataset: it restores them on start and uploads them after each survey and review (`server/store.py`, on when `HF_DATA_REPO` is set).
+The public demo is a static site: the web app plus the server's answers for a few surveys already run, read-only. `deploy/static_site.py` asks the real server app for every answer, so the demo shows what the live server shows.
 
 ```bash
 hf auth login                      # a token with write access to your repos
-python -m deploy.hf_space --space USER/fieldless --data USER/fieldless-data --salt
+python -m deploy.static_site --run <run> --scan <id>:<Name> --out data/site --space USER/fieldless
 ```
 
-Then set `MODEL_API_KEY`, `MAPILLARY_TOKEN`, `INVITE_CODE` and `HF_TOKEN` (write access to the dataset) as secrets in the Space settings. `--seed data/runs/<run>` uploads a local run's surveys to the dataset first.
+### On a Hugging Face Docker Space
+
+A Docker Space (PRO on Hugging Face since 2026) has no disk that survives a restart, so the server can keep its database and evidence photos in a private Hugging Face dataset: it restores them on start and uploads them after each survey and review (`server/store.py`, on when `HF_DATA_REPO` is set). `python -m deploy.hf_space --space USER/fieldless --data USER/fieldless-data --salt` publishes it; then set `MODEL_API_KEY`, `MAPILLARY_TOKEN`, `INVITE_CODE` and `HF_TOKEN` as Space secrets.
