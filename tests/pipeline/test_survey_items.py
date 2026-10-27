@@ -100,7 +100,7 @@ def test_the_shipped_standards_load():
     assert kr.path.surface == "yellow tactile paving" and kr.path.fixed == ("bollard", "pole")
     assert kr.path.objects == ("electric scooter", "bicycle")
     assert not us.tactile_defects and us.path.surface == "sidewalk" and us.path.fixed == ()
-    assert [c.id for c in us.checks] == ["curb_ramp_warning", "utility_pole", "street_tree", "litter_can"]
+    assert [c.id for c in us.checks] == ["curb_ramp_warning", "utility_pole", "street_tree", "litter_can", "parking_pay_station"]
     assert us.checks[0].report_when == "no" and not us.checks[0].inventory
     assert all(c.inventory and c.report_when == "" for c in us.checks[1:])
 
