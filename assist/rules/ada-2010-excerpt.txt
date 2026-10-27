@@ -1,0 +1,388 @@
+=== source page 109 ===
+ 
+ 
+ 
+ 
+  
+CHAPTER 3: BUILDING BLOCKS 
+TECHNICAL 
+302.3 Openings.  Openings in floor or ground surfaces shall not allow passage of a sphere more than ½ 
+inch (13 mm) diameter except as allowed in 407.4.3, 409.4.3, 410.4, 810.5.3 and 810.10.  Elongated 
+openings shall be placed so that the long dimension is perpendicular to the dominant direction of travel.   
+Figure 302.3 
+Elongated Openings in Floor or Ground Surfaces 
+303 Changes in Level 
+303.1 General.  Where changes in level are permitted in floor or ground surfaces, they shall comply with 
+303. 
+EXCEPTIONS: 1.  Animal containment areas shall not be required to comply with 303. 
+2. Areas of sport activity shall not be required to comply with 303. 
+303.2 Vertical.  Changes in level of ¼ inch (6.4 mm) high maximum shall be permitted to be vertical.   
+Figure 303.2 
+Vertical Change in Level 
+142
+Titles II and III - 2010 Standards - 76 
+Department of Justice 
+2010 Standards: Titles II and III - 105
+
+=== source page 110 ===
+143 
+ 
+TECHNICAL 
+CHAPTER 3: BUILDING BLOCKS 
+303.3 Beveled.  Changes in level between ¼ inch (6.4 mm) high minimum and ½ inch (13 mm) high 
+maximum shall be beveled with a slope not steeper than 1:2.       
+Advisory 303.3 Beveled.  A change in level of ½ inch (13 mm) is permitted to be ¼ inch 
+(6.4 mm) vertical plus ¼ inch (6.4 mm) beveled.  However, in no case may the combined 
+change in level exceed ½ inch (13 mm).  Changes in level exceeding ½ inch (13 mm) must 
+comply with 405 (Ramps) or 406 (Curb Ramps). 
+Figure 303.3 
+Beveled Change in Level 
+303.4 Ramps.  Changes in level greater than ½ inch (13 mm) high shall be ramped, and shall comply 
+with 405 or 406. 
+304 Turning Space 
+304.1 General.  Turning space shall comply with 304. 
+304.2 Floor or Ground Surfaces.  Floor or ground surfaces of a turning space shall comply with 302. 
+Changes in level are not permitted. 
+EXCEPTION:  Slopes not steeper than 1:48 shall be permitted.     
+Advisory 304.2 Floor or Ground Surface Exception.  As used in this section, the phrase 
+“changes in level” refers to surfaces with slopes and to surfaces with abrupt rise exceeding 
+that permitted in Section 303.3.  Such changes in level are prohibited in required clear floor 
+and ground spaces, turning spaces, and in similar spaces where people using wheelchairs 
+and other mobility devices must park their mobility aids such as in wheelchair spaces, or 
+maneuver to use elements such as at doors, fixtures, and telephones.  The exception 
+permits slopes not steeper than 1:48. 
+304.3 Size.  Turning space shall comply with 304.3.1 or 304.3.2. 
+304.3.1 Circular Space.  The turning space shall be a space of 60 inches (1525 mm) diameter 
+minimum.  The space shall be permitted to include knee and toe clearance complying with 306. 
+304.3.2 T-Shaped Space.  The turning space shall be a T-shaped space within a 60 inch (1525 mm) 
+square minimum with arms and base 36 inches (915 mm) wide minimum.  Each arm of the T shall be 
+clear of obstructions 12 inches (305 mm) minimum in each direction and the base shall be clear of 
+Titles II and III - 2010 Standards - 77 
+106 - 2010 Standards: Titles II and III 
+Department of Justice 
+
+=== source page 131 ===
+CHAPTER 4: ACCESSIBLE ROUTES
+TECHNICAL
+164
+by reference, see “Referenced Standards” in Chapter 1).  Low-energy and power-assisted doors shall 
+comply with ANSI/BHMA A156.19 (1997 or 2002 edition) (incorporated by reference, see “Referenced 
+Standards” in Chapter 1).
+404.3.1 Clear Width.  Doorways shall provide a clear opening of 32 inches (815 mm) minimum in 
+power-on and power-off mode.  The minimum clear width for automatic door systems in a doorway 
+shall be based on the clear opening provided by all leaves in the open position.
+404.3.2 Maneuvering Clearance.  Clearances at power-assisted doors and gates shall comply with 
+404.2.4.  Clearances at automatic doors and gates without standby power and serving an accessible 
+means of egress shall comply with 404.2.4.
+EXCEPTION: Where automatic doors and gates remain open in the power-off condition, 
+compliance with 404.2.4 shall not be required.
+404.3.3 Thresholds.  Thresholds and changes in level at doorways shall comply with 404.2.5.
+404.3.4 Doors in Series and Gates in Series.  Doors in series and gates in series shall comply with 
+404.2.6.
+404.3.5 Controls.  Manually operated controls shall comply with 309.  The clear floor space adjacent 
+to the control shall be located beyond the arc of the door swing.
+404.3.6 Break Out Opening.  Where doors and gates without standby power are a part of a means 
+of egress, the clear break out opening at swinging or sliding doors and gates shall be 32 inches (815 
+mm) minimum when operated in emergency mode.
+EXCEPTION:  Where manual swinging doors and gates comply with 404.2 and serve the same 
+means of egress compliance with 404.3.6 shall not be required.
+404.3.7 Revolving Doors, Revolving Gates, and Turnstiles.  Revolving doors, revolving gates, 
+and turnstiles shall not be part of an accessible route.
+405 Ramps
+405.1 General.  Ramps on accessible routes shall comply with 405.
+EXCEPTION: In assembly areas, aisle ramps adjacent to seating and not serving elements required 
+to be on an accessible route shall not be required to comply with 405.
+405.2 Slope.  Ramp runs shall have a running slope not steeper than 1:12.
+EXCEPTION: In existing sites, buildings, and facilities, ramps shall be permitted to have running 
+slopes steeper than 1:12 complying with Table 405.2 where such slopes are necessary due to space 
+limitations.           
+2010 Standards: Titles II and III - 127
+Department of Justice
+
+=== source page 132 ===
+TECHNICAL
+CHAPTER 4: ACCESSIBLE ROUTES
+165 
+Table 405.2 Maximum Ramp Slope and Rise for Existing Sites, Buildings, and Facilities
+Slope1
+Maximum Rise
+Steeper than 1:10 but not steeper than 1:8
+3 inches (75 mm)
+Steeper than 1:12 but not steeper than 1:10
+6 inches (150 mm)
+1. A slope steeper than 1:8 is prohibited.
+Advisory 405.2 Slope.  To accommodate the widest range of users, provide ramps with the 
+least possible running slope and, wherever possible, accompany ramps with stairs for use 
+by those individuals for whom distance presents a greater barrier than steps, e.g., people 
+with heart disease or limited stamina.
+405.3 Cross Slope.  Cross slope of ramp runs shall not be steeper than 1:48.    
+Advisory 405.3 Cross Slope.  Cross slope is the slope of the surface perpendicular to the 
+direction of travel.  Cross slope is measured the same way as slope is measured (i.e., the 
+rise over the run).
+405.4 Floor or Ground Surfaces.  Floor or ground surfaces of ramp runs shall comply with 302. 
+Changes in level other than the running slope and cross slope are not permitted on ramp 
+runs.
+405.5 Clear Width.  The clear width of a ramp run and, where handrails are provided, the clear width 
+between handrails shall be 36 inches (915 mm) minimum.
+EXCEPTION:  Within employee work areas, the required clear width of ramps that are a part of 
+common use circulation paths shall be permitted to be decreased by work area equipment provided 
+that the decrease is essential to the function of the work being performed.
+405.6 Rise.  The rise for any ramp run shall be 30 inches (760 mm) maximum.
+405.7 Landings.  Ramps shall have landings at the top and the bottom of each ramp run.  Landings 
+shall comply with 405.7.      
+Advisory 405.7 Landings.  Ramps that do not have level landings at changes in direction 
+can create a compound slope that will not meet the requirements of this document.  Circular 
+or curved ramps continually change direction.  Curvilinear ramps with small radii also can 
+create compound cross slopes and cannot, by their nature, meet the requirements for 
+accessible routes.  A level landing is needed at the accessible door to permit maneuvering 
+and simultaneously door operation.
+Titles II and III - 2010 Standards - 99
+128 - 2010 Standards: Titles II and III
+Department of Justice
+
+=== source page 133 ===
+CHAPTER 4: ACCESSIBLE ROUTES
+TECHNICAL
+166
+Figure 405.7 
+Ramp Landings
+405.7.1 Slope.  Landings shall comply with 302.  Changes in level are not permitted.
+EXCEPTION:  Slopes not steeper than 1:48 shall be permitted.
+405.7.2 Width.  The landing clear width shall be at least as wide as the widest ramp run leading to 
+the landing.
+405.7.3 Length.  The landing clear length shall be 60 inches (1525 mm) long minimum.
+405.7.4 Change in Direction.  Ramps that change direction between runs at landings shall have a 
+clear landing 60 inches (1525 mm) minimum by 60 inches (1525 mm) minimum.
+405.7.5 Doorways.  Where doorways are located adjacent to a ramp landing, maneuvering 
+clearances required by 404.2.4 and 404.3.2 shall be permitted to overlap the required landing area.
+405.8 Handrails.  Ramp runs with a rise greater than 6 inches (150 mm) shall have handrails complying 
+with 505.
+EXCEPTION: Within employee work areas, handrails shall not be required where ramps that are part 
+of common use circulation paths are designed to permit the installation of handrails complying with 
+505.  Ramps not subject to the exception to 405.5 shall be designed to maintain a 36 inch (915 mm) 
+minimum clear width when handrails are installed.
+405.9 Edge Protection.  Edge protection complying with 405.9.1 or 405.9.2 shall be provided on each 
+side of ramp runs and at each side of ramp landings.
+2010 Standards: Titles II and III - 129
+Department of Justice
+
+=== source page 134 ===
+TECHNICAL
+CHAPTER 4: ACCESSIBLE ROUTES
+167 
+EXCEPTIONS:  1.  Edge protection shall not be required on ramps that are not required to have 
+handrails and have sides complying with 406.3.
+2.  Edge protection shall not be required on the sides of ramp landings serving an adjoining ramp run 
+or stairway.
+3.  Edge protection shall not be required on the sides of ramp landings having a vertical drop-off of ½ 
+inch (13 mm) maximum within 10 inches (255 mm) horizontally of the minimum landing area 
+specified in 405.7.
+405.9.1 Extended Floor or Ground Surface.  The floor or ground surface of the ramp run or landing 
+shall extend 12 inches (305 mm) minimum beyond the inside face of a handrail complying with 505.      
+Advisory 405.9.1 Extended Floor or Ground Surface.  The extended surface prevents 
+wheelchair casters and crutch tips from slipping off the ramp surface.
+Figure 405.9.1 
+Extended Floor or Ground Surface Edge Protection
+405.9.2 Curb or Barrier.  A curb or barrier shall be provided that prevents the passage of a 4 inch 
+(100 mm) diameter sphere, where any portion of the sphere is within 4 inches (100 mm) of the finish 
+floor or ground surface.      
+Figure 405.9.2 
+Curb or Barrier Edge Protection
+405.10 Wet Conditions.  Landings subject to wet conditions shall be designed to prevent the 
+accumulation of water.
+130 - 2010 Standards: Titles II and III
+Department of Justice
+
+=== source page 135 ===
+CHAPTER 4: ACCESSIBLE ROUTES
+TECHNICAL
+168
+406 Curb Ramps
+406.1 General.  Curb ramps on accessible routes shall comply with 406, 405.2 through 405.5, and 
+405.10.
+406.2 Counter Slope.  Counter slopes of adjoining gutters and road surfaces immediately adjacent to 
+the curb ramp shall not be steeper than 1:20.  The adjacent surfaces at transitions at curb ramps to 
+walks, gutters, and streets shall be at the same level.      
+Figure 406.2
+ Counter Slope of Surfaces Adjacent to Curb Ramps 
+406.3 Sides of Curb Ramps.  Where provided, curb ramp flares shall not be steeper than 1:10.      
+Figure 406.3
+ Sides of Curb Ramps 
+406.4 Landings.  Landings shall be provided at the tops of curb ramps. The landing clear length shall be 
+36 inches (915 mm) minimum.  The landing clear width shall be at least as wide as the curb ramp, 
+excluding flared sides, leading to the landing.
+EXCEPTION:  In alterations, where there is no landing at the top of curb ramps, curb ramp flares 
+shall be provided and shall not be steeper than 1:12.           
+2010 Standards: Titles II and III - 131
+Department of Justice
+
+=== source page 136 ===
+TECHNICAL
+CHAPTER 4: ACCESSIBLE ROUTES
+169 
+Figure 406.4
+ Landings at the Top of Curb Ramps 
+406.5 Location.  Curb ramps and the flared sides of curb ramps shall be located so that they do not 
+project into vehicular traffic lanes, parking spaces, or parking access aisles.  Curb ramps at marked 
+crossings shall be wholly contained within the markings, excluding any flared sides.
+406.6 Diagonal Curb Ramps.  Diagonal or corner type curb ramps with returned curbs or other 
+well-defined edges shall have the edges parallel to the direction of pedestrian flow.  The bottom of 
+diagonal curb ramps shall have a clear space 48 inches (1220 mm) minimum outside active traffic lanes 
+of the roadway.  Diagonal curb ramps provided at marked crossings shall provide the 48 inches (1220 
+mm) minimum clear space within the markings.  Diagonal curb ramps with flared sides shall have a 
+segment of curb 24 inches (610 mm) long minimum located on each side of the curb ramp and within the 
+marked crossing.      
+Figure 406.6
+ Diagonal or Corner Type Curb Ramps 
+132 - 2010 Standards: Titles II and III
+Department of Justice
+
+=== source page 137 ===
+CHAPTER 4: ACCESSIBLE ROUTES
+TECHNICAL
+170
+406.7 Islands.  Raised islands in crossings shall be cut through level with the street or have curb ramps 
+at both sides.  Each curb ramp shall have a level area 48 inches (1220 mm) long minimum by 36 inches 
+(915 mm) wide minimum at the top of the curb ramp in the part of the island intersected by the crossings.  
+Each 48 inch (1220 mm) minimum by 36 inch (915 mm) minimum area shall be oriented so that the 48 
+inch (1220 mm) minimum length is in the direction of the running slope of the curb ramp it serves.  The 
+48 inch (1220 mm) minimum by 36 inch (915 mm) minimum areas and the accessible route shall be 
+permitted to overlap.     
+Figure 406.7
+ Islands in Crossings 
+407 Elevators
+407.1 General.  Elevators shall comply with 407 and with ASME A17.1 (incorporated by reference, see 
+“Referenced Standards” in Chapter 1).  They shall be passenger elevators as classified by ASME A17.1.  
+Elevator operation shall be automatic.    
+Advisory 407.1 General.  The ADA and other Federal civil rights laws require that 
+accessible features be maintained in working order so that they are accessible to and 
+usable by those people they are intended to benefit.  Building owners should note that the 
+ASME Safety Code for Elevators and Escalators requires routine maintenance and 
+inspections.  Isolated or temporary interruptions in service due to maintenance or repairs 
+may be unavoidable; however, failure to take prompt action to effect repairs could constitute 
+a violation of Federal laws and these requirements.
+407.2 Elevator Landing Requirements.  Elevator landings shall comply with 407.2.
+2010 Standards: Titles II and III - 133
+Department of Justice
+
+=== source page 138 ===
+TECHNICAL
+CHAPTER 4: ACCESSIBLE ROUTES
+171 
+407.2.1 Call Controls.  Where elevator call buttons or keypads are provided, they shall comply with 
+407.2.1 and 309.4.  Call buttons shall be raised or flush.
+EXCEPTION:  Existing elevators shall be permitted to have recessed call buttons.
+407.2.1.1 Height.  Call buttons and keypads shall be located within one of the reach ranges 
+specified in 308, measured to the centerline of the highest operable part.
+EXCEPTION:  Existing call buttons and existing keypads shall be permitted to be located at 
+54 inches (1370 mm) maximum above the finish floor, measured to the centerline of the 
+highest operable part.
+407.2.1.2 Size.  Call buttons shall be ¾ inch (19 mm) minimum in the smallest dimension.
+EXCEPTION:  Existing elevator call buttons shall not be required to comply with 407.2.1.2.
+407.2.1.3 Clear Floor or Ground Space.  A clear floor or ground space complying with 305 shall 
+be provided at call controls.    
+Advisory 407.2.1.3 Clear Floor or Ground Space.  The clear floor or ground space 
+required at elevator call buttons must remain free of obstructions including ashtrays, plants, 
+and other decorative elements that prevent wheelchair users and others from reaching the 
+call buttons.  The height of the clear floor or ground space is considered to be a volume from 
+the floor to 80 inches (2030 mm) above the floor.  Recessed ashtrays should not be placed 
+near elevator call buttons so that persons who are blind or visually impaired do not 
+inadvertently contact them or their contents as they reach for the call buttons.
+407.2.1.4 Location.  The call button that designates the up direction shall be located above the 
+call button that designates the down direction.
+EXCEPTION:  Destination-oriented elevators shall not be required to comply with 407.2.1.4.    
+Advisory 407.2.1.4 Location Exception.  A destination-oriented elevator system provides 
+lobby controls enabling passengers to select floor stops, lobby indicators designating which 
+elevator to use, and a car indicator designating the floors at which the car will stop.  
+Responding cars are programmed for maximum efficiency by reducing the number of stops 
+any passenger experiences.
+407.2.1.5 Signals.  Call buttons shall have visible signals to indicate when each call is registered 
+and when each call is answered.
+EXCEPTIONS:  1. Destination-oriented elevators shall not be required to comply with 
+407.2.1.5 provided that visible and audible signals complying with 407.2.2 indicating which 
+elevator car to enter are provided.
+2.  Existing elevators shall not be required to comply with 407.2.1.5.
+407.2.1.6 Keypads.  Where keypads are provided, keypads shall be in a standard telephone 
+keypad arrangement and shall comply with 407.4.7.2.
+407.2.2 Hall Signals.  Hall signals, including in-car signals, shall comply with 407.2.2.
+134 - 2010 Standards: Titles II and III
+Department of Justice
+
+=== source page 200 ===
+TECHNICAL
+CHAPTER 7: COMMUNICATION ELEMENTS AND FEATURES
+233 
+704.4 TTYs.  TTYs required at a public pay telephone shall be permanently affixed within, or adjacent to, 
+the telephone enclosure.  Where an acoustic coupler is used, the telephone cord shall be sufficiently 
+long to allow connection of the TTY and the telephone receiver.  
+Advisory 704.4 TTYs. Ensure that sufficient electrical service is available where TTYs are 
+to be installed.
+  
+704.4.1 Height.  When in use, the touch surface of TTY keypads shall be 34 inches (865 mm) 
+minimum above the finish floor.
+EXCEPTION:  Where seats are provided, TTYs shall not be required to comply with 704.4.1.    
+Advisory 704.4.1 Height.  A telephone with a TTY installed underneath cannot also be a 
+wheelchair accessible telephone because the required 34 inches (865 mm) minimum 
+keypad height can causes the highest operable part of the telephone, usually the coin slot, 
+to exceed the maximum permitted side and forward reach ranges.  (See Section 308). 
+Advisory 704.4.1 Height Exception. While seats are not required at TTYs, reading and 
+typing at a TTY is more suited to sitting than standing. Facilities that often provide seats at 
+TTY’s include, but are not limited to, airports and other passenger terminals or stations, 
+courts, art galleries, and convention centers.
+704.5 TTY Shelf.  Public pay telephones required to accommodate portable TTYs shall be equipped 
+with a shelf and an electrical outlet within or adjacent to the telephone enclosure.  The telephone 
+handset shall be capable of being placed flush on the surface of the shelf.  The shelf shall be capable of 
+accommodating a TTY and shall have 6 inches (150 mm) minimum vertical clearance above the area 
+where the TTY is to be placed.
+705 Detectable Warnings
+705.1 General.  Detectable warnings shall consist of a surface of truncated domes and shall comply with 
+705.
+705.1.1 Dome Size.  Truncated domes in a detectable warning surface shall have a base diameter 
+of 0.9 inch (23 mm) minimum and 1.4 inches (36 mm) maximum, a top diameter of 50 percent of the 
+base diameter minimum to 65 percent of the base diameter maximum, and a height of 0.2 inch (5.1 
+mm).
+705.1.2 Dome Spacing.  Truncated domes in a detectable warning surface shall have a center-to-
+center spacing of 1.6 inches (41 mm) minimum and 2.4 inches (61 mm) maximum, and a base-to-
+base spacing of 0.65 inch (17 mm) minimum, measured between the most adjacent domes on a 
+square grid.
+705.1.3 Contrast.  Detectable warning surfaces shall contrast visually with adjacent walking 
+surfaces either light-on-dark, or dark-on-light.         
+ 
+Titles II and III - 2010 Standards - 167
+196 - 2010 Standards: Titles II and III
+Department of Justice
+
+=== source page 201 ===
+CHAPTER 7: COMMUNICATION ELEMENTS AND FEATURES
+TECHNICAL
+234
+Figure 705.1
+Size and Spacing of Truncated Domes
+705.2 Platform Edges.  Detectable warning surfaces at platform boarding edges shall be 24 inches (610 
+mm) wide and shall extend the full length of the public use areas of the platform.
+706 Assistive Listening Systems
+706.1 General.  Assistive listening systems required in assembly areas shall comply with 706.    
+Advisory 706.1 General.  Assistive listening systems are generally categorized by their 
+mode of transmission.  There are hard-wired systems and three types of wireless systems: 
+induction loop, infrared, and FM radio transmission.  Each has different advantages and 
+disadvantages that can help determine which system is best for a given application.  For 
+example, an FM system may be better than an infrared system in some open-air assemblies 
+since infrared signals are less effective in sunlight.  On the other hand, an infrared system is 
+typically a better choice than an FM system where confidential transmission is important 
+because it will be contained within a given space.
+The technical standards for assistive listening systems describe minimum performance 
+levels for volume, interference, and distortion.  Sound pressure levels (SPL), expressed in 
+decibels, measure output sound volume.  Signal-to-noise ratio (SNR or S/N), also 
+expressed in decibels, represents the relationship between the loudness of a desired sound 
+(the signal) and the background noise in a space or piece of equipment.  The higher the 
+SNR, the more intelligible the signal.  The peak clipping level limits the distortion in signal 
+output produced when high-volume sound waves are manipulated to serve assistive 
+listening devices.
+Selecting or specifying an effective assistive listening system for a large or complex venue 
+requires assistance from a professional sound engineer.  The Access Board has published 
+technical assistance on assistive listening devices and systems.
+706.2 Receiver Jacks.  Receivers required for use with an assistive listening system shall include a 1/8 
+inch (3.2 mm) standard mono jack.
+Titles II and III - 2010 Standards - 168
+2010 Standards: Titles II and III - 197
+Department of Justice
