@@ -4,6 +4,7 @@ Ported from spike/mapillary.py. New: a search answered with HTTP 500 ("Please re
 D1 for dense areas) is split into quadrants like a full page, and each frame keeps its 2048-px photo URL.
 """
 import random
+import threading
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -170,7 +171,10 @@ def download(url: str | None, dst: Path) -> bool:
         return False
     if resp.status_code != 200:
         return False
-    Path(dst).write_bytes(resp.content)
+    dst = Path(dst)
+    tmp = dst.with_name(f"{dst.name}.{threading.get_ident()}.part")
+    tmp.write_bytes(resp.content)
+    tmp.replace(dst)  # a reader never sees a half-written photo (the cache is shared by workers and scans)
     return True
 
 

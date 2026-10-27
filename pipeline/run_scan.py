@@ -51,7 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.preview:
         if not args.bbox:
             parser.error("--preview needs --bbox")
-        print(json.dumps(collect.preview(args.bbox, args.max_photos), ensure_ascii=False, indent=1))
+        preview = collect.preview(args.bbox, config.photo_budget(args.max_photos))
+        print(json.dumps(preview, ensure_ascii=False, indent=1))
         return 0
     if (args.bbox is None) == (args.resume is None):
         parser.error("give --bbox for a new scan or --resume SCAN_ID")

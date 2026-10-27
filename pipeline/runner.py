@@ -17,11 +17,13 @@ from pipeline.cost import CostCapReached, CostMeter
 from pipeline.meta_api import RunAborted, error_text
 from pipeline.parallel import run_parallel
 
-STAGES = ("collect", "chunks", "scene", "sidewalk", "defects", "entrances", "evidence")
-INDEPENDENT = {"sidewalk", "defects", "entrances", "evidence"}
-RERUN_AFTER = {"defects": {"sidewalk"}, "evidence": set(STAGES)}  # a done stage reruns if one of these ran
+STAGES = ("collect", "chunks", "scene", "sidewalk", "defects", "sidewalk_evidence", "entrances", "evidence")
+INDEPENDENT = {"sidewalk", "defects", "sidewalk_evidence", "entrances", "evidence"}
+RERUN_AFTER = {"defects": {"sidewalk"}, "sidewalk_evidence": {"sidewalk", "defects"},
+               "evidence": set(STAGES)}  # a done stage reruns if one of these ran
 DURABLE = (*defects.ISSUE_TYPES, "fixed_obstruction")  # the three defect classes the user chose (spec 9.3)
 SCENE_WORKERS = 3  # Spark video requests are large; fewer at a time
+RESUME_MIN_USD = 0.10
 _photo_locks: dict[str, threading.Lock] = {}
 _photo_locks_guard = threading.Lock()
 
@@ -54,7 +56,7 @@ class Scan:
     scenes: list[dict] = field(default_factory=list)
 
     def __post_init__(self):
-        self.max_photos = min(self.max_photos, config.MAX_PHOTOS_PER_SCAN)  # spec 13: never more than 400 photos
+        self.max_photos = config.photo_budget(self.max_photos)  # spec 13: 400 at most, and what the cap pays for
 
     @property
     def work(self) -> Path:
@@ -141,7 +143,7 @@ def _entrance_row(s: Scan, cand: entrance_detect.Candidate, clip_idxs: list[int]
                 "captured_at": frame["captured_at"]}
     lat, lng, source = geo.entrance_location(rep, cand.side)
     return {**base, "frame_idx": rep["idx"], "lat": lat, "lng": lng, "location_source": source,
-            "stairs_detected": stairs.found, "sill_possible": reading["has_step_or_sill"] and not stairs.found,
+            "stairs_detected": stairs.found, "sill_possible": "possible_sill" in measured["review_reasons"],
             "confidence": reading["confidence"], **measured,
             "model_outputs": {"stairs": asdict(stairs), "reading": reading, "sill": sill, "merged": cand.merged,
                               "has_visible_steps": cand.has_visible_steps},
@@ -221,13 +223,15 @@ def stage_defects(s: Scan) -> None:
     s.state("defects_checks").write_text(json.dumps(checks, ensure_ascii=False), encoding="utf-8")
 
 
-def stage_evidence(s: Scan) -> None:
+def stage_evidence(s: Scan, kinds: tuple[str, ...] = ("entrance", "issue")) -> None:
     """Blurred, attributed evidence photos for rows that have none yet. A row whose photo failed keeps an error
     record and is tried again on the next run; the stage then fails, so the failure is visible."""
     out = Path(s.run_dir) / "evidence"
     by_idx, photos = s.by_idx(), s.photos()
     todo = ([("entrance", r) for r in db.entrances(s.conn, s.scan_id) if not (r["evidence"] or {}).get("image")]
-            + [("issue", r) for r in db.issues(s.conn, s.scan_id) if not (r["evidence"] or {}).get("image")])
+            if "entrance" in kinds else [])
+    todo += ([("issue", r) for r in db.issues(s.conn, s.scan_id) if not (r["evidence"] or {}).get("image")]
+             if "issue" in kinds else [])
 
     def one(item):
         kind, row = item
@@ -248,8 +252,15 @@ def stage_evidence(s: Scan) -> None:
         raise RuntimeError(f"evidence failed for {failed} of {len(todo)} rows; they are retried on the next run")
 
 
+def stage_sidewalk_evidence(s: Scan) -> None:
+    """Evidence photos for the sidewalk rows first: the main layer keeps its photos even if the cost cap stops the
+    entrance stage."""
+    stage_evidence(s, kinds=("issue",))
+
+
 STAGE_FUNCS = {"collect": stage_collect, "chunks": stage_chunks, "scene": stage_scene,
-               "sidewalk": stage_sidewalk, "defects": stage_defects, "entrances": stage_entrances,
+               "sidewalk": stage_sidewalk, "defects": stage_defects,
+               "sidewalk_evidence": stage_sidewalk_evidence, "entrances": stage_entrances,
                "evidence": stage_evidence}
 
 
@@ -296,6 +307,11 @@ def run_scan(s: Scan) -> dict:
     conn, scan_id = s.conn, s.scan_id
     started = time.time()
     before = db.get_scan(conn, scan_id)
+    meter = getattr(s.api, "meter", None)
+    if before["status"] == "stopped_cost_cap" and meter and meter.cap_usd - meter.spent_usd < RESUME_MIN_USD:
+        # resuming would clear the stopped stage's saved rows and stop again at once (spec 13: the cap is per scan)
+        db.update_scan(conn, scan_id, error=f"cost cap ${meter.cap_usd:.2f} already reached; start a smaller scan")
+        return summary(conn, scan_id, s.work)
     db.update_scan(conn, scan_id, status="running", error=None)
     status, error = "failed", "interrupted"
     stage_error = None
@@ -318,8 +334,10 @@ def run_scan(s: Scan) -> dict:
                 if stage not in INDEPENDENT:
                     raise
                 stage_error = error_text(exc)
-                continue
-            db.set_stage(conn, scan_id, stage, "done")
+            else:
+                db.set_stage(conn, scan_id, stage, "done")
+            if meter:
+                db.update_scan(conn, scan_id, cost_usd=meter.spent_usd)  # a killed run keeps what it spent
         status, error = ("failed", stage_error) if stage_error else ("done", None)
     except CostCapReached as exc:
         status, error = "stopped_cost_cap", str(exc)
@@ -328,7 +346,6 @@ def run_scan(s: Scan) -> dict:
     except Exception as exc:
         status, error = "failed", error_text(exc)
     finally:
-        meter = getattr(s.api, "meter", None)
         db.update_scan(conn, scan_id, status=status, error=error,
                        cost_usd=meter.spent_usd if meter else before["cost_usd"],
                        processing_seconds=before["processing_seconds"] + time.time() - started)

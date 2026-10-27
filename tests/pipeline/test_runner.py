@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from pipeline import collect, db, entrance_detect, runner, sidewalk
+from pipeline import collect, config, db, entrance_detect, runner, sidewalk
 from pipeline.cost import CostCapReached
 from tests.pipeline.fakes import FakeApi, synthetic_photo
 from tests.pipeline.sam_text import line, record, text
@@ -75,6 +75,7 @@ def test_a_scan_runs_every_stage_and_stores_entrances_issues_and_evidence(setup)
     assert set(result["stage_status"].values()) == {"done"}
     (ent,) = db.entrances(conn, scan_id)
     assert (ent["frame_idx"], ent["step_count"], ent["stairs_detected"], ent["review_status"]) == (2, 2, True, "auto")
+    assert ent["sill_possible"] is False  # SAM found stairs, so no "possible sill"
     assert ent["rise_cm_low"] is None and ent["has_ramp"] is None  # spec revision 4: steps only
     assert ent["location_source"] == "image_offset"
     (issue,) = db.issues(conn, scan_id)
@@ -185,6 +186,8 @@ def test_the_cost_cap_stops_the_scan_where_it_is(setup):
     assert result["stage_status"]["entrances"] == "stopped"
     assert result["stage_status"]["sidewalk"] == "done"  # the main layer ran first
     assert "evidence" not in result["stage_status"]
+    assert result["stage_status"]["sidewalk_evidence"] == "done"  # the main layer kept its evidence photos
+    assert result["cost_usd"] == 0.0  # FakeApi's meter spends nothing, but the value is saved per stage
 
 
 def test_an_area_without_photos_fails_at_collect(setup, monkeypatch):
@@ -226,5 +229,32 @@ def test_a_failed_evidence_photo_is_a_row_error_and_is_retried_on_the_next_run(s
     assert ent["evidence"]["image"]
 
 
-def test_a_scan_never_takes_more_than_400_photos(tmp_path):
-    assert runner.Scan(None, 1, FakeApi(), tmp_path, BBOX, max_photos=999).max_photos == 400
+def test_a_scan_never_takes_more_photos_than_its_budget(tmp_path):
+    assert runner.Scan(None, 1, FakeApi(), tmp_path, BBOX, max_photos=999).max_photos == config.photo_budget()
+    assert runner.Scan(None, 1, FakeApi(), tmp_path, BBOX, max_photos=999).max_photos <= 400
+
+
+def test_a_scan_stopped_at_its_cap_is_not_resumed_and_keeps_its_rows(setup):
+    conn, scan_id, make, _ = setup
+    runner.run_scan(make(FakeApi(spark=spark, sam=sam)))
+    db.update_scan(conn, scan_id, status="stopped_cost_cap")
+    api = FakeApi(spark=spark, sam=sam)
+    api.meter = runner.CostMeter(cap_usd=3.0, spent_usd=2.95)
+    result = runner.run_scan(make(api))
+    assert result["status"] == "stopped_cost_cap" and "already reached" in result["error"]
+    assert api.calls == [] and len(db.issues(conn, scan_id)) == 1
+
+
+def test_run_aborted_marks_the_scan_failed_and_keeps_the_spend(setup):
+    _, _, make, _ = setup
+
+    def aborting(prompt, media):
+        if prompt == "stairs":
+            raise runner.RunAborted("5 failed requests in a row")
+        return sam(prompt, media)
+
+    api = FakeApi(spark=spark, sam=aborting)
+    api.meter.spent_usd = 0.42
+    result = runner.run_scan(make(api))
+    assert result["status"] == "failed" and "5 failed requests" in result["error"]
+    assert result["stage_status"]["entrances"] == "stopped" and result["cost_usd"] == 0.42

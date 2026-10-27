@@ -48,5 +48,12 @@ def test_missing_keys_raise(monkeypatch):
 
 
 def test_tests_never_see_the_real_keys():
-    from tests.pipeline.conftest import FAKE_KEY
+    from tests.conftest import FAKE_KEY
     assert config.api_key() == FAKE_KEY and config.mapillary_token() == FAKE_KEY
+
+
+def test_photo_budget_keeps_a_scan_inside_its_cost_cap():
+    budget = config.photo_budget(999)
+    assert budget <= config.MAX_PHOTOS_PER_SCAN
+    assert budget * config.EST_USD_PER_100_PHOTOS / 100 <= config.SCAN_COST_CAP_USD * 0.9 + 1e-9
+    assert config.photo_budget(50) == 50 and config.photo_budget(0) == 1

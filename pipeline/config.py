@@ -45,6 +45,13 @@ EST_USD_PER_100_PHOTOS = 0.85  # measured: first live scan, Seongsu, 100 photos,
 PARALLEL_REQUESTS = 6
 
 
+def photo_budget(max_photos: int = MAX_PHOTOS_PER_SCAN) -> int:
+    """Photos a scan may take: spec 13's 400 at most, and no more than the per-scan cost cap pays for at the measured
+    cost per photo, with a 10% margin (about 317 at $0.85 per 100 photos and a $3 cap)."""
+    affordable = int(SCAN_COST_CAP_USD / EST_USD_PER_100_PHOTOS * 100 * 0.9)
+    return max(1, min(max_photos, MAX_PHOTOS_PER_SCAN, affordable))
+
+
 def api_key() -> str:
     key = os.environ.get("MODEL_API_KEY")
     if not key:
