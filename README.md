@@ -1,6 +1,6 @@
 # Fieldless
 
-**Street surveys without the fieldwork.** Cities still survey their streets on foot, one block at a time. Fieldless does the first pass from street photos that already exist on Mapillary. It records what it finds with an evidence photo for each item, and a surveyor only confirms. The point is speed: how long a survey takes by hand compared with Fieldless.
+**Street surveys without the fieldwork.** Cities still survey their streets on foot, one block at a time. Fieldless does the first pass from street photos that already exist on Mapillary. It records what it finds with an evidence photo for each item, and a surveyor only confirms. The point is speed and cost: how long a street survey takes on foot, and what it costs per kilometer, compared with Fieldless.
 
 Today it surveys sidewalks (tactile paving with missing blocks or cut by a cover, fixed objects standing on it, objects blocking it) and the steps at shop entrances. It is built on Meta's Mapillary imagery, SAM 3.1 and Muse Spark.
 
