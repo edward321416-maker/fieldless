@@ -74,6 +74,79 @@ def test_agent_stops_cleanly_at_the_cost_cap():
     assert not r["finished"] and r["stopped"].startswith("cost cap")
 
 
+POLE = {"id": "streetlight_pole", "inventory": True, "target": "streetlight pole", "find": "utility pole",
+        "ask": "A streetlight pole carries a lamp; plain poles are not. Is this one?",
+        "alternatives": ["pole", "lamp post", "street light"]}
+UNCLEAR = "If it is too far away or too small to see, answer unclear."
+
+
+class FakeInventoryBench:
+    def __init__(self, cap_on_confirm=False):
+        self.ts = SimpleNamespace(name="poles", visible=lambda: [1, 2, 3], negatives=lambda: [4, 5])
+        self.cap_on_confirm = cap_on_confirm
+        self.calls = []
+
+    def find(self, phrase):
+        self.calls.append(("find", phrase))
+        return {"phrase": phrase, "found_visible": 3, "false_on_negatives": 1}
+
+    def confirm(self, item_id, find, ask):
+        if self.cap_on_confirm:
+            raise CostCapReached("cost cap $1.00")
+        self.calls.append(("confirm", item_id, find, ask))
+        return {"kept_true": 3, "kept_false": 0}
+
+
+def test_inventory_agent_tries_phrases_confirms_and_finishes():
+    bench = FakeInventoryBench()
+    final = {"find": "utility pole", "ask": POLE["ask"], "note": "utility pole found every pole"}
+    respond, seen = scripted([
+        [call("score_find", {"phrase": "utility pole"}, "c1"), call("score_find", {"phrase": "pole"}, "c2")],
+        [call("score_confirm", {"find": "utility pole", "ask": POLE["ask"]}, "c3")],
+        [call("finish", {"item": final}, "c4")]])
+    r = agent.run_inventory(respond, bench, POLE)
+    assert r == {"finished": True, "item": final, "calls": 3, "stopped": ""}
+    assert bench.calls == [("find", "utility pole"), ("find", "pole"),
+                           ("confirm", "streetlight_pole", "utility pole", f"{POLE['ask']} {UNCLEAR}")]
+    outputs = [i for i in seen[2] if i.get("type") == "function_call_output"]
+    assert [o["call_id"] for o in outputs] == ["c1", "c2", "c3"] and json.loads(outputs[2]["output"])["kept_true"] == 3
+    prompt = seen[0][0]["content"][0]["text"]
+    assert "every streetlight pole" in prompt and '"id": "streetlight_pole"' in prompt
+    assert '"poles": 3 labelled street photos that show a streetlight pole and 2 that do not' in prompt
+    assert '"pole", "lamp post", "street light"' in prompt and "found_visible minus false_on_negatives" in prompt
+    assert "at most 3 times" in prompt and "at most 12 tool calls" in prompt and UNCLEAR in prompt
+    assert [t["name"] for t in agent.INVENTORY_TOOLS] == ["score_find", "score_confirm", "finish"]
+    assert [t["name"] for t in agent.TOOLS] == ["score_find", "score_ask", "finish"]  # the check agent's, unchanged
+
+
+def test_inventory_agent_refuses_a_fourth_rewording_of_the_ask():
+    bench = FakeInventoryBench()
+    asks = ["Lamp?", "Lamp head?", "Light on top?", "Any lamp at all?", POLE["ask"]]
+    respond, seen = scripted([[call("score_confirm", {"find": "pole", "ask": a}, f"c{n}")]
+                              for n, a in enumerate(asks)] + [[call("finish", {"item": {}}, "end")]])
+    r = agent.run_inventory(respond, bench, POLE)
+    assert r["finished"] and r["calls"] == 5
+    assert [c[3] for c in bench.calls] == [f"{a} {UNCLEAR}" for a in asks[:3] + asks[4:]]  # the draft's ask is free
+    assert "reworded 3 times" in json.loads(seen[4][-1]["output"])["error"]
+
+
+def test_inventory_agent_stops_at_the_tool_call_limit_and_the_cost_cap():
+    bench = FakeInventoryBench()
+    respond, seen = scripted([[call("score_find", {"phrase": f"p{i}"}, f"c{i}")] for i in range(3)] + [[]])
+    r = agent.run_inventory(respond, bench, POLE, max_calls=2)
+    assert not r["finished"] and r["stopped"] == "answered without calling finish" and r["item"] == {}
+    assert bench.calls == [("find", "p0"), ("find", "p1")]
+    assert "limit" in json.loads(seen[3][-1]["output"])["error"]
+
+    def broke(items):
+        raise CostCapReached("cost cap $1.00")
+
+    assert agent.run_inventory(broke, FakeInventoryBench(), POLE)["stopped"].startswith("cost cap")
+    respond, _ = scripted([[call("score_confirm", {"find": "pole", "ask": "Lamp?"}, "c1")]])
+    r = agent.run_inventory(respond, FakeInventoryBench(cap_on_confirm=True), POLE)
+    assert not r["finished"] and r["calls"] == 1 and r["stopped"].startswith("cost cap")
+
+
 def test_responder_reserves_logs_cost_and_returns_plain_output():
     logged = []
 
