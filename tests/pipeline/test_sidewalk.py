@@ -2,7 +2,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from pipeline import sidewalk
+from pipeline import sidewalk, survey_items
 from pipeline.cost import CostCapReached
 from pipeline.scene import Chunk
 from tests.pipeline.fakes import FakeApi, synthetic_photo
@@ -14,34 +14,38 @@ def test_sampled_takes_every_nth_photo_of_the_clip():
     assert sidewalk.sampled([3, 4], 1) == [3, 4]
 
 
-def test_obstacle_labels_start_with_the_base_and_fixed_labels_and_are_capped():
-    labels = sidewalk.obstacle_labels(["Traffic cone", " bicycle", "", "plastic stool", "Bollard", "a", "b", "c"])
+def test_obstacle_labels_start_with_the_standards_objects_and_are_capped():
+    kr = survey_items.load("KR").path
+    labels = sidewalk.obstacle_labels(["Traffic cone", " bicycle", "", "plastic stool", "Bollard", "a", "b", "c"], kr)
     assert labels == ["electric scooter", "bicycle", "bollard", "pole", "traffic cone", "plastic stool", "a", "b"]
+    us = survey_items.load("US").path
+    assert sidewalk.obstacle_labels(["utility pole"], us) == [
+        "sandwich board sign", "traffic cone", "electric scooter", "cafe table", "utility pole"]
 
 
-def test_tactile_segs_marks_failed_photos_and_keeps_the_rest(tmp_path):
+def test_surface_segs_marks_failed_photos_and_keeps_the_rest(tmp_path):
     photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in range(3)}
     answer = text([line(0, [record("0", 0, 100, 160, 120, 160, 120, 0.9)])])
 
     def sam(prompt, media):
-        assert prompt == "yellow tactile paving"
+        assert prompt == "sidewalk"
         if media.name == "1.jpg":
             raise RuntimeError("stream failed")
         return answer if media.name == "0.jpg" else ""
 
-    out = sidewalk.tactile_segs(FakeApi(sam=sam), [0, 1, 2], photos, workers=2)
+    out = sidewalk.surface_segs(FakeApi(sam=sam), "sidewalk", [0, 1, 2], photos, workers=2)
     assert [s.box for s in out[0]] == [(0, 100, 160, 120)]
     assert out[1] is None and out[2] == []
 
 
-def test_tactile_segs_lets_the_cost_cap_stop_the_run(tmp_path):
+def test_surface_segs_lets_the_cost_cap_stop_the_run(tmp_path):
     photos = {0: synthetic_photo(tmp_path / "0.jpg")}
 
     def sam(prompt, media):
         raise CostCapReached("cap")
 
     with pytest.raises(CostCapReached):
-        sidewalk.tactile_segs(FakeApi(sam=sam), [0], photos, workers=1)
+        sidewalk.surface_segs(FakeApi(sam=sam), "yellow tactile paving", [0], photos, workers=1)
 
 
 def test_obstacle_segs_uploads_the_chunk_once_and_maps_frames_to_idx():

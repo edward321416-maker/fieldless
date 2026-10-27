@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from pipeline import (collect, config, db, defects, entrance_detect, entrance_read, events, evidence, geo, scene,
-                      sidewalk)
+                      sidewalk, survey_items)
 from pipeline.cost import CostCapReached, CostMeter
 from pipeline.meta_api import RunAborted, error_text
 from pipeline.parallel import run_parallel
@@ -52,6 +52,7 @@ class Scan:
     max_photos: int = config.MAX_PHOTOS_PER_SCAN
     tactile_every: int = sidewalk.TACTILE_EVERY
     workers: int = config.PARALLEL_REQUESTS
+    standard: "survey_items.Standard | None" = None  # run_scan fills it from scan.jurisdiction
     frames: list[dict] = field(default_factory=list)
     chunks: list[scene.Chunk] = field(default_factory=list)
     scenes: list[dict] = field(default_factory=list)
@@ -164,7 +165,7 @@ def stage_entrances(s: Scan) -> None:
 
 def _issue_row(s: Scan, event: events.Event, by_idx: dict, photos: dict) -> dict | None:
     try:
-        check = events.check_event(s.api, photos[event.rep_idx])
+        check = events.check_event(s.api, photos[event.rep_idx], s.standard.path)
         status, reasons = events.review(check)
     except CostCapReached:
         raise
@@ -187,11 +188,13 @@ def stage_sidewalk(s: Scan) -> None:
     unavailable = {"tactile_photos": [], "obstacle_requests": []}
     flags: dict[str, bool | None] = {}  # sampled photo -> tactile paving found; the defects stage reads these
     for clip, clip_idxs in s.clips().items():
-        tactile = sidewalk.tactile_segs(s.api, sidewalk.sampled(clip_idxs, s.tactile_every), photos, s.workers)
+        tactile = sidewalk.surface_segs(s.api, s.standard.path.surface, sidewalk.sampled(clip_idxs, s.tactile_every),
+                                        photos, s.workers)
         unavailable["tactile_photos"] += [i for i, v in tactile.items() if v is None]
         flags.update({str(i): None if v is None else bool(v) for i, v in tactile.items()})
         clip_chunks = [(c, sc) for c, sc in zip(s.chunks, s.scenes) if c.clip == clip]
-        labels = sidewalk.obstacle_labels(sorted({t for _, sc in clip_chunks for t in sc["obstacle_types"]}))
+        labels = sidewalk.obstacle_labels(sorted({t for _, sc in clip_chunks for t in sc["obstacle_types"]}),
+                                          s.standard.path)
         found = run_parallel(lambda item: sidewalk.obstacle_segs(s.api, item[0], labels), clip_chunks, s.workers)
         ratios: dict[str, dict[int, float]] = {}
         for (chunk, _), obstacles in zip(clip_chunks, found):
@@ -199,6 +202,8 @@ def stage_sidewalk(s: Scan) -> None:
             for label, by_label in events.chunk_ratios(obstacles, chunk, tactile, by_idx, clip_idxs).items():
                 ratios.setdefault(label, {}).update(by_label)
         for event in events.find_events(ratios, clip, clip_idxs):
+            if events.is_fixed(event.label) and not s.standard.path.fixed:
+                continue  # US: poles and hydrants at the curb edge are normal, not reported
             row = _issue_row(s, event, by_idx, photos)
             if row is not None:
                 db.add_issue(s.conn, s.scan_id, row)
@@ -308,6 +313,8 @@ def run_scan(s: Scan) -> dict:
     conn, scan_id = s.conn, s.scan_id
     started = time.time()
     before = db.get_scan(conn, scan_id)
+    if s.standard is None:
+        s.standard = survey_items.load(before["jurisdiction"])
     meter = getattr(s.api, "meter", None)
     if before["status"] == "stopped_cost_cap" and meter and meter.cap_usd - meter.spent_usd < RESUME_MIN_USD:
         # resuming would clear the stopped stage's saved rows and stop again at once (spec 13: the cap is per scan)

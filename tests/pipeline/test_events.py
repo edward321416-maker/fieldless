@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from pipeline import events
+from pipeline import events, survey_items
 from pipeline.sam_output import Seg
 from pipeline.scene import Chunk
 from tests.pipeline.fakes import FakeApi, synthetic_photo
@@ -65,10 +65,32 @@ def test_review(check, expected):
     assert events.review(check) == expected
 
 
-def test_check_event_sends_the_photo(tmp_path):
+KR_PROMPT = """This street photo comes from a survey of tactile paving (the raised guide blocks for blind pedestrians, usually yellow).
+Is the tactile paving actually blocked by an object standing on it? Name the object in a short English noun phrase.
+Also say whether the tactile paving looks damaged or interrupted, give your confidence from 0 to 1, and a one-sentence note.
+Return JSON only."""
+
+
+def test_the_kr_check_prompt_keeps_the_validated_wording():
+    assert events.check_prompt(survey_items.load("KR").path) == KR_PROMPT
+
+
+def test_the_us_check_prompt_asks_about_the_walking_path():
+    prompt = events.check_prompt(survey_items.load("US").path)
+    assert "a survey of sidewalks" in prompt and "Is the sidewalk walking path actually blocked" in prompt
+
+
+def test_check_event_sends_the_photo_and_the_standards_prompt(tmp_path):
     answer = {"blocked": True, "object": "cone", "damage_visible": False, "confidence": 0.8, "notes": ""}
-    api = FakeApi(spark=lambda name, parts: answer if name == "event_check" else {})
-    assert events.check_event(api, synthetic_photo(tmp_path / "p.jpg")) == answer
+    seen = []
+
+    def spark(name, parts):
+        seen.append(parts[0]["text"])
+        return answer if name == "event_check" else {}
+
+    path = survey_items.load("US").path
+    assert events.check_event(FakeApi(spark=spark), synthetic_photo(tmp_path / "p.jpg"), path) == answer
+    assert seen == [events.check_prompt(path)]
 
 
 @pytest.mark.parametrize("label, fixed", [

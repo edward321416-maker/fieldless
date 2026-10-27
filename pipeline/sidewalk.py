@@ -1,4 +1,5 @@
-"""Sidewalk flow, detection (spec 7.3 S2, S3). D1: tactile paving needs full-resolution stills (0.865 of tactile
+"""Sidewalk flow, detection (spec 7.3 S2, S3). The walking surface and the objects to look for come from the scan's
+survey standard (KR: tactile paving). D1: tactile paving needs full-resolution stills (0.865 of tactile
 photos found, 2 of 40 negatives fired; the 1280-wide video found 0.65). Obstacles are tracked on the chunk video
 (15 of 17 events found). Tactile paving runs continuously along a street, so every second photo is enough."""
 from pathlib import Path
@@ -7,11 +8,9 @@ from pipeline.cost import CostCapReached
 from pipeline.parallel import run_parallel
 from pipeline.sam_output import Seg, check_frames, confident, parse
 from pipeline.scene import Chunk
+from pipeline.survey_items import PathSpec
 
-TACTILE_PHRASE = "yellow tactile paving"  # D1 re-test; "braille block" found nothing
 TACTILE_EVERY = 2
-BASE_OBSTACLES = ["electric scooter", "bicycle"]
-FIXED_OBSTACLES = ["bollard", "pole"]  # always asked: a fixed object on tactile paving is a durable defect (spec 9.3)
 MAX_OBSTACLE_LABELS = 8
 
 
@@ -19,11 +18,13 @@ def sampled(clip_idxs: list[int], every: int) -> list[int]:
     return clip_idxs[::every]
 
 
-def tactile_segs(api, idxs: list[int], photos: dict[int, Path], workers: int) -> dict[int, list[Seg] | None]:
-    """Confident tactile-paving segments per photo (photo pixels). None marks a photo whose request failed."""
+def surface_segs(api, phrase: str, idxs: list[int], photos: dict[int, Path],
+                 workers: int) -> dict[int, list[Seg] | None]:
+    """Confident segments of the walking surface (the standard's path.surface) per photo, in photo pixels. None
+    marks a photo whose request failed."""
     def one(idx):
         try:
-            return confident(parse(api.sam_image(TACTILE_PHRASE, photos[idx]), video=False))
+            return confident(parse(api.sam_image(phrase, photos[idx]), video=False))
         except CostCapReached:
             raise
         except Exception:
@@ -32,9 +33,10 @@ def tactile_segs(api, idxs: list[int], photos: dict[int, Path], workers: int) ->
     return dict(zip(idxs, run_parallel(one, idxs, workers)))
 
 
-def obstacle_labels(spark_types: list[str]) -> list[str]:
-    """SAM concepts to ask for: the base and fixed labels, then the kinds Spark listed, at most MAX_OBSTACLE_LABELS."""
-    labels = BASE_OBSTACLES + FIXED_OBSTACLES + [t.strip().lower() for t in spark_types if t.strip()]
+def obstacle_labels(spark_types: list[str], path: PathSpec) -> list[str]:
+    """SAM concepts to ask for: the standard's objects and fixed objects, then the kinds Spark listed, at most
+    MAX_OBSTACLE_LABELS."""
+    labels = list(path.objects) + list(path.fixed) + [t.strip().lower() for t in spark_types if t.strip()]
     return list(dict.fromkeys(labels))[:MAX_OBSTACLE_LABELS]
 
 

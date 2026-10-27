@@ -15,6 +15,7 @@ from pipeline import media
 from pipeline.meta_api import image_part, text_part
 from pipeline.sam_output import Seg
 from pipeline.scene import Chunk
+from pipeline.survey_items import PathSpec
 
 OVERLAP_MIN = 0.2
 FOOTPRINT = 0.2
@@ -37,9 +38,9 @@ CHECK_SCHEMA = {
     },
 }
 
-CHECK_PROMPT = """This street photo comes from a survey of tactile paving (the raised guide blocks for blind pedestrians, usually yellow).
-Is the tactile paving actually blocked by an object standing on it? Name the object in a short English noun phrase.
-Also say whether the tactile paving looks damaged or interrupted, give your confidence from 0 to 1, and a one-sentence note.
+CHECK_PROMPT = """This street photo comes from a survey of {describe}.
+Is {name} actually blocked by an object standing on it? Name the object in a short English noun phrase.
+Also say whether {name} looks damaged or interrupted, give your confidence from 0 to 1, and a one-sentence note.
 Return JSON only."""
 
 
@@ -141,8 +142,13 @@ def find_events(ratios: dict[str, dict[int, float]], clip: int, clip_idxs: list[
     return found
 
 
-def check_event(api, photo: Path) -> dict:
-    return api.spark_json([text_part(CHECK_PROMPT), image_part(photo)], "event_check", CHECK_SCHEMA)
+def check_prompt(path: PathSpec) -> str:
+    """The event check for the standard's walking surface; for KR it is the D1 wording, word for word."""
+    return CHECK_PROMPT.format(describe=path.describe, name=path.name)
+
+
+def check_event(api, photo: Path, path: PathSpec) -> dict:
+    return api.spark_json([text_part(check_prompt(path)), image_part(photo)], "event_check", CHECK_SCHEMA)
 
 
 def review(check: dict) -> tuple[str | None, list[str]]:

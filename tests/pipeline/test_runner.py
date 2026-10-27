@@ -61,8 +61,8 @@ def setup(tmp_path, monkeypatch):
     conn = db.connect(tmp_path / "t.db")
     scan_id = db.create_scan(conn, "mapillary", BBOX)
 
-    def make(api):
-        return runner.Scan(conn, scan_id, api, tmp_path / "run", BBOX, workers=2)
+    def make(api, sid=None):
+        return runner.Scan(conn, sid or scan_id, api, tmp_path / "run", BBOX, workers=2)
 
     return conn, scan_id, make, calls
 
@@ -135,17 +135,17 @@ def test_a_fixed_object_on_the_tactile_paving_is_a_durable_defect(setup):
 
 def test_a_failed_sidewalk_stage_fails_defects_too_and_both_rerun(setup, monkeypatch):
     conn, scan_id, make, _ = setup
-    real = sidewalk.tactile_segs
+    real = sidewalk.surface_segs
 
     def broken(*args):
         raise RuntimeError("tactile bug")
 
-    monkeypatch.setattr(runner.sidewalk, "tactile_segs", broken)
+    monkeypatch.setattr(runner.sidewalk, "surface_segs", broken)
     first = runner.run_scan(make(FakeApi(spark=spark, sam=sam)))
     assert first["stage_status"]["sidewalk"].startswith("failed")
     assert first["stage_status"]["defects"].startswith("failed")  # no tactile flags to read
     assert first["stage_status"]["entrances"] == "done"
-    monkeypatch.setattr(runner.sidewalk, "tactile_segs", real)
+    monkeypatch.setattr(runner.sidewalk, "surface_segs", real)
     second = runner.run_scan(make(FakeApi(spark=spark, sam=sam)))
     assert second["status"] == "done", second
     assert len(db.issues(conn, scan_id)) == 1 and len(db.entrances(conn, scan_id)) == 1
@@ -258,3 +258,39 @@ def test_run_aborted_marks_the_scan_failed_and_keeps_the_spend(setup):
     result = runner.run_scan(make(api))
     assert result["status"] == "failed" and "5 failed requests" in result["error"]
     assert result["stage_status"]["entrances"] == "stopped" and result["cost_usd"] == 0.42
+
+
+SEATTLE = [-122.3230, 47.6130, -122.3170, 47.6175]
+
+
+def us_sam(prompt, media):
+    """The US walking path is the same strip the KR tests use for tactile paving; nothing else is found."""
+    if prompt == "sidewalk":
+        return sam("yellow tactile paving", media)
+    if prompt == "yellow tactile paving":
+        return ""
+    return sam(prompt, media)
+
+
+def test_a_us_scan_tracks_objects_on_the_sidewalk_and_reports_no_fixed_ones(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+
+    def spark_pole(schema_name, parts):
+        if schema_name == "street_scan":
+            return {"entrances": [], "obstacle_types": ["utility pole"]}
+        if schema_name == "tactile_condition":
+            raise AssertionError("the KR tactile check never runs on a US scan")
+        return spark(schema_name, parts)
+
+    def sam_pole(prompt, media):
+        if prompt == "utility pole":
+            return us_sam("traffic cone", media)  # stands on the sidewalk in photos 1-3, like the cone
+        return us_sam(prompt, media)
+
+    api = FakeApi(spark=spark_pole, sam=sam_pole)
+    result = runner.run_scan(make(api, us_scan))
+    assert result["status"] == "done", result
+    assert [(i["issue_type"], i["object_label"]) for i in db.issues(conn, us_scan)] == [("obstruction", "traffic cone")]
+    asked = {c[1] for c in api.calls if c[0] == "sam_image"}
+    assert "sidewalk" in asked and "yellow tactile paving" not in asked
