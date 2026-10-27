@@ -87,6 +87,10 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
         : { action: "correct", seconds, step_count: n }),
     }));
 
+  // A check row the model could not answer: the surveyor answers it, and the answer decides whether it is a defect.
+  const answerCheck = (issue: Issue, answer: "yes" | "no") =>
+    decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(issue.id, { action: "answer", answer, seconds }) }));
+
   const done = times.length > 0 && (
     <p role="status">Reviewed {times.length} item{times.length === 1 ? "" : "s"}, median {median(times).toFixed(1)} s each.</p>
   );
@@ -158,17 +162,28 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
         </>
       ) : (
         <>
-          <p>{issueQuestion(current.item.issue_type)}</p>
-          <div className="row">
-            <button type="button" className="primary" disabled={busy}
-              onClick={() => decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(current.item.id, { action: "confirm", seconds }) }))}>
-              Yes
-            </button>
-            <button type="button" disabled={busy}
-              onClick={() => decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(current.item.id, { action: "reject", seconds }) }))}>
-              No
-            </button>
-          </div>
+          <p>{issueQuestion(current.item)}</p>
+          {current.item.check && current.item.check.answer === "unclear" ? (
+            <div className="row">
+              <button type="button" className="primary" disabled={busy} onClick={() => answerCheck(current.item, "yes")}>
+                Yes: {current.item.check.label_yes}
+              </button>
+              <button type="button" disabled={busy} onClick={() => answerCheck(current.item, "no")}>
+                No: {current.item.check.label_no}
+              </button>
+            </div>
+          ) : (
+            <div className="row">
+              <button type="button" className="primary" disabled={busy}
+                onClick={() => decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(current.item.id, { action: "confirm", seconds }) }))}>
+                Yes
+              </button>
+              <button type="button" disabled={busy}
+                onClick={() => decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(current.item.id, { action: "reject", seconds }) }))}>
+                No
+              </button>
+            </div>
+          )}
         </>
       )}
     </section>

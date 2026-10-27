@@ -130,7 +130,7 @@ export default function MapView(props: Props) {
     }
     if (props.showIssues) {
       for (const i of props.issues) {
-        add(i.lat, i.lng, `marker-${i.issue_type}${i.durable ? " marker-durable" : ""}`, i.label.icon, i.label.text,
+        add(i.lat, i.lng, `marker-${i.check ? `check-${i.check.answer}` : i.issue_type}${i.durable ? " marker-durable" : ""}`, i.label.icon, i.label.text,
           () => latest.current.onPick({ kind: "issue", item: i }));
       }
     }

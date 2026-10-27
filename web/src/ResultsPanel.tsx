@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { STATIC_DEMO } from "./api";
 import { dollars, km, minutes, photoMonth } from "./format";
 import type { Picked } from "./MapView";
@@ -15,12 +16,14 @@ interface Props {
   onReview: () => void;
 }
 
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function IssueButton({ issue, onPick }: { issue: Issue; onPick: (p: Picked) => void }) {
   const parts = [issue.review_status === "needs_review" ? "To review" : "", issue.durable ? "" : photoMonth(issue.captured_at)];
   const status = parts.filter(Boolean).join(" · ");
   return (
     <li>
-      <button type="button" className={`item item-${issue.issue_type}`} onClick={() => onPick({ kind: "issue", item: issue })}>
+      <button type="button" className={`item item-${issue.check ? `check-${issue.check.answer}` : issue.issue_type}`} onClick={() => onPick({ kind: "issue", item: issue })}>
         <span className="item-icon" aria-hidden="true">{issue.label.icon}</span>
         <span className="item-name">{issue.label.text}</span>
         <span className="item-label">{status}</span>
@@ -31,7 +34,8 @@ function IssueButton({ issue, onPick }: { issue: Issue; onPick: (p: Picked) => v
 
 export default function ResultsPanel(props: Props) {
   const defects = props.issues.filter((i) => i.durable);
-  const once = props.issues.filter((i) => !i.durable);
+  const once = props.issues.filter((i) => i.issue_type === "obstruction");
+  const us = props.scan.standard === "US";
   const { counts } = props.scan;
   return (
     <section className="panel-section" aria-labelledby="results-title">
@@ -64,10 +68,27 @@ export default function ResultsPanel(props: Props) {
       </dl>
       <h3>What the survey found</h3>
       <dl className="stats">
-        <dt>Tactile paving defects</dt>
-        <dd>{counts.defects}</dd>
-        <dt>Obstacles on tactile paving (at photo time)</dt>
-        <dd>{counts.obstructions}</dd>
+        {us ? (
+          <>
+            {props.scan.checks.map((c) => (
+              <Fragment key={c.id}>
+                <dt>{cap(c.find)}s checked</dt>
+                <dd>{c.yes + c.no + c.unclear}</dd>
+                <dt>{c.label_no}</dt>
+                <dd>{c.no}</dd>
+              </Fragment>
+            ))}
+            <dt>Objects in the walking path (at photo time)</dt>
+            <dd>{counts.obstructions}</dd>
+          </>
+        ) : (
+          <>
+            <dt>Tactile paving defects</dt>
+            <dd>{counts.defects}</dd>
+            <dt>Obstacles on tactile paving (at photo time)</dt>
+            <dd>{counts.obstructions}</dd>
+          </>
+        )}
         <dt>Entrances with steps</dt>
         <dd>{counts.entrances_with_steps} of {counts.entrances}</dd>
       </dl>
@@ -87,14 +108,36 @@ export default function ResultsPanel(props: Props) {
           Entrances
         </label>
       </fieldset>
-      <h3>Tactile paving defects</h3>
-      {defects.length === 0 ? (
-        <p>No missing blocks, covers or fixed objects found.</p>
+      {us ? (
+        props.scan.checks.map((c) => {
+          const rows = props.issues.filter((i) => i.issue_type === c.id);
+          return (
+            <Fragment key={c.id}>
+              <h3>{cap(c.find)}s</h3>
+              {rows.length === 0 ? (
+                <p>None found.</p>
+              ) : (
+                <ul className="item-list">{rows.map((i) => <IssueButton key={`i${i.id}`} issue={i} onPick={props.onPick} />)}</ul>
+              )}
+            </Fragment>
+          );
+        })
       ) : (
-        <ul className="item-list">{defects.map((i) => <IssueButton key={`i${i.id}`} issue={i} onPick={props.onPick} />)}</ul>
+        <>
+          <h3>Tactile paving defects</h3>
+          {defects.length === 0 ? (
+            <p>No missing blocks, covers or fixed objects found.</p>
+          ) : (
+            <ul className="item-list">{defects.map((i) => <IssueButton key={`i${i.id}`} issue={i} onPick={props.onPick} />)}</ul>
+          )}
+        </>
       )}
-      <h3>Obstacles seen once</h3>
-      <p className="hint">Movable objects photographed on the tactile paving; each is a fact at the photo date.</p>
+      <h3>{us ? "Objects in the walking path" : "Obstacles seen once"}</h3>
+      <p className="hint">
+        {us
+          ? "Movable objects photographed on the walking path; each is a fact at the photo date."
+          : "Movable objects photographed on the tactile paving; each is a fact at the photo date."}
+      </p>
       {once.length === 0 ? (
         <p>None found.</p>
       ) : (

@@ -1,4 +1,4 @@
-import type { IssueType, Label, Scan } from "./types";
+import type { Issue, IssueType, Label, Scan } from "./types";
 
 // Same order as pipeline/runner.py STAGES: the sidewalk layer runs first because it is the main layer.
 export const STAGES = ["collect", "chunks", "scene", "sidewalk", "defects", "sidewalk_evidence", "entrances", "evidence"] as const;
@@ -24,6 +24,14 @@ export const REASONS: Record<string, string> = {
   spark_unsure: "Muse Spark was unsure whether the tactile paving is blocked",
   check_failed: "The check of this item failed",
   possible_defect: "Found by the model from one photo; confirm it on the photo",
+  unclear: "The model could not tell from the photo",
+  models_disagree: "Muse Spark and Muse Spark Open answered differently; check this first",
+};
+
+// A US scan's stages survey the walking path and the standard's checks (pipeline/standards/us.toml).
+const US_STAGE_LABELS: Partial<Record<Stage, string>> = {
+  sidewalk: "Track the walking path and objects on it (SAM 3.1)",
+  defects: "Check the survey items: SAM 3.1 finds, Muse Spark answers",
 };
 
 const QUESTIONS: Record<IssueType, string> = {
@@ -33,8 +41,11 @@ const QUESTIONS: Record<IssueType, string> = {
   obstruction: "Is the tactile paving blocked here?",
 };
 
-export function issueQuestion(type: IssueType): string {
-  return QUESTIONS[type];
+export function issueQuestion(issue: Issue): string {
+  if (issue.check) {
+    return issue.check.answer === "unclear" ? issue.check.question : `Is this right? ${issue.label.text}`;
+  }
+  return QUESTIONS[issue.issue_type as IssueType] ?? "Is this right?";
 }
 
 export function reasonText(code: string): string {
@@ -78,7 +89,8 @@ export function median(values: number[]): number {
 export function stageState(scan: Scan | null): { name: Stage; label: string; state: string }[] {
   return STAGES.map((name) => {
     const raw = scan?.stage_status[name] ?? "pending";
-    return { name, label: STAGE_LABELS[name], state: raw.startsWith("failed") ? "failed" : raw };
+    const label = (scan?.standard === "US" ? US_STAGE_LABELS[name] : undefined) ?? STAGE_LABELS[name];
+    return { name, label, state: raw.startsWith("failed") ? "failed" : raw };
   });
 }
 

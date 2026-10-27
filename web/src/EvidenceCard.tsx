@@ -46,6 +46,13 @@ export default function EvidenceCard({ picked, onClose, onReview }: Props) {
         <>
           <img src={item.evidence.url} alt={`Street photo: ${summary}`} className="evidence" />
           <PhotoCredit evidence={item.evidence} />
+          {picked.kind === "issue" && picked.item.second_opinion && (
+            <p className="hint">
+              {picked.item.second_opinion.agree
+                ? "Muse Spark Open agrees."
+                : "Muse Spark Open answered differently; check the photo."}
+            </p>
+          )}
         </>
       ) : (
         <p className="hint">No evidence photo for this item.</p>
@@ -60,9 +67,11 @@ export default function EvidenceCard({ picked, onClose, onReview }: Props) {
         </dl>
       ) : (
         <p>
-          {picked.item.durable
-            ? "A defect of the paving itself, so it is likely still there today."
-            : `Seen in the photo of ${photoMonth(picked.item.captured_at)}; movable objects may be gone now.`}{" "}
+          {picked.item.check
+            ? "Part of the street itself, so it is likely the same today unless it was rebuilt."
+            : picked.item.durable
+              ? "A defect of the paving itself, so it is likely still there today."
+              : `Seen in the photo of ${photoMonth(picked.item.captured_at)}; movable objects may be gone now.`}{" "}
           {picked.item.frame_start !== null && picked.item.frame_end !== null
             ? `Photos ${picked.item.frame_start}–${picked.item.frame_end} of the walk.`
             : ""}

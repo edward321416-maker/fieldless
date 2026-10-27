@@ -15,6 +15,26 @@ export interface Preview {
   est_cost_usd: number;
 }
 
+export interface CheckInfo {
+  id: string;
+  find: string;
+  question: string; // the check's `ask` sentence (pipeline/standards)
+  answer: "yes" | "no" | "unclear";
+  report_when: "yes" | "no";
+  label_yes: string;
+  label_no: string;
+}
+
+export interface CheckCount {
+  id: string;
+  find: string;
+  label_yes: string;
+  label_no: string;
+  yes: number;
+  no: number;
+  unclear: number;
+}
+
 export interface Scan {
   id: number;
   status: string; // queued | running | done | failed | stopped_cost_cap
@@ -28,6 +48,8 @@ export interface Scan {
   review_seconds: number;
   km: number | null; // street length the photos cover
   usd_per_km: number | null;
+  standard: "KR" | "US";
+  checks: CheckCount[];
   error: string | null;
   counts: { defects: number; obstructions: number; entrances: number; entrances_with_steps: number; needs_review: number };
 }
@@ -70,8 +92,11 @@ export interface Issue {
   id: number;
   lat: number;
   lng: number;
-  issue_type: IssueType;
+  issue_type: string; // KR classes, "obstruction", or a check id
   durable: boolean; // missing blocks, covers and fixed objects stay; a movable obstruction is a fact at photo time
+  defect: boolean;
+  check: CheckInfo | null;
+  second_opinion: { answer: "yes" | "no" | "unclear"; agree: boolean } | null;
   label: Label;
   object_label: string | null;
   frame_start: number | null;
@@ -96,6 +121,7 @@ export interface EntranceReview {
 }
 
 export interface IssueReview {
-  action: "confirm" | "reject";
+  action: "confirm" | "reject" | "answer";
+  answer?: "yes" | "no";
   seconds: number;
 }
