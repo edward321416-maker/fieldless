@@ -5,6 +5,7 @@ spike/clips/
 spike/out/*
 !spike/out/gate_report.md
 !spike/out/box_retest.md
+!spike/out/durable_check.md
 *.mp4
 *.mov
 *.webm

@@ -1,0 +1,36 @@
+{
+  "clip": "street_b",
+  "labeled_by": "Claude (claude-opus-5-5), 2026-10-27, from ground crops of the full-resolution stills, written before any model output was seen",
+  "classes": {
+    "structural": "blocks missing or replaced by other paving, a guide line cut by a manhole or other object, or an isolated tactile fragment with no line to connect to",
+    "worn": "tactile blocks faded from yellow to brown or grey, so they no longer contrast with the paving",
+    "intact": "tactile paving clearly visible with no structural defect and no strong fading"
+  },
+  "structural": {
+    "45": "T-shaped entrance branch with no main line before or after it (photos 44 and 46 show none)",
+    "63": "warning-block area at the crossing has blocks missing and filled with grey pavers, bar blocks misaligned",
+    "64": "same crossing as 63 from closer: missing warning blocks replaced by grey pavers",
+    "82": "guide line interrupted by a manhole cover sitting in the line"
+  },
+  "worn": {
+    "69": "far crossing edge, warning blocks faded brown",
+    "70": "warning band and guide line faded brown with white residue",
+    "71": "guide line faded brown",
+    "72": "guide line faded brown",
+    "73": "guide line faded brown",
+    "75": "guide line faded brown",
+    "76": "guide line faded brown"
+  },
+  "intact": [0, 1, 2, 3, 4, 5, 6, 7, 78, 81, 83, 84, 85, 86, 87, 88, 90, 91],
+  "excluded": {
+    "8": "tactile line not visible in the ground part; the sequence may have changed side",
+    "49": "short stub ending in a dot block near a crossing; cannot tell if it is a normal end",
+    "56": "fragment near a corner and a manhole; cannot tell if it is a normal end",
+    "58": "tactile only at the far edge",
+    "77": "bollard right next to the line (adjacent, not on it); not a paving defect",
+    "89": "entrance branch with unusual block orientation; unclear",
+    "92": "tactile only at the frame edge",
+    "94": "forecourt tactile leading to an entrance; seen better in 95",
+    "95": "single bar block laid crosswise beside the warning blocks; possibly a misplaced block, unclear"
+  }
+}
