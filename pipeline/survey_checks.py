@@ -32,15 +32,15 @@ SCHEMA = {
 PROMPT = """A pedestrian took this photo on a sidewalk.
 {ask}
 Answer as JSON:
-- visible: whether the {find} is visible in the photo.
+- visible: whether the {target} is visible in the photo.
 - answer: "yes", "no", or "unclear" if the photo does not show it well enough to tell.
-- box: the {find} as [x1, y1, x2, y2] on a 0-1000 scale of the image, or [] if it is not visible.
+- box: the {target} as [x1, y1, x2, y2] on a 0-1000 scale of the image, or [] if it is not visible.
 - confidence: 0 to 1 for your answer.
 - note: one sentence on what you see."""
 
 
 def prompt(check: Check) -> str:
-    return PROMPT.format(ask=check.ask, find=check.find)
+    return PROMPT.format(ask=check.ask, target=check.target)
 
 
 def find_areas(api, check: Check, idxs: list[int], photos: dict[int, Path], workers: int) -> dict[int, int | None]:
@@ -115,7 +115,11 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
 
     def one(p):
         try:
-            return api.spark_json([image_part(photos[p["idx"]]), text_part(prompt(check))], "survey_check", SCHEMA)
+            answer = api.spark_json([image_part(photos[p["idx"]]), text_part(prompt(check))], "survey_check", SCHEMA)
+            if (not isinstance(answer, dict) or not isinstance(answer.get("visible"), bool)
+                    or answer.get("answer") not in ("yes", "no", "unclear")):
+                raise ValueError(f"unexpected answer: {str(answer)[:200]}")
+            return answer
         except CostCapReached:
             raise
         except Exception as exc:  # this object only: reported as unavailable

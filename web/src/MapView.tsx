@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
 import { useEffect, useRef } from "react";
 import { bboxFromCorners, bboxPolygon, viewToBbox } from "./bbox";
+import { issueTone } from "./format";
 import type { Bbox, Entrance, Issue } from "./types";
 
 // MapLibre 6 looks for its worker next to its own module, which bundling moves; point it at the emitted file.
@@ -130,7 +131,7 @@ export default function MapView(props: Props) {
     }
     if (props.showIssues) {
       for (const i of props.issues) {
-        add(i.lat, i.lng, `marker-${i.check ? `check-${i.check.answer}` : i.issue_type}${i.durable ? " marker-durable" : ""}`, i.label.icon, i.label.text,
+        add(i.lat, i.lng, `marker-${issueTone(i)}${i.durable ? " marker-durable" : ""}`, i.label.icon, i.label.text,
           () => latest.current.onPick({ kind: "issue", item: i }));
       }
     }

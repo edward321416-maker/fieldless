@@ -76,9 +76,11 @@ def issue_label(row: dict, std: survey_items.Standard | None = None) -> dict:
         text = "Tactile line cut by a cover"
     elif kind == "fixed_obstruction":
         text = f"Fixed object on tactile paving: {what or 'object'}"
-    else:
+    elif kind == "obstruction":
         text = f"Blocked: {what or 'obstacle'}"
-    return {"icon": ISSUE_ICONS.get(kind, "⛔"), "text": text}
+    else:  # a check of a standard that has since changed: say what the row is, not that something blocks
+        return {"icon": "•", "text": kind.replace("_", " ")}
+    return {"icon": ISSUE_ICONS[kind], "text": text}
 
 
 def issue_order(row: dict, std: survey_items.Standard | None = None) -> tuple:
@@ -91,8 +93,9 @@ def check_json(row: dict, std: survey_items.Standard) -> dict | None:
     check = std.check(row["issue_type"])
     if check is None:
         return None
-    return {"id": check.id, "find": check.find, "question": check.ask, "answer": row.get("object_label") or "unclear",
-            "report_when": check.report_when, "label_yes": check.label_yes, "label_no": check.label_no}
+    return {"id": check.id, "find": check.find, "target": check.target, "question": check.ask,
+            "answer": row.get("object_label") or "unclear", "report_when": check.report_when,
+            "label_yes": check.label_yes, "label_no": check.label_no}
 
 
 def second_json(row: dict) -> dict | None:
@@ -128,7 +131,8 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
     obstructions = sum(i["issue_type"] == "obstruction" for i in live)
     needs_review = sum(r["review_status"] == "needs_review" for r in [*entrances, *live])
     with_steps = sum(entrance_label(e)["icon"] == "▲" for e in entrances)  # a possible sill is not counted
-    checks = [{"id": c.id, "find": c.find, "label_yes": c.label_yes, "label_no": c.label_no,
+    checks = [{"id": c.id, "find": c.find, "target": c.target, "report_when": c.report_when,
+               "label_yes": c.label_yes, "label_no": c.label_no,
                **{a: sum(i["issue_type"] == c.id and (i.get("object_label") or "unclear") == a for i in live)
                   for a in ("yes", "no", "unclear")}} for c in std.checks]
     return {**{k: scan[k] for k in SCAN_FIELDS},

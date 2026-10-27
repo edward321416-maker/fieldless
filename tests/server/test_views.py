@@ -77,6 +77,12 @@ def test_issue_label(overrides, label):
     assert views.issue_label(issue(**overrides)) == label
 
 
+def test_an_issue_type_of_no_known_stage_is_labelled_by_its_name():
+    old = issue(issue_type="old_check_item", object_label="no")
+    assert views.issue_label(old, US) == {"icon": "•", "text": "old check item"}
+    assert views.issue_label(old) == {"icon": "•", "text": "old check item"}
+
+
 def test_issue_json_marks_durable_defects():
     one_off = views.issue_json(issue(), NOW)
     assert one_off["durable"] is False and one_off["old_photo"] is True and one_off["evidence"] is None
@@ -135,8 +141,8 @@ def test_check_rows_are_labelled_from_the_standard():
 def test_issue_json_carries_the_check_and_whether_it_is_a_defect():
     out = views.issue_json(ramp("no", review_status="needs_review"), NOW, US)
     assert out["defect"] is True and out["durable"] is True
-    assert out["check"] == {"id": "curb_ramp_warning", "find": "curb cut", "question": US.checks[0].ask,
-                            "answer": "no", "report_when": "no", "label_yes": "Curb ramp with detectable warning",
+    assert out["check"] == {"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp",
+                            "question": US.checks[0].ask, "answer": "no", "report_when": "no", "label_yes": "Curb ramp with detectable warning",
                             "label_no": "Curb ramp without detectable warning"}
     assert views.issue_json(ramp("yes"), NOW, US)["defect"] is False
     assert views.issue_json(issue(), NOW)["check"] is None and views.issue_json(issue(), NOW)["defect"] is False
@@ -164,8 +170,8 @@ def test_scan_json_counts_by_the_scans_standard():
     out = views.scan_json(scan, [], issues)
     assert out["standard"] == "US"
     assert out["counts"]["defects"] == 1 and out["counts"]["obstructions"] == 1 and out["counts"]["needs_review"] == 2
-    assert out["checks"] == [{"id": "curb_ramp_warning", "find": "curb cut",
-                              "label_yes": "Curb ramp with detectable warning",
+    assert out["checks"] == [{"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp",
+                              "report_when": "no", "label_yes": "Curb ramp with detectable warning",
                               "label_no": "Curb ramp without detectable warning", "yes": 2, "no": 1, "unclear": 1}]
 
 

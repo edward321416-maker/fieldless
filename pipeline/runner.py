@@ -53,6 +53,7 @@ class Scan:
     workers: int = config.PARALLEL_REQUESTS
     standard: "survey_items.Standard | None" = None  # run_scan fills it from scan.jurisdiction
     second_opinion: object = None  # an OpenModel when BASETEN_API_KEY is set (CLI, server)
+    only_checks: tuple[str, ...] = ()  # with --rerun defects --check ID: run and clear only these checks
     frames: list[dict] = field(default_factory=list)
     chunks: list[scene.Chunk] = field(default_factory=list)
     scenes: list[dict] = field(default_factory=list)
@@ -213,12 +214,18 @@ def stage_sidewalk(s: Scan) -> None:
 
 def stage_defects(s: Scan) -> None:
     """KR: S7, missing tactile blocks and covers in the line, checked at the edges of tactile runs and on samples.
-    Every standard: its checks (pipeline/survey_checks.py), one row per object found."""
-    db.clear_issues(s.conn, s.scan_id, (*defects.ISSUE_TYPES, *(c.id for c in s.standard.checks)))
+    Every standard: its checks (pipeline/survey_checks.py), one row per object found. With only_checks, just those
+    checks run: the KR step and the other checks keep their rows and reviews."""
+    only = s.only_checks
+    unknown = [c for c in only if s.standard.check(c) is None]
+    if unknown:
+        raise ValueError(f"not a check of the {s.standard.code} standard: {', '.join(unknown)}")
+    to_run = [c for c in s.standard.checks if not only or c.id in only]
+    db.clear_issues(s.conn, s.scan_id, (*(() if only else defects.ISSUE_TYPES), *(c.id for c in to_run)))
     by_idx, photos, clips = s.by_idx(), s.photos(), s.clips()
     failed: list[int] = []
     checks: list[dict] = []
-    if s.standard.tactile_defects:
+    if s.standard.tactile_defects and not only:
         flags = {int(k): v for k, v in json.loads(s.state("tactile").read_text(encoding="utf-8")).items()}
         for clip_idxs in clips.values():
             rows, bad, clip_checks = defects.find_defects(s.api, defects.candidates(flags, clip_idxs), photos, by_idx,
@@ -227,16 +234,18 @@ def stage_defects(s: Scan) -> None:
             checks += clip_checks
             for row in rows:
                 db.add_issue(s.conn, s.scan_id, row)
-    unavailable: dict[str, dict] = {}
-    for check in s.standard.checks:
+    kept = s.state("checks_unavailable")
+    unavailable: dict[str, dict] = json.loads(kept.read_text(encoding="utf-8")) if only and kept.exists() else {}
+    for check in to_run:
         rows, missing = survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers)
         if s.second_opinion is not None:
             rows = second_opinion.apply(s.second_opinion, check, rows, photos, s.workers)
         unavailable[check.id] = missing
         for row in rows:
             db.add_issue(s.conn, s.scan_id, row)
-    s.state("defects_unavailable").write_text(json.dumps(failed), encoding="utf-8")
-    s.state("defects_checks").write_text(json.dumps(checks, ensure_ascii=False), encoding="utf-8")
+    if not only:
+        s.state("defects_unavailable").write_text(json.dumps(failed), encoding="utf-8")
+        s.state("defects_checks").write_text(json.dumps(checks, ensure_ascii=False), encoding="utf-8")
     s.state("checks_unavailable").write_text(json.dumps(unavailable), encoding="utf-8")
 
 

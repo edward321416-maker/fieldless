@@ -57,8 +57,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .item-missing_blocks .item-icon, .item-cover_cut .item-icon, .item-fixed_obstruction .item-icon { background: var(--defect); }
 .item-obstruction .item-icon { background: var(--obstruction); }
 .item-entrance .item-icon { background: var(--entrance); }
-.item-check-no .item-icon { background: var(--defect); }
-.item-check-yes .item-icon { background: #15803d; }
+.item-check-defect .item-icon { background: var(--defect); }
+.item-check-ok .item-icon { background: #15803d; }
 .item-check-unclear .item-icon { background: #6b7280; }
 .item-label { color: var(--muted); }
 .card-head { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
@@ -70,8 +70,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .marker { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; color: #fff; font-weight: 700; padding: 0; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .marker-missing_blocks, .marker-cover_cut, .marker-fixed_obstruction { background: var(--defect); }
 .marker-obstruction { background: var(--obstruction); }
-.marker-check-no { background: var(--defect); }
-.marker-check-yes { background: #15803d; }
+.marker-check-defect { background: var(--defect); }
+.marker-check-ok { background: #15803d; }
 .marker-check-unclear { background: #6b7280; }
 .marker-entrance { background: var(--entrance); width: 26px; height: 26px; }
 .marker-durable { width: 36px; height: 36px; font-size: 1.1rem; border-width: 3px; }

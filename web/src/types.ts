@@ -18,6 +18,7 @@ export interface Preview {
 export interface CheckInfo {
   id: string;
   find: string;
+  target: string; // the noun the survey is about; `find` is SAM's phrase and may differ
   question: string; // the check's `ask` sentence (pipeline/standards)
   answer: "yes" | "no" | "unclear";
   report_when: "yes" | "no";
@@ -28,6 +29,8 @@ export interface CheckInfo {
 export interface CheckCount {
   id: string;
   find: string;
+  target: string;
+  report_when: "yes" | "no"; // the answer that is the defect
   label_yes: string;
   label_no: string;
   yes: number;

@@ -5,6 +5,7 @@
   python -m pipeline.run_scan --resume SCAN_ID [--run NAME]
   python -m pipeline.run_scan --bbox ... --standard US       # the survey standard (default: by the area)
   python -m pipeline.run_scan --resume SCAN_ID --rerun defects   # run one stage again, e.g. after editing a standard
+  python -m pipeline.run_scan --resume SCAN_ID --rerun defects --check ID   # only that check; others keep their rows
 
 Results: <data>/runs/<run>/threshold.db, calls with costs in <data>/runs/<run>/calls.jsonl, blurred evidence photos
 in <data>/runs/<run>/evidence/. Exit code 0 when the scan is done, 1 otherwise.
@@ -49,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--standard", choices=["KR", "US"],
                         help="survey standard for a new scan (default: KR when the area is in Korea, else US)")
     parser.add_argument("--rerun", choices=STAGES, help="with --resume: run this stage again, then the evidence stages")
+    parser.add_argument("--check", action="append", metavar="ID",
+                        help="with --rerun defects: run only these checks, keeping the other checks' rows and reviews")
     parser.add_argument("--run", default="dev", help="run folder under <data>/runs")
     parser.add_argument("--max-photos", type=positive_int, default=config.MAX_PHOTOS_PER_SCAN)
     parser.add_argument("--tactile-every", type=positive_int, default=sidewalk.TACTILE_EVERY)
@@ -63,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("give --bbox for a new scan or --resume SCAN_ID")
     if args.rerun and args.resume is None:
         parser.error("--rerun needs --resume")
+    if args.check and args.rerun != "defects":
+        parser.error("--check needs --rerun defects")
     run_dir = config.run_dir(args.run)
     conn = db.connect(run_dir / "threshold.db")
     if args.resume is not None:
@@ -71,6 +76,11 @@ def main(argv: list[str] | None = None) -> int:
         except KeyError:
             parser.error(f"no scan {args.resume} in run {args.run}")
         scan_id = args.resume
+        known = survey_items.load(db.get_scan(conn, scan_id)["jurisdiction"])
+        for check_id in args.check or ():
+            if known.check(check_id) is None:
+                parser.error(f"{check_id!r} is not a check of the {known.code} standard "
+                             f"({', '.join(c.id for c in known.checks) or 'none'})")
     else:
         scan_id = db.create_scan(conn, "mapillary", args.bbox, args.standard or survey_items.standard_for(args.bbox))
     if args.rerun:
@@ -78,7 +88,8 @@ def main(argv: list[str] | None = None) -> int:
     scan = db.get_scan(conn, scan_id)
     api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan))
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,
-                           tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir)))
+                           tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir),
+                           only_checks=tuple(args.check or ())))
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0 if result["status"] == "done" else 1
 

@@ -41,13 +41,13 @@ SPARK_IMAGE_ESTIMATE_USD = 0.02
 MAX_PHOTOS_PER_SCAN = 400
 SCAN_COST_CAP_USD = 3.0
 DAILY_COST_CAP_USD = 10.0
-EST_USD_PER_100_PHOTOS = 0.85  # measured: first live scan, Seongsu, 100 photos, $0.84 (2026-10-27)
+EST_USD_PER_100_PHOTOS = 0.93  # measured 2026-10-27/28: Seongsu $0.91, Myeongdong $0.93, Seattle (US, with checks) $0.83 per 100 photos; the highest is used
 PARALLEL_REQUESTS = 6
 
 
 def photo_budget(max_photos: int = MAX_PHOTOS_PER_SCAN) -> int:
     """Photos a scan may take: spec 13's 400 at most, and no more than the per-scan cost cap pays for at the measured
-    cost per photo, with a 10% margin (about 317 at $0.85 per 100 photos and a $3 cap)."""
+    cost per photo, with a 10% margin (about 290 at $0.93 per 100 photos and a $3 cap)."""
     affordable = int(SCAN_COST_CAP_USD / EST_USD_PER_100_PHOTOS * 100 * 0.9)
     return max(1, min(max_photos, MAX_PHOTOS_PER_SCAN, affordable))
 

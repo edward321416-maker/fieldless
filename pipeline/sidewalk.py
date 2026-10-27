@@ -4,6 +4,7 @@ photos found, 2 of 40 negatives fired; the 1280-wide video found 0.65). Obstacle
 (15 of 17 events found). Tactile paving runs continuously along a street, so every second photo is enough."""
 from pathlib import Path
 
+from pipeline import events
 from pipeline.cost import CostCapReached
 from pipeline.parallel import run_parallel
 from pipeline.sam_output import Seg, check_frames, confident, parse
@@ -36,7 +37,10 @@ def surface_segs(api, phrase: str, idxs: list[int], photos: dict[int, Path],
 def obstacle_labels(spark_types: list[str], path: PathSpec) -> list[str]:
     """SAM concepts to ask for: the standard's objects and fixed objects, then the kinds Spark listed, at most
     MAX_OBSTACLE_LABELS."""
-    labels = list(path.objects) + list(path.fixed) + [t.strip().lower() for t in spark_types if t.strip()]
+    spark = [t.strip().lower() for t in spark_types if t.strip()]
+    if not path.fixed:
+        spark = [t for t in spark if not events.is_fixed(t)]  # US: fixed objects are not reported, so not asked for
+    labels = list(path.objects) + list(path.fixed) + spark
     return list(dict.fromkeys(labels))[:MAX_OBSTACLE_LABELS]
 
 

@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { STATIC_DEMO } from "./api";
-import { dollars, km, minutes, photoMonth } from "./format";
+import { dollars, issueTone, km, minutes, photoMonth } from "./format";
 import type { Picked } from "./MapView";
 import type { Entrance, Issue, Scan } from "./types";
 
@@ -23,7 +23,7 @@ function IssueButton({ issue, onPick }: { issue: Issue; onPick: (p: Picked) => v
   const status = parts.filter(Boolean).join(" · ");
   return (
     <li>
-      <button type="button" className={`item item-${issue.check ? `check-${issue.check.answer}` : issue.issue_type}`} onClick={() => onPick({ kind: "issue", item: issue })}>
+      <button type="button" className={`item item-${issueTone(issue)}`} onClick={() => onPick({ kind: "issue", item: issue })}>
         <span className="item-icon" aria-hidden="true">{issue.label.icon}</span>
         <span className="item-name">{issue.label.text}</span>
         <span className="item-label">{status}</span>
@@ -72,10 +72,10 @@ export default function ResultsPanel(props: Props) {
           <>
             {props.scan.checks.map((c) => (
               <Fragment key={c.id}>
-                <dt>{cap(c.find)}s checked</dt>
+                <dt>{cap(c.target)}s checked</dt>
                 <dd>{c.yes + c.no + c.unclear}</dd>
-                <dt>{c.label_no}</dt>
-                <dd>{c.no}</dd>
+                <dt>{c.report_when === "no" ? c.label_no : c.label_yes}</dt>
+                <dd>{c.report_when === "no" ? c.no : c.yes}</dd>
               </Fragment>
             ))}
             <dt>Objects in the walking path (at photo time)</dt>
@@ -113,7 +113,7 @@ export default function ResultsPanel(props: Props) {
           const rows = props.issues.filter((i) => i.issue_type === c.id);
           return (
             <Fragment key={c.id}>
-              <h3>{cap(c.find)}s</h3>
+              <h3>{cap(c.target)}s</h3>
               {rows.length === 0 ? (
                 <p>None found.</p>
               ) : (

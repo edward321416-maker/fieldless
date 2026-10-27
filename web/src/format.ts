@@ -41,11 +41,16 @@ const QUESTIONS: Record<IssueType, string> = {
   obstruction: "Is the tactile paving blocked here?",
 };
 
+// The check's own question for every check row, whatever the model answered (user decision 2026-10-28).
 export function issueQuestion(issue: Issue): string {
-  if (issue.check) {
-    return issue.check.answer === "unclear" ? issue.check.question : `Is this right? ${issue.label.text}`;
-  }
+  if (issue.check) return issue.check.question;
   return QUESTIONS[issue.issue_type as IssueType] ?? "Is this right?";
+}
+
+// The colour class of an issue row: a check row is coloured by whether it is a defect, not by its answer.
+export function issueTone(issue: Issue): string {
+  if (!issue.check) return issue.issue_type;
+  return issue.defect ? "check-defect" : issue.check.answer === "unclear" ? "check-unclear" : "check-ok";
 }
 
 export function reasonText(code: string): string {

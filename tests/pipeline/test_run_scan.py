@@ -66,3 +66,23 @@ def test_rerun_marks_one_stage_pending_and_needs_resume(monkeypatch, capsys):
         run_scan.main(["--bbox", "126.98,37.56,126.99,37.565", "--rerun", "defects"])
     with pytest.raises(SystemExit):
         run_scan.main(["--resume", str(scan_id), "--run", "again", "--rerun", "nonsense"])
+
+
+def test_check_needs_rerun_defects_and_a_check_of_the_standard(monkeypatch):
+    captured = []
+    monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))
+    run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "only"])
+    scan_id = captured[0].scan_id
+    with pytest.raises(SystemExit):  # no --rerun
+        run_scan.main(["--resume", str(scan_id), "--run", "only", "--check", "curb_ramp_warning"])
+    with pytest.raises(SystemExit):  # another stage
+        run_scan.main(["--resume", str(scan_id), "--run", "only", "--rerun", "sidewalk", "--check",
+                       "curb_ramp_warning"])
+    with pytest.raises(SystemExit):  # not a check of the scan's standard
+        run_scan.main(["--resume", str(scan_id), "--run", "only", "--rerun", "defects", "--check", "nonsense"])
+    assert len(captured) == 1
+    conn = db.connect(config.run_dir("only") / "threshold.db")
+    assert db.get_scan(conn, scan_id)["stage_status"].get("defects") != "pending"  # nothing was changed
+    assert run_scan.main(["--resume", str(scan_id), "--run", "only", "--rerun", "defects", "--check",
+                          "curb_ramp_warning"]) == 0
+    assert captured[1].only_checks == ("curb_ramp_warning",)

@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from pipeline import survey_items
@@ -15,6 +17,7 @@ fixed = []
 [[check]]
 id = "curb_ramp_warning"
 find = "curb ramp"
+target = "curb ramp"
 ask = "Does it have domes?"
 report_when = "no"
 label_yes = "Curb ramp with detectable warning"
@@ -33,6 +36,17 @@ def test_parse_reads_the_path_and_the_checks():
     assert check.label("unclear") == ("?", "Curb ramp: unclear from the photo")
     assert check.label(None) == ("?", "Curb ramp: unclear from the photo")
     assert std.check("curb_ramp_warning") is check and std.check("missing_blocks") is None
+    assert check.target == "curb ramp"
+
+
+def test_a_check_without_target_uses_find_and_icons_follow_report_when():
+    plain = US.replace('find = "curb ramp"', 'find = "curb cut"').replace('target = "curb ramp"', "")
+    check = survey_items.parse(plain, "us.toml").checks[0]
+    assert check.target == "curb cut" and check.label("unclear") == ("?", "Curb cut: unclear from the photo")
+    defect_when_yes = survey_items.parse(US.replace('report_when = "no"', 'report_when = "yes"'), "us.toml").checks[0]
+    assert defect_when_yes.label("yes")[0] == "✖" and defect_when_yes.label("no")[0] == "✓"
+    own_icon = survey_items.parse(US + 'icon_yes = "A"', "us.toml")  # the check is the last table
+    assert own_icon.checks[0].label("yes")[0] == "A" and own_icon.checks[0].label("no")[0] == "✖"
 
 
 @pytest.mark.parametrize("change, message", [
@@ -60,6 +74,17 @@ def test_the_shipped_standards_load():
     assert kr.path.objects == ("electric scooter", "bicycle")
     assert not us.tactile_defects and us.path.surface == "sidewalk" and us.path.fixed == ()
     assert [c.id for c in us.checks] == ["curb_ramp_warning"] and us.checks[0].report_when == "no"
+
+
+def test_load_reads_an_edited_standard_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(survey_items, "FOLDER", tmp_path)
+    file = tmp_path / "us.toml"
+    file.write_text(US, encoding="utf-8")
+    assert survey_items.load("us").checks[0].ask == "Does it have domes?"
+    file.write_text(US.replace("Does it have domes?", "Is it yellow?"), encoding="utf-8")
+    stat = file.stat()
+    os.utime(file, ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000))  # a coarse clock may keep the same mtime
+    assert survey_items.load("US").checks[0].ask == "Is it yellow?"
 
 
 def test_an_unknown_standard_is_an_error():

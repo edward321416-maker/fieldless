@@ -19,8 +19,8 @@ def test_obstacle_labels_start_with_the_standards_objects_and_are_capped():
     labels = sidewalk.obstacle_labels(["Traffic cone", " bicycle", "", "plastic stool", "Bollard", "a", "b", "c"], kr)
     assert labels == ["electric scooter", "bicycle", "bollard", "pole", "traffic cone", "plastic stool", "a", "b"]
     us = survey_items.load("US").path
-    assert sidewalk.obstacle_labels(["utility pole"], us) == [
-        "sandwich board sign", "traffic cone", "electric scooter", "cafe table", "utility pole"]
+    assert sidewalk.obstacle_labels(["utility pole", "Fire hydrant", "bench", "Trash bag"], us) == [
+        "sandwich board sign", "traffic cone", "electric scooter", "cafe table", "trash bag"]  # no fixed objects
 
 
 def test_surface_segs_marks_failed_photos_and_keeps_the_rest(tmp_path):

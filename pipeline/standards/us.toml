@@ -13,7 +13,8 @@ fixed = []  # poles and hydrants at the curb edge are normal on US sidewalks; no
 [[check]]
 id = "curb_ramp_warning"
 find = "curb cut"
-ask = "Look at the curb ramp where the sidewalk meets the street. Does it have a detectable warning surface (a panel of raised truncated domes, usually yellow) at its bottom edge?"
+target = "curb ramp"
+ask = "A curb ramp is the short sloped section where a pedestrian crossing meets the sidewalk. Driveways, alley entrances and plain raised curbs are not curb ramps; if the photo shows only those, set visible to false. If there is a curb ramp, does it have a detectable warning surface (a panel of raised truncated domes) at its bottom edge? If its bottom edge is too far away or too small to see, answer unclear."
 report_when = "no"
 label_yes = "Curb ramp with detectable warning"
 label_no = "Curb ramp without detectable warning"

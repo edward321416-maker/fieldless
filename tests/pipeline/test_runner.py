@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from pipeline import collect, config, db, entrance_detect, runner, sidewalk
+from pipeline import collect, config, db, entrance_detect, runner, sidewalk, survey_items
 from pipeline.cost import CostCapReached
 from tests.pipeline.fakes import FakeApi, synthetic_photo
 from tests.pipeline.sam_text import line, record, text
@@ -341,6 +341,89 @@ def test_rerunning_the_defects_stage_replaces_the_check_rows(setup):
     db.set_stage(conn, us_scan, "defects", "pending")
     runner.run_scan(make(api, us_scan))
     assert [i["object_label"] for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"] == ["yes"]
+
+
+TWO_CHECKS = '''
+standard = "US"
+
+[path]
+surface = "sidewalk"
+name = "the sidewalk walking path"
+describe = "sidewalks"
+objects = ["traffic cone"]
+fixed = []
+
+[[check]]
+id = "first"
+find = "curb cut"
+ask = "FIRST question"
+report_when = "no"
+label_yes = "First yes"
+label_no = "First no"
+
+[[check]]
+id = "second"
+find = "bench"
+ask = "SECOND question"
+report_when = "no"
+label_yes = "Second yes"
+label_no = "Second no"
+'''
+
+
+def test_rerunning_one_check_keeps_the_other_checks_rows_and_reviews(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+
+    def sam_both(prompt, media):
+        return found if prompt in ("curb cut", "bench") and media.name == "img2.jpg" else us_sam(prompt, media)
+
+    answer = {"first": RAMP_NO, "second": RAMP_NO}
+
+    def spark_both(schema_name, parts):
+        if schema_name != "survey_check":
+            return spark(schema_name, parts)
+        which = "first" if "FIRST question" in parts[1]["text"] else "second"
+        return answer[which]
+
+    def rows():
+        return {i["issue_type"]: i for i in db.issues(conn, us_scan) if i["issue_type"] in ("first", "second")}
+
+    scan = make(FakeApi(spark=spark_both, sam=sam_both), us_scan)
+    scan.standard = survey_items.parse(TWO_CHECKS, "two.toml")
+    assert runner.run_scan(scan)["status"] == "done"
+    before = rows()
+    assert set(before) == {"first", "second"}
+    correction = [{"field": "object_label", "from": "no", "to": "yes"}]
+    db.update_issue(conn, before["first"]["id"], review_status="confirmed", object_label="yes", corrections=correction)
+
+    answer["second"] = {**RAMP_NO, "answer": "yes"}
+    api = FakeApi(spark=spark_both, sam=sam_both)
+    again = make(api, us_scan)
+    again.standard, again.only_checks = scan.standard, ("second",)
+    db.set_stage(conn, us_scan, "defects", "pending")
+    assert runner.run_scan(again)["status"] == "done"
+    after = rows()
+    assert (after["first"]["id"], after["first"]["review_status"], after["first"]["object_label"],
+            after["first"]["corrections"]) == (before["first"]["id"], "confirmed", "yes", correction)
+    assert (before["second"]["object_label"], after["second"]["object_label"]) == ("no", "yes")  # replaced
+    assert after["second"]["evidence"]["image"] and after["first"]["evidence"] == before["first"]["evidence"]
+    asked = {c[1] for c in api.calls if c[0] == "sam_image"}
+    assert "bench" in asked and "curb cut" not in asked  # the other check was not asked again
+    assert json.loads(again.state("checks_unavailable").read_text(encoding="utf-8")).keys() == {"first", "second"}
+
+
+def test_an_unknown_check_id_is_refused_before_anything_is_cleared(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    db.add_issue(conn, us_scan, {"issue_type": "curb_ramp_warning", "object_label": "no", "frame_idx": 0,
+                                 "lat": 0.0, "lng": 0.0})
+    scan = make(FakeApi(), us_scan)
+    scan.standard, scan.only_checks = survey_items.load("US"), ("nonsense",)
+    with pytest.raises(ValueError, match="nonsense"):
+        runner.stage_defects(scan)
+    assert [i["issue_type"] for i in db.issues(conn, us_scan)] == ["curb_ramp_warning"]
 
 
 class DisagreeingOpen:

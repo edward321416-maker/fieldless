@@ -91,13 +91,15 @@ Keys are read only from the environment and are never logged. In production, mou
 
 What a scan looks for is written in sentences, one file per standard in `pipeline/standards/` (`us.toml` for the
 United States, `kr.toml` for Korea). A scan uses KR when its area is in Korea and US elsewhere (`--standard` overrides).
-Each `[[check]]` names what SAM 3.1 finds in the photos and the question Muse Spark answers about it:
+Each `[[check]]` names what SAM 3.1 finds in the photos (`find`), the noun the survey is about (`target`, `find` by
+default) and the question Muse Spark answers about it:
 
 ```toml
 [[check]]
 id = "curb_ramp_warning"
 find = "curb cut"
-ask = "Look at the curb ramp where the sidewalk meets the street. Does it have a detectable warning surface (a panel of raised truncated domes, usually yellow) at its bottom edge?"
+target = "curb ramp"
+ask = "A curb ramp is the short sloped section where a pedestrian crossing meets the sidewalk. Driveways, alley entrances and plain raised curbs are not curb ramps; if the photo shows only those, set visible to false. If there is a curb ramp, does it have a detectable warning surface (a panel of raised truncated domes) at its bottom edge? If its bottom edge is too far away or too small to see, answer unclear."
 report_when = "no"
 label_yes = "Curb ramp with detectable warning"
 label_no = "Curb ramp without detectable warning"
@@ -106,8 +108,10 @@ label_no = "Curb ramp without detectable warning"
 To survey something new, add a `[[check]]` and run the checks again on a finished scan (no training data is needed):
 
 ```bash
-python -m pipeline.run_scan --resume SCAN_ID --run RUN --rerun defects
+python -m pipeline.run_scan --resume SCAN_ID --run RUN --rerun defects --check NEW_ID
 ```
+
+`--check` keeps the other items' rows and reviews.
 
 ### Public demo (static)
 

@@ -87,7 +87,7 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
         : { action: "correct", seconds, step_count: n }),
     }));
 
-  // A check row the model could not answer: the surveyor answers it, and the answer decides whether it is a defect.
+  // A check row: the surveyor's answer decides whether it is a defect.
   const answerCheck = (issue: Issue, answer: "yes" | "no") =>
     decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(issue.id, { action: "answer", answer, seconds }) }));
 
@@ -163,13 +163,16 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
       ) : (
         <>
           <p>{issueQuestion(current.item)}</p>
-          {current.item.check && current.item.check.answer === "unclear" ? (
+          {/* Every check row gets the same three buttons, whatever the model answered (user decision 2026-10-28). */}
+          {current.item.check ? (
             <div className="row">
-              <button type="button" className="primary" disabled={busy} onClick={() => answerCheck(current.item, "yes")}>
-                Yes: {current.item.check.label_yes}
-              </button>
-              <button type="button" disabled={busy} onClick={() => answerCheck(current.item, "no")}>
-                No: {current.item.check.label_no}
+              <button type="button" className={current.item.check.answer === "yes" ? "primary" : ""} disabled={busy}
+                onClick={() => answerCheck(current.item as Issue, "yes")}>{current.item.check.label_yes}</button>
+              <button type="button" className={current.item.check.answer === "no" ? "primary" : ""} disabled={busy}
+                onClick={() => answerCheck(current.item as Issue, "no")}>{current.item.check.label_no}</button>
+              <button type="button" disabled={busy}
+                onClick={() => decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(current.item.id, { action: "reject", seconds }) }))}>
+                Not a {current.item.check.target}
               </button>
             </div>
           ) : (

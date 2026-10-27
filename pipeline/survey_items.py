@@ -1,9 +1,9 @@
 """Survey standards written as sentences (design docs/specs/2026-10-28-us-survey-items-design.md).
 
 What to survey lives in one TOML file per standard in pipeline/standards/, not in code. A [[check]] names what SAM
-3.1 should find in the photos (`find`) and the question Muse Spark answers about it (`ask`); `report_when` is the
-answer that makes it a defect for a person to confirm. [path] names the walking surface and the objects that may
-block it. KR keeps the tactile defect stage validated on Seongsu (pipeline/defects.py); its file only switches it on.
+3.1 should find in the photos (`find`), the noun the survey is about (`target`, `find` by default) and the question
+Muse Spark answers about it (`ask`); `report_when` is the answer that makes it a defect for a person to confirm.
+[path] names the walking surface and the objects that may block it. KR keeps the tactile defect stage validated on Seongsu (pipeline/defects.py); its file only switches it on.
 """
 import re
 import tomllib
@@ -32,13 +32,14 @@ class PathSpec:
 class Check:
     id: str
     find: str
+    target: str  # the noun the survey is about; SAM's phrase `find` may differ
     ask: str
     report_when: str
     label_yes: str
     label_no: str
     label_unclear: str
-    icon_yes: str = "✓"
-    icon_no: str = "✖"
+    icon_yes: str = ""
+    icon_no: str = ""
 
     def label(self, answer: str | None) -> tuple[str, str]:
         """(icon, text) for an answer; anything but yes or no is unclear."""
@@ -83,10 +84,14 @@ def _check(table: dict, where: str) -> Check:
     if report not in ANSWERS:
         raise ValueError(f"{where}: report_when must be 'yes' or 'no', not {report!r}")
     find = _need(table, "find", where)
-    return Check(id=check_id, find=find, ask=_need(table, "ask", where), report_when=report,
+    target = table.get("target") or find
+    defect_icon, ok_icon = "✖", "✓"
+    icon_yes = table.get("icon_yes") or (defect_icon if report == "yes" else ok_icon)
+    icon_no = table.get("icon_no") or (defect_icon if report == "no" else ok_icon)
+    unclear = table.get("label_unclear") or f"{target[:1].upper()}{target[1:]}: unclear from the photo"
+    return Check(id=check_id, find=find, target=target, ask=_need(table, "ask", where), report_when=report,
                  label_yes=_need(table, "label_yes", where), label_no=_need(table, "label_no", where),
-                 label_unclear=table.get("label_unclear") or f"{find[:1].upper()}{find[1:]}: unclear from the photo",
-                 icon_yes=table.get("icon_yes", "✓"), icon_no=table.get("icon_no", "✖"))
+                 label_unclear=unclear, icon_yes=icon_yes, icon_no=icon_no)
 
 
 def parse(text: str, where: str) -> Standard:
@@ -105,15 +110,20 @@ def parse(text: str, where: str) -> Standard:
                     checks=checks, tactile_defects=bool(data.get("tactile_defects", {}).get("enabled", False)))
 
 
-@lru_cache
 def load(code: str) -> Standard:
-    """The standard in pipeline/standards/<code>.toml (the code is case-insensitive)."""
+    """The standard in pipeline/standards/<code>.toml (the code is case-insensitive). Re-read when the file changes,
+    so a running server sees an edited standard."""
     file = FOLDER / f"{code.lower()}.toml"
     if not file.is_file():
         raise ValueError(f"no survey standard {code!r} (looked for {file.name})")
+    return _load(code.upper(), file, file.stat().st_mtime_ns)
+
+
+@lru_cache(maxsize=16)
+def _load(code: str, file: Path, mtime_ns: int) -> Standard:
     std = parse(file.read_text(encoding="utf-8"), file.name)
-    if std.code != code.upper():
-        raise ValueError(f"{file.name}: standard is {std.code!r}, expected {code.upper()!r}")
+    if std.code != code:
+        raise ValueError(f"{file.name}: standard is {std.code!r}, expected {code!r}")
     return std
 
 

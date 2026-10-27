@@ -43,7 +43,7 @@ def test_status_follows_report_when(answer, expected):
 
 def test_the_prompt_carries_the_check_sentences():
     p = survey_checks.prompt(CHECK)
-    assert CHECK.ask in p and "whether the curb cut is visible" in p and "0-1000" in p
+    assert CHECK.ask in p and "whether the curb ramp is visible" in p and "0-1000" in p
 
 
 def test_run_check_finds_groups_asks_and_builds_contract_rows(tmp_path):
@@ -77,6 +77,24 @@ def test_run_check_finds_groups_asks_and_builds_contract_rows(tmp_path):
     assert first["model_outputs"]["find"] == {"phrase": "curb cut", "mask_area": 6400, "group_idxs": [2, 4]}
     assert (first["lat"], first["lng"], first["captured_at"]) == (by_idx[4]["lat"], -122.32, by_idx[4]["captured_at"])
     assert rows[1]["object_label"] == "yes" and rows[1]["review_status"] == "auto"
+
+
+def test_a_wrong_shape_answer_marks_only_its_object(tmp_path):
+    by_idx = frames(9)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    areas = {"2.jpg": (40, 40), "4.jpg": (80, 80), "8.jpg": (60, 60)}  # two ramps: photos 2-4 and 8
+
+    def sam(prompt, media):
+        if media.name in areas:
+            w, h = areas[media.name]
+            return text([line(0, [record("0", 0, 0, w, h, 160, 120, 0.9)])])
+        return ""
+
+    answers = iter([{}, YES])  # the first object's answer is empty: reported, the second object is still made
+    api = FakeApi(spark=lambda schema_name, parts: next(answers), sam=sam)
+    rows, missing = survey_checks.run_check(api, CHECK, {0: list(range(9))}, photos, by_idx, workers=1)
+    assert missing == {"find": [], "ask": [4]}
+    assert [(r["frame_idx"], r["object_label"]) for r in rows] == [(8, "yes")]
 
 
 def test_a_failed_question_is_reported_and_the_cost_cap_stops_the_run(tmp_path):
