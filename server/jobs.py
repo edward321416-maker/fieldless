@@ -6,7 +6,7 @@ import queue
 import threading
 from pathlib import Path
 
-from pipeline import db
+from pipeline import db, second_opinion
 from pipeline.meta_api import MetaApi, error_text
 from pipeline.runner import Scan, meter_for, run_scan
 
@@ -122,6 +122,7 @@ class ScanWorker:
             meter = meter_for(conn, scan)
             meter.on_spend = spend_saver(self.db_path, scan_id, scan["cost_usd"])
             api = MetaApi(self.run_dir / "calls.jsonl", meter)
-            run_scan(Scan(conn, scan_id, api, self.run_dir, scan["bbox"]))
+            run_scan(Scan(conn, scan_id, api, self.run_dir, scan["bbox"],
+                          second_opinion=second_opinion.from_env(self.run_dir)))
         finally:
             conn.close()

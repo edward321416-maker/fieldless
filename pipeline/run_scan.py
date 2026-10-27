@@ -11,7 +11,7 @@ import argparse
 import json
 import sys
 
-from pipeline import collect, config, db, sidewalk
+from pipeline import collect, config, db, second_opinion, sidewalk
 from pipeline.meta_api import MetaApi
 from pipeline.runner import Scan, meter_for, run_scan
 
@@ -69,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     scan = db.get_scan(conn, scan_id)
     api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan))
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,
-                           tactile_every=args.tactile_every))
+                           tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir)))
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0 if result["status"] == "done" else 1
 

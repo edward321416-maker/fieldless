@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from pipeline import (collect, config, db, defects, entrance_detect, entrance_read, events, evidence, geo, scene,
-                      sidewalk, survey_checks, survey_items)
+                      second_opinion, sidewalk, survey_checks, survey_items)
 from pipeline.cost import CostCapReached, CostMeter
 from pipeline.meta_api import RunAborted, error_text
 from pipeline.parallel import run_parallel
@@ -52,6 +52,7 @@ class Scan:
     tactile_every: int = sidewalk.TACTILE_EVERY
     workers: int = config.PARALLEL_REQUESTS
     standard: "survey_items.Standard | None" = None  # run_scan fills it from scan.jurisdiction
+    second_opinion: object = None  # an OpenModel when BASETEN_API_KEY is set (CLI, server)
     frames: list[dict] = field(default_factory=list)
     chunks: list[scene.Chunk] = field(default_factory=list)
     scenes: list[dict] = field(default_factory=list)
@@ -229,6 +230,8 @@ def stage_defects(s: Scan) -> None:
     unavailable: dict[str, dict] = {}
     for check in s.standard.checks:
         rows, missing = survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers)
+        if s.second_opinion is not None:
+            rows = second_opinion.apply(s.second_opinion, check, rows, photos, s.workers)
         unavailable[check.id] = missing
         for row in rows:
             db.add_issue(s.conn, s.scan_id, row)

@@ -341,3 +341,27 @@ def test_rerunning_the_defects_stage_replaces_the_check_rows(setup):
     db.set_stage(conn, us_scan, "defects", "pending")
     runner.run_scan(make(api, us_scan))
     assert [i["object_label"] for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"] == ["yes"]
+
+
+class DisagreeingOpen:
+    def answer(self, check, photo):
+        return {"visible": True, "answer": "yes", "box": [], "confidence": 0.6, "note": "domes"}
+
+
+def test_a_second_model_that_disagrees_puts_the_ramp_first_in_line(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+
+    def sam_ramp(prompt, media):
+        return found if prompt == "curb cut" and media.name == "img2.jpg" else us_sam(prompt, media)
+
+    def spark_ramp(schema_name, parts):
+        return RAMP_NO if schema_name == "survey_check" else spark(schema_name, parts)
+
+    scan = make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan)
+    scan.second_opinion = DisagreeingOpen()
+    runner.run_scan(scan)
+    (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
+    assert ramp["review_reasons"] == ["possible_defect", "models_disagree"]
+    assert ramp["model_outputs"]["second_opinion"]["agree"] is False

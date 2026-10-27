@@ -15,3 +15,4 @@ def no_real_keys(monkeypatch):
     instead of spending money (2026-10-27: a CLI test started a real scan and spent $2.16 before it was stopped)."""
     monkeypatch.setenv("MODEL_API_KEY", FAKE_KEY)
     monkeypatch.setenv("MAPILLARY_TOKEN", FAKE_KEY)
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)  # pipeline.config loads .env at import; no test may use it
