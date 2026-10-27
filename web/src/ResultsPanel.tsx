@@ -1,4 +1,4 @@
-import { dollars, labelText, minutes, photoMonth } from "./format";
+import { dollars, minutes, photoMonth } from "./format";
 import type { Picked } from "./MapView";
 import type { Entrance, Issue, Scan } from "./types";
 
@@ -15,7 +15,8 @@ interface Props {
 }
 
 function IssueButton({ issue, onPick }: { issue: Issue; onPick: (p: Picked) => void }) {
-  const status = issue.review_status === "needs_review" ? "To review" : issue.durable ? "" : photoMonth(issue.captured_at);
+  const parts = [issue.review_status === "needs_review" ? "To review" : "", issue.durable ? "" : photoMonth(issue.captured_at)];
+  const status = parts.filter(Boolean).join(" · ");
   return (
     <li>
       <button type="button" className={`item item-${issue.issue_type}`} onClick={() => onPick({ kind: "issue", item: issue })}>
@@ -85,18 +86,22 @@ export default function ResultsPanel(props: Props) {
         <ul className="item-list">{once.map((i) => <IssueButton key={`i${i.id}`} issue={i} onPick={props.onPick} />)}</ul>
       )}
       <h3>Entrances</h3>
-      <ul className="item-list">
-        {props.entrances.map((e) => (
-          <li key={`e${e.id}`}>
-            <button type="button" className="item item-entrance" onClick={() => props.onPick({ kind: "entrance", item: e })}
-              aria-label={`${e.name || "Unnamed entrance"}: ${labelText(e.label)}`}>
-              <span className="item-icon" aria-hidden="true">{e.label.icon}</span>
-              <span className="item-name">{e.name || "Unnamed entrance"}</span>
-              <span className="item-label">{e.label.text}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      {props.entrances.length === 0 ? (
+        <p>None found.</p>
+      ) : (
+        <ul className="item-list">
+          {props.entrances.map((e) => (
+            <li key={`e${e.id}`}>
+              <button type="button" className="item item-entrance" onClick={() => props.onPick({ kind: "entrance", item: e })}
+                aria-label={`${e.name || "Unnamed entrance"}: ${e.label.text}`}>
+                <span className="item-icon" aria-hidden="true">{e.label.icon}</span>
+                <span className="item-name">{e.name || "Unnamed entrance"}</span>
+                <span className="item-label">{e.label.text}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

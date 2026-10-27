@@ -23,11 +23,13 @@ export default function AreaPanel(props: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [invite, setInvite] = useState("");
+  const [starting, setStarting] = useState(false);
   const running = props.scan !== null && (props.scan.status === "queued" || props.scan.status === "running");
 
   useEffect(() => {
     setPreview(null);
     setMessage(null);
+    setLoading(false);
     if (!bbox) return;
     if (bboxTooSmall(bbox)) {
       setMessage("Drag a rectangle over the streets you want to survey.");
@@ -49,13 +51,16 @@ export default function AreaPanel(props: Props) {
   }, [bbox, maxDeg2]);
 
   async function start() {
-    if (!bbox) return;
+    if (!bbox || starting) return;
     setMessage(null);
+    setStarting(true);
     try {
       const { id } = await api.startScan(bbox, invite);
       props.onStarted(id);
     } catch (e) {
       setMessage(e instanceof ApiError ? e.message : "Could not start the survey.");
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -91,7 +96,7 @@ export default function AreaPanel(props: Props) {
               <input value={invite} onChange={(e) => setInvite(e.target.value)} autoComplete="off" />
             </label>
           )}
-          <button type="button" className="primary" onClick={start} disabled={preview.photos === 0 || running}>
+          <button type="button" className="primary" onClick={start} disabled={preview.photos === 0 || running || starting}>
             Start survey
           </button>
         </div>

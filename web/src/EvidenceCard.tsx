@@ -4,10 +4,10 @@ import type { Picked } from "./MapView";
 import type { Evidence } from "./types";
 
 // The official logo is added as web/public/mapillary-logo.svg (plan 2 Task 11); until then the word is shown.
-export function MapillaryMark() {
+export function MapillaryMark({ alt = "Mapillary" }: { alt?: string }) {
   const [missing, setMissing] = useState(false);
-  if (missing) return <span className="mapillary-word">Mapillary</span>;
-  return <img src="/mapillary-logo.svg" alt="Mapillary" className="mapillary-logo" onError={() => setMissing(true)} />;
+  if (missing) return alt ? <span className="mapillary-word">Mapillary</span> : null;
+  return <img src="/mapillary-logo.svg" alt={alt} className="mapillary-logo" onError={() => setMissing(true)} />;
 }
 
 export function PhotoCredit({ evidence }: { evidence: Evidence }) {
@@ -15,7 +15,7 @@ export function PhotoCredit({ evidence }: { evidence: Evidence }) {
     <p className="credit">
       Photo by {evidence.creator ?? "a Mapillary contributor"}, {photoMonth(evidence.captured_at)} ·{" "}
       <a href={evidence.link} target="_blank" rel="noreferrer">
-        <MapillaryMark /> View on Mapillary
+        <MapillaryMark alt="" /> View on Mapillary
       </a>{" "}
       · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">{evidence.license}</a>
     </p>
@@ -32,8 +32,8 @@ export default function EvidenceCard({ picked, onClose, onReview }: Props) {
   const item = picked.item;
   const title = picked.kind === "entrance" ? picked.item.name || "Unnamed entrance" : labelText(picked.item.label);
   const summary = picked.kind === "entrance"
-    ? `${picked.item.name || "Entrance"}: ${labelText(picked.item.label)}`
-    : labelText(picked.item.label);
+    ? `${picked.item.name || "Entrance"}: ${picked.item.label.text}`
+    : picked.item.label.text;
   return (
     <section className="card" aria-labelledby="card-title">
       <div className="card-head">
@@ -61,7 +61,9 @@ export default function EvidenceCard({ picked, onClose, onReview }: Props) {
           {picked.item.durable
             ? "A defect of the paving itself, so it is likely still there today."
             : `Seen in the photo of ${photoMonth(picked.item.captured_at)}; movable objects may be gone now.`}{" "}
-          Photos {picked.item.frame_start}–{picked.item.frame_end} of the walk.
+          {picked.item.frame_start !== null && picked.item.frame_end !== null
+            ? `Photos ${picked.item.frame_start}–${picked.item.frame_end} of the walk.`
+            : ""}
         </p>
       )}
       {item.review_reasons.length > 0 && (
