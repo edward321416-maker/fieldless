@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Survey Labeler</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 12px; background: #fff; color: #111; }
+  .row { display: flex; gap: 16px; align-items: flex-start; }
+  #photo { max-width: 100%; max-height: 82vh; background: #000; }
+  .main { flex: 1 1 auto; min-width: 0; }
+  .side { flex: 0 0 340px; }
+  fieldset { margin: 8px 0; }
+  .status { min-height: 1.2em; color: #060; }
+  .status.error { color: #b00; }
+  kbd { border: 1px solid #999; border-radius: 3px; padding: 0 4px; }
+  li button { margin-left: 8px; }
+</style>
+<script src="survey_core.js"></script>
+</head>
+<body>
+<h1>Survey Labeler</h1>
+<p>1) Load the manifest. 2) Pick the photo folder (<code>data/photos</code>). 3) Go through every photo in order.
+Keys: <kbd>←</kbd>/<kbd>→</kbd> previous/next, <kbd>1</kbd> tactile blocks missing, <kbd>2</kbd> tactile line cut by a cover,
+<kbd>3</kbd> fixed object on tactile paving, <kbd>4</kbd> movable object on tactile paving, <kbd>E</kbd> add entrance.
+Pressing a key again removes that label from the photo. Keys are ignored while a text box, number box or dropdown has focus,
+except in the Steps box, where <kbd>E</kbd> or <kbd>Enter</kbd> adds the entrance with the typed step count.
+Time counts only while photos are loaded, this tab is visible and you acted in the last 60 s.</p>
+<div class="row">
+  <div class="main">
+    <div>Photo <strong id="pos">0 / 0</strong>, idx <strong id="idx">-</strong>, image <code id="imageId">-</code>,
+      taken <span id="taken">-</span>, labeling time <strong id="elapsed">0</strong> s</div>
+    <img id="photo" alt="current photo">
+  </div>
+  <div class="side">
+    <label>Manifest <input type="file" id="manifest" accept="application/json"></label><br>
+    <label>Photo folder <input type="file" id="folder" webkitdirectory multiple></label><br>
+    <label>Import truth <input type="file" id="import" accept="application/json"></label>
+    <div id="status" class="status" role="status"></div>
+    <fieldset><legend>Defects</legend>
+      <button id="d1">1 Blocks missing</button>
+      <button id="d2">2 Cut by a cover</button><br>
+      <button id="d3">3 Fixed object</button>
+      <select id="fixedLabel"><option>pole</option><option>bollard</option><option>street light</option>
+        <option>tree</option><option>planter</option><option>cabinet</option><option>hydrant</option><option>bench</option></select>
+    </fieldset>
+    <fieldset><legend>Movable object on tactile paving</legend>
+      <button id="o4">4 Toggle</button>
+      <select id="moveLabel"><option>electric scooter</option><option>bicycle</option><option>motorcycle</option>
+        <option>sandwich board sign</option><option>stacked boxes</option><option>parked car</option></select>
+    </fieldset>
+    <fieldset><legend>Entrance</legend>
+      <label>Steps <input id="steps" type="number" min="0" value="0" style="width:4em"></label>
+      <label><input id="sill" type="checkbox"> low sill, unsure</label><br>
+      <button id="addEntrance">E Add entrance here</button>
+    </fieldset>
+    <h2>This photo</h2>
+    <ul id="list"></ul>
+    <p>Labelled photos: <strong id="count">0</strong></p>
+    <button id="export">Export truth</button>
+  </div>
+</div>
+<script>
+const C = window.SurveyCore;
+const $ = (id) => document.getElementById(id);
+let manifest = null, frames = [], files = new Map(), truth = null, pos = 0, lastActivity = Date.now(), url = null;
+
+const key = () => `survey-truth:${manifest.run}:${manifest.scan_id}`;
+function save() { if (truth) try { localStorage.setItem(key(), JSON.stringify(truth)); } catch (e) {} }
+function setStatus(msg, isError = false) { $("status").textContent = msg; $("status").classList.toggle("error", isError); }
+function touch() { lastActivity = Date.now(); }
+const loaded = () => Boolean(truth && frames.length && files.size);
+const frame = () => frames[pos];
+
+function render() {
+  if (!loaded()) return;
+  const f = frame();
+  $("pos").textContent = `${pos + 1} / ${frames.length}`;
+  $("idx").textContent = f.idx;
+  $("imageId").textContent = f.image_id;
+  $("taken").textContent = f.captured_at || "-";
+  if (url) URL.revokeObjectURL(url);
+  url = URL.createObjectURL(files.get(`${f.image_id}.jpg`));
+  $("photo").src = url;
+  $("elapsed").textContent = truth.labeling_seconds;
+  $("count").textContent = Object.keys(truth.photos).length;
+  const p = truth.photos[f.image_id];
+  const list = $("list");
+  list.innerHTML = "";
+  if (!p) return;
+  const item = (text, del) => {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.textContent = "delete";
+    b.onclick = () => { del(); save(); render(); };
+    li.append(text, b);
+    list.append(li);
+  };
+  for (const d of [...p.defects]) item(d.type + (d.label ? ` (${d.label})` : ""), () => C.toggleDefect(truth, f, d.type, d.label));
+  for (const o of [...p.obstructions]) item(`movable: ${o.label}`, () => C.toggleObstruction(truth, f, o.label));
+  p.entrances.forEach((e, i) => item(`entrance: ${e.steps} steps${e.sill_unsure ? ", sill unsure" : ""}`, () => C.removeEntrance(truth, f, i)));
+}
+
+function start() {
+  if (!manifest || !files.size) return;
+  const out = C.matchPhotos(manifest, [...files.keys()]);
+  if (out.missing.length) { setStatus(`${out.missing.length} photos are missing from the folder, e.g. ${out.missing[0]}.jpg`, true); return; }
+  frames = out.frames;
+  try { const saved = localStorage.getItem(key()); truth = saved ? C.normalizeTruth(JSON.parse(saved)) : C.emptyTruth(manifest); }
+  catch (e) { truth = C.emptyTruth(manifest); }
+  pos = 0; touch(); render();
+  setStatus(`Loaded ${frames.length} photos for scan ${manifest.scan_id}.`);
+}
+
+$("manifest").onchange = async (ev) => {
+  const file = ev.target.files[0]; ev.target.blur(); if (!file) return;
+  try { manifest = JSON.parse(await file.text()); if (!Array.isArray(manifest.frames)) throw new Error("no frames"); }
+  catch (e) { manifest = null; setStatus(`Manifest failed: ${e.message}`, true); return; }
+  start();
+};
+$("folder").onchange = (ev) => {
+  files = new Map([...ev.target.files].filter((f) => f.name.endsWith(".jpg")).map((f) => [f.name, f]));
+  ev.target.blur(); start();
+};
+$("import").onchange = async (ev) => {
+  const file = ev.target.files[0]; ev.target.blur(); if (!file || !manifest) return;
+  try {
+    const next = C.normalizeTruth(JSON.parse(await file.text()));
+    if (next.run !== manifest.run || next.scan_id !== manifest.scan_id) throw new Error("this file is for another scan");
+    if (!confirm("Replace the current labels with the imported file?")) return;
+    truth = next; save(); render(); setStatus("Imported.");
+  } catch (e) { setStatus(`Import failed: ${e.message}`, true); } finally { ev.target.value = ""; }
+};
+
+function act(fn) { if (!loaded()) return; fn(); save(); render(); }
+const step = (d) => act(() => { pos = Math.min(Math.max(pos + d, 0), frames.length - 1); });
+const d1 = () => act(() => C.toggleDefect(truth, frame(), "missing_blocks"));
+const d2 = () => act(() => C.toggleDefect(truth, frame(), "cover_cut"));
+const d3 = () => act(() => C.toggleDefect(truth, frame(), "fixed_obstruction", $("fixedLabel").value));
+const o4 = () => act(() => C.toggleObstruction(truth, frame(), $("moveLabel").value));
+const addEntrance = () => act(() => { C.addEntrance(truth, frame(), Number.parseInt($("steps").value, 10), $("sill").checked);
+                                      $("steps").value = 0; $("sill").checked = false; });
+$("d1").onclick = d1; $("d2").onclick = d2; $("d3").onclick = d3; $("o4").onclick = o4; $("addEntrance").onclick = addEntrance;
+// In the Steps box, E or Enter adds the entrance. A number box would otherwise take "e" as an exponent and lose the value.
+$("steps").addEventListener("keydown", (ev) => {
+  if (["e", "E", "Enter"].includes(ev.key)) { ev.preventDefault(); addEntrance(); $("steps").blur(); }
+  else if (["+", "-", "."].includes(ev.key)) ev.preventDefault();
+});
+$("export").onclick = () => {
+  if (!truth) return;
+  const blob = new Blob([JSON.stringify(truth, null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `survey_truth_${truth.run}_scan${truth.scan_id}.json`; a.click();
+};
+
+let ticks = 0;
+setInterval(() => {
+  if (!C.shouldCount(loaded(), document.visibilityState === "visible", Date.now(), lastActivity)) return;
+  truth.labeling_seconds += 1;
+  $("elapsed").textContent = truth.labeling_seconds;
+  if (++ticks % 10 === 0) save();
+}, 1000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") save(); });
+window.addEventListener("pagehide", save);
+window.addEventListener("mousedown", touch, { capture: true });
+window.addEventListener("wheel", touch, { capture: true, passive: true });
+
+function typing(el) {
+  if (!el) return false;
+  if (el.isContentEditable || el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+  return el.tagName === "INPUT" && ["text", "number", "search"].includes(el.type);
+}
+const ACTIONS = { arrowleft: () => step(-1), arrowright: () => step(1), "1": d1, "2": d2, "3": d3, "4": o4, e: addEntrance };
+window.addEventListener("keydown", (ev) => {
+  touch();
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || typing(document.activeElement)) return;
+  const action = ACTIONS[ev.key.toLowerCase()];
+  if (!action) return;
+  ev.preventDefault();
+  if (!ev.repeat) action();
+}, { capture: true });
+</script>
+</body>
+</html>
