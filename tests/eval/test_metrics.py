@@ -32,6 +32,12 @@ def test_track_km_sums_steps_within_each_clip_only():
     assert track_km(frames) == pytest.approx(2 * 0.0111, rel=0.01)
 
 
+def test_track_km_skips_jumps_over_50_m_like_the_app():
+    # Same rule as server.views.surveyed_km: a step longer than 50 m is a gap in coverage, not walked street.
+    far = {**frame(2), "lat": 37.5 + 0.001}  # about 111 m after frame 1
+    assert track_km([frame(0), frame(1), far]) == pytest.approx(0.0111, rel=0.01)
+
+
 def test_defect_spots_and_obstructions_are_scored_per_class():
     d = data(issues=[issue("missing_blocks", 3), issue("cover_cut", 8), issue("obstruction", 5, 6)])
     t = truth({"img3": photo(3, [{"type": "missing_blocks"}]), "img4": photo(4, [{"type": "missing_blocks"}]),

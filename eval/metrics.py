@@ -11,10 +11,12 @@ DEFECTS = ("missing_blocks", "cover_cut", "fixed_obstruction")
 SPOT_TOL = 1
 ENTRANCE_TOL = 1  # scan photos are about 5-6 m apart; two photos away is usually the next shop (scan 1 dry run)
 SWEEP = (0.2, 0.3, 0.4, 0.5, 0.6)
+MAX_STEP_M = 50  # matches server.views (plan 2)
 
 
 def track_km(frames: list[dict]) -> float:
-    """Length of the walked track: consecutive photos within each clip, by idx."""
+    """Length of the walked track: consecutive photos within each clip, by idx. Steps over MAX_STEP_M are gaps in
+    coverage and are skipped, the same rule as the app's server.views.surveyed_km, so both report the same km."""
     by_clip: dict[int, list[dict]] = {}
     for f in frames:
         by_clip.setdefault(f["clip"], []).append(f)
@@ -23,7 +25,9 @@ def track_km(frames: list[dict]) -> float:
         clip.sort(key=lambda f: f["idx"])
         for a, b in zip(clip, clip[1:]):
             if None not in (a["lat"], a["lng"], b["lat"], b["lng"]):
-                total += geo.haversine_m(a["lat"], a["lng"], b["lat"], b["lng"])
+                step = geo.haversine_m(a["lat"], a["lng"], b["lat"], b["lng"])
+                if step <= MAX_STEP_M:
+                    total += step
     return total / 1000
 
 
