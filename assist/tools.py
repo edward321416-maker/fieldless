@@ -17,26 +17,7 @@ from assist import testset as scoring
 from pipeline import collect
 from pipeline.meta_api import image_part, text_part
 from pipeline.sam_output import confident, parse
-
-PROMPT = """A pedestrian took this photo on a sidewalk.
-{ask}
-Answer as JSON:
-- visible: whether the {target} is visible in the photo.
-- answer: "yes", "no", or "unclear" if the photo does not show it well enough to tell.
-- box: the {target} as [x1, y1, x2, y2] on a 0-1000 scale of the image, or [] if it is not visible.
-- confidence: 0 to 1 for your answer.
-- note: one sentence on what you see."""
-SCHEMA = {
-    "type": "object", "additionalProperties": False,
-    "required": ["visible", "answer", "box", "confidence", "note"],
-    "properties": {
-        "visible": {"type": "boolean"},
-        "answer": {"type": "string", "enum": ["yes", "no", "unclear"]},
-        "box": {"type": "array", "items": {"type": "integer"}},
-        "confidence": {"type": "number"},
-        "note": {"type": "string"},
-    },
-}
+from pipeline.survey_checks import PROMPT, SCHEMA  # the scan's own, so a test asks exactly what a scan asks
 
 
 def counted(out: dict) -> str:
