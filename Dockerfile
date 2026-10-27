@@ -20,4 +20,4 @@ COPY --from=web /web/dist web/dist
 ENV THRESHOLD_DATA=/data \
     PYTHONUNBUFFERED=1
 EXPOSE 8000
-CMD ["sh", "-c", "mkdir -p \"$THRESHOLD_DATA\" && exec uvicorn server.app:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "mkdir -p \"$THRESHOLD_DATA\" && exec uvicorn server.app:create_app --factory --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

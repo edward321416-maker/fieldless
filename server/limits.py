@@ -3,11 +3,14 @@ as a keyed hash."""
 import hashlib
 import hmac
 import ipaddress
+import os
 from datetime import datetime, timedelta, timezone
 
 from pipeline import db
 
-PROXY_HOPS = 1  # trusted proxies in front of the server that append to X-Forwarded-For (Railway's edge)
+# Trusted proxies in front of the server that append to X-Forwarded-For (Railway's edge: one). Check one request's
+# header after the first deploy; behind no proxy (a bare `docker run -p`), set PROXY_HOPS=0 so the header is ignored.
+PROXY_HOPS = int(os.environ.get("PROXY_HOPS") or 1)
 MAX_SIDE_DEG = 0.02  # about 1.8 km of longitude and 2.2 km of latitude in Seoul: no long slivers
 
 

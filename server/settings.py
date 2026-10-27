@@ -1,4 +1,5 @@
 """Server settings from environment variables (spec 13). Secrets stay in the environment and are never printed."""
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,7 +33,10 @@ def _hand_seconds(text: str) -> tuple[tuple[int, float], ...]:
     out = []
     for item in filter(None, (part.strip() for part in text.split(";"))):
         scan_id, _, seconds = item.partition(":")
-        out.append((int(scan_id), float(seconds)))
+        value = float(seconds)
+        if not (math.isfinite(value) and value >= 0):
+            raise ValueError(f"MEASURED_HAND_SECONDS needs a measured, non-negative number of seconds: {item!r}")
+        out.append((int(scan_id), value))
     return tuple(out)
 
 

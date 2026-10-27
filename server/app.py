@@ -5,6 +5,7 @@
 Starting a survey passes the spec 13 limits (invite code if set, area size, surveys per address per day). Scans run
 one at a time on the ScanWorker thread, and the pipeline's own caps ($3 per scan, $10 per day) still apply.
 """
+import logging
 import re
 import threading
 from contextlib import asynccontextmanager, closing
@@ -50,6 +51,8 @@ class IssueReview(BaseModel):
 
 def create_app(settings: Settings | None = None, worker=None, preview=None) -> FastAPI:
     settings = settings or load()
+    if settings.ip_hash_salt == "threshold":
+        logging.getLogger(__name__).warning("IP_HASH_SALT is not set; set a random salt in production")
     run_dir = config.run_dir(settings.run_name)
     db_path = run_dir / "threshold.db"
     worker = worker or ScanWorker(db_path, run_dir)

@@ -35,3 +35,11 @@ def test_measured_hand_seconds(monkeypatch):
     assert settings.load().measured_hand_seconds == ((3, 1260.0), (7, 905.5))
     monkeypatch.setenv("MEASURED_HAND_SECONDS", "")
     assert settings.load().measured_hand_seconds == ()
+
+
+def test_measured_hand_seconds_must_be_a_real_measurement(monkeypatch):
+    import pytest
+    for bad in ("3:nan", "3:inf", "3:-5"):
+        monkeypatch.setenv("MEASURED_HAND_SECONDS", bad)
+        with pytest.raises(ValueError):
+            settings.load()
