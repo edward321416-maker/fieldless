@@ -48,7 +48,9 @@ DAILY_COST_CAP_USD = 10.0
 # pieces (2026-10-28) add about 36 picks a scan, about $0.30 per 100 photos: still under the estimate.
 EST_USD_PER_100_PHOTOS = 0.93
 EST_USD_PER_100_PHOTOS_PER_CHECK = 0.31
-PARALLEL_REQUESTS = 6
+# Requests in flight at once (meta_api.MetaApi holds them to this). 16 SAM image requests at once ran 455 requests in
+# 62 s with no rate limit (2026-10-28); at 6, Seattle scan 4 kept 4.4 in flight on average and took 19 minutes.
+PARALLEL_REQUESTS = 16
 
 
 def est_usd_per_100_photos(checks: int = 0) -> float:

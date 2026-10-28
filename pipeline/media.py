@@ -46,9 +46,9 @@ def probe(path: Path) -> VideoInfo:
                      int(stream["height"]))
 
 
-def _normalize(src: Path, dst: Path) -> None:
-    """Re-encode as H.264, at most LONG_SIDE wide, with even dimensions."""
-    _run(["ffmpeg", "-y", "-i", str(src), "-vf", f"scale=trunc(min({LONG_SIDE}\\,iw)/2)*2:-2"] + _encode_args(dst))
+def _normalize(src: Path, dst: Path, long_side: int = LONG_SIDE) -> None:
+    """Re-encode as H.264, at most long_side wide, with even dimensions."""
+    _run(["ffmpeg", "-y", "-i", str(src), "-vf", f"scale=trunc(min({long_side}\\,iw)/2)*2:-2"] + _encode_args(dst))
 
 
 def letterbox(src_wh: tuple[int, int], dst_wh: tuple[int, int]) -> tuple[float, int, int]:
@@ -60,12 +60,12 @@ def letterbox(src_wh: tuple[int, int], dst_wh: tuple[int, int]) -> tuple[float, 
     return scale, (dw - rw) // 2, (dh - rh) // 2
 
 
-def video_size(photo_wh: tuple[int, int]) -> tuple[int, int]:
-    """Frame size of a video made from photo_wh photos: long side LONG_SIDE, even dimensions."""
+def video_size(photo_wh: tuple[int, int], long_side: int = LONG_SIDE) -> tuple[int, int]:
+    """Frame size of a video made from photo_wh photos: long side long_side, even dimensions."""
     w, h = photo_wh
     if w >= h:
-        return LONG_SIDE, round(LONG_SIDE * h / w / 2) * 2
-    return round(LONG_SIDE * w / h / 2) * 2, LONG_SIDE
+        return long_side, round(long_side * h / w / 2) * 2
+    return round(long_side * w / h / 2) * 2, long_side
 
 
 def _fit(img: np.ndarray, size: tuple[int, int]) -> np.ndarray:
@@ -77,7 +77,7 @@ def _fit(img: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     return canvas
 
 
-def _write(frames, size: tuple[int, int], fps: float, dst: Path) -> None:
+def _write(frames, size: tuple[int, int], fps: float, dst: Path, long_side: int = LONG_SIDE) -> None:
     """Write BGR frames of `size` as mp4v, then re-encode as H.264."""
     tmp = Path(dst).with_name(Path(dst).stem + "_raw.mp4")
     writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), fps, size)
@@ -89,27 +89,27 @@ def _write(frames, size: tuple[int, int], fps: float, dst: Path) -> None:
                 writer.write(frame)
         finally:
             writer.release()
-        _normalize(tmp, Path(dst))
+        _normalize(tmp, Path(dst), long_side)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
     tmp.unlink()
 
 
-def images_to_mp4(images: list[Path], dst: Path, fps: float = 1.0) -> tuple[int, int]:
-    """One frame per photo, letterboxed into the first readable photo's video size. An unreadable photo becomes a
-    black frame, so frame n is always photo n. Returns the frame size (width, height)."""
+def images_to_mp4(images: list[Path], dst: Path, fps: float = 1.0, long_side: int = LONG_SIDE) -> tuple[int, int]:
+    """One frame per photo, letterboxed into the first readable photo's video size (long side long_side). An unreadable
+    photo becomes a black frame, so frame n is always photo n. Returns the frame size (width, height)."""
     first = next((img for img in (cv2.imread(str(p)) for p in images) if img is not None), None)
     if first is None:
         raise ValueError("no readable images")
-    size = video_size((first.shape[1], first.shape[0]))
+    size = video_size((first.shape[1], first.shape[0]), long_side)
 
     def frames():
         for path in images:
             img = cv2.imread(str(path))
             yield _fit(img, size) if img is not None else np.zeros((size[1], size[0], 3), np.uint8)
 
-    _write(frames(), size, fps, dst)
+    _write(frames(), size, fps, dst, long_side)
     return size
 
 

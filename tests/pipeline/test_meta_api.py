@@ -186,3 +186,27 @@ def test_contributor_models_are_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "SPARK_MODEL", "muse-spark-1.3-contributor")
     with pytest.raises(ValueError, match="contributor"):
         make_api(tmp_path, FakeClient())
+
+
+def test_no_more_than_max_in_flight_requests_are_out_at_once(tmp_path):
+    import threading
+    import time
+
+    from pipeline.parallel import run_parallel
+
+    api = ma.MetaApi(tmp_path / "calls.jsonl", CostMeter(cap_usd=1.0), client=object(), max_in_flight=3)
+    lock, now, peak = threading.Lock(), [0], [0]
+
+    def attempt():
+        with lock:
+            now[0] += 1
+            peak[0] = max(peak[0], now[0])
+        time.sleep(0.05)
+        with lock:
+            now[0] -= 1
+        return "ok", 0.0, {}
+
+    # nested pools, as stage_defects runs checks at once and each check its own pool
+    run_parallel(lambda _: run_parallel(lambda _: api._request("sam", 0.0, attempt), range(4), 4), range(3), 3)
+    assert peak[0] == 3
+    assert len((tmp_path / "calls.jsonl").read_text(encoding="utf-8").splitlines()) == 12

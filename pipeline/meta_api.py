@@ -91,7 +91,8 @@ def _event_detail(event) -> str:
 
 
 class MetaApi:
-    def __init__(self, log_path: Path, meter: CostMeter, client=None, sleep=time.sleep):
+    def __init__(self, log_path: Path, meter: CostMeter, client=None, sleep=time.sleep,
+                 max_in_flight: int = config.PARALLEL_REQUESTS):
         for model in (config.SPARK_MODEL, config.SAM_MODEL):
             if "contributor" in model.lower():
                 raise ValueError(f"contributor models are not allowed (their input trains Meta models): {model}")
@@ -101,6 +102,9 @@ class MetaApi:
         self._sleep = sleep
         self._lock = threading.Lock()
         self._failures = 0
+        # Stages run their requests on nested thread pools (checks at once, each with its own pool); this keeps the
+        # requests actually in flight at max_in_flight. Held only while a request is out, never across a retry wait.
+        self._slots = threading.BoundedSemaphore(max_in_flight)
 
     @property
     def client(self):
@@ -160,7 +164,9 @@ class MetaApi:
             nonlocal spent
             t0 = time.time()
             try:
-                result, cost, extra = attempt()
+                with self._slots:
+                    t0 = time.time()  # the request's own time, not the wait for a slot
+                    result, cost, extra = attempt()
             except Exception as exc:
                 cost = getattr(exc, "cost_usd", fail_cost_usd)
                 spent += cost

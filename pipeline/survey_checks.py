@@ -1,23 +1,33 @@
 """Checks: survey items written as sentences (design docs/specs/2026-10-28-us-survey-items-design.md §4.3).
 
-SAM 3.1 looks for a check's `find` on every second photo of each walk. Sampled photos in a row that show it are one
-object, seen best where its mask is largest (a check with `group_m` cuts a long run into pieces of that many metres,
-one object each, for things that stand in rows); sightings from different walks within MERGE_M are the same object.
-Muse Spark answers the check's `ask` on that best photo. One sidewalk_issue row per object, in the format agreed
-with eval on 2026-10-28 (plan 4, Global Constraints).
+A check found by video (find_by = "video") gives SAM 3.1 the walk's photos joined as a video, and SAM follows each
+object it finds from photo to photo under one number. Each followed object is one row, judged on its largest view
+that is not cut off by the photo's edge. What SAM saw as two objects is made one where it can tell (parts of one
+thing, an object lost for a photo or crossing into the next video), and two walks that saw one object from the same
+place are merged. Of the city points Seattle scan 4's photos cover, this found 18 of 29 poles and 4 of 8 litter cans
+before Spark's check, against 11 and 2 by photos after it, and 13 of 39 curb ramps (2026-10-28). Each item says
+which way it is found (pipeline/standards/us.toml).
+
+A check found by photos looks for `find` on every second photo of each walk. Sampled photos in a row that show it
+are one object, seen best where its mask is largest (a check with `group_m` cuts a long run into pieces of that many
+metres, one object each); sightings within MERGE_M are the same object.
+
+Muse Spark answers the check's `ask` on the chosen photo, told where SAM marked the object when it is known. One
+sidewalk_issue row per object, in the format agreed with eval on 2026-10-28 (plan 4, Global Constraints).
 
 A check with judge = "glimmer" is answered first by a judge model (Muse Glimmer, an OpenModel) when the caller passes
 one: Spark takes the picks it cannot decide, and audits a share of the rest (design 2.3,
 docs/specs/2026-10-28-glimmer-modal-design.md)."""
 import math
 import random
+from dataclasses import dataclass
 from pathlib import Path
 
-from pipeline import config, geo
+from pipeline import config, geo, media
 from pipeline.cost import CostCapReached
 from pipeline.meta_api import error_text, image_part, text_part
 from pipeline.parallel import run_parallel
-from pipeline.sam_output import confident, parse
+from pipeline.sam_output import check_frames, confident, parse
 from pipeline.survey_items import Check
 
 SAMPLE_EVERY = 2
@@ -25,6 +35,13 @@ MERGE_M = 8.0  # objects from different walks closer than this are the same obje
 AUDIT_SHARE = 0.1  # of the judge's yes/no answers, Spark answers this share too (at least one)
 DROP_AUDIT_SHARE = 0.1  # of a defect check's dropped picks, this share goes to a person anyway (at least one)
 JUDGE_GIVE_UP = 3  # failures in a row after which the judge is not asked again in this check (a hung server)
+FOV = 70.0  # degrees across a photo, as the map and eval/city.py draw where a box looks
+EDGE = 10  # of 1000: a box this close to the photo's left, right or bottom edge is cut off there
+JOIN_PHOTOS = 2  # an object first seen this few photos after another was last seen in the walk ...
+JOIN_DEG = 10.0  # ... looking this close to the same way is the same object (SAM lost it, or a video ended)
+CONTAIN = 0.8  # share of a box inside another's in every photo they share: parts of one object
+WALKS_M = 8.0  # objects of two walks whose photos are this close ...
+WALKS_DEG = 15.0  # ... and look this close to the same way are one object
 
 SCHEMA = {
     "type": "object",
@@ -39,7 +56,7 @@ SCHEMA = {
     },
 }
 
-PROMPT = """A pedestrian took this photo on a sidewalk.
+PROMPT = """A pedestrian took this photo on a sidewalk.{marked}
 {ask}
 Answer as JSON:
 - visible: whether the {target} is visible in the photo.
@@ -49,8 +66,158 @@ Answer as JSON:
 - note: one sentence on what you see."""
 
 
-def prompt(check: Check) -> str:
-    return PROMPT.format(ask=check.ask, target=check.target)
+MARKED = """ An object finder marked a possible {target} at {box} ([x1, y1, x2, y2] on a 0-1000 scale of the image).
+Answer about the object in that box."""
+
+
+def prompt(check: Check, box: list[int] | None = None) -> str:
+    """The question for one photo; with box, about the object SAM marked there (several may be in the photo)."""
+    marked = MARKED.format(target=check.target, box=list(box)) if box else ""
+    return PROMPT.format(ask=check.ask, target=check.target, marked=marked)
+
+
+@dataclass(frozen=True)
+class Video:
+    """One video the checks are found on: the photo idx of each frame, its frame size and its walk."""
+    idxs: tuple[int, ...]
+    size: tuple[int, int]
+    clip: int
+
+
+def direction(frame: dict, box: list[int]) -> float | None:
+    """Compass bearing from the photo toward a 0-1000 box: compass + (box centre / 1000 - 0.5) * FOV."""
+    if frame.get("compass") is None:
+        return None
+    return (frame["compass"] + ((box[0] + box[2]) / 2000 - 0.5) * FOV) % 360
+
+
+def _angle(a: float | None, b: float | None) -> float:
+    return 180.0 if a is None or b is None else abs((a - b + 180) % 360 - 180)
+
+
+def tracks(text: str, video: Video, by_idx: dict[int, dict]) -> list[list[dict]]:
+    """The objects SAM followed in one video's answer, each a list of sightings {"idx", "area", "box"} in photo
+    order: box on a 0-1000 scale of the photo, area the mask's area in photo pixels. Raises ValueError for an answer
+    that does not fit the video."""
+    segs = confident(parse(text, video=True))
+    check_frames(segs, len(video.idxs))
+    out: dict[str, list[dict]] = {}
+    for s in segs:
+        idx = video.idxs[s.frame]
+        f = by_idx[idx]
+        wh = (f["width"], f["height"])
+        left, top, right, bottom = media.video_box_to_photo(s.box, video.size, wh)
+        if right <= left or bottom <= top:
+            continue
+        scale = media.letterbox(wh, video.size)[0]
+        box = [round(left * 1000 / wh[0]), round(top * 1000 / wh[1]), round(right * 1000 / wh[0]),
+               round(bottom * 1000 / wh[1])]
+        out.setdefault(s.obj, []).append({"idx": idx, "area": round(s.area / scale ** 2), "box": box})
+    return [sorted(t, key=lambda d: d["idx"]) for _, t in sorted(out.items(), key=lambda kv: kv[1][0]["idx"])]
+
+
+def _inside(a: list[int], b: list[int]) -> float:
+    """How much of the smaller of two boxes lies inside the other, 0-1."""
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    smaller = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+    return w * h / smaller if w > 0 and h > 0 and smaller > 0 else 0.0
+
+
+def merge_parts(objs: list[list[dict]]) -> list[list[dict]]:
+    """Objects of one video that are parts of one thing (a tree's trunk and crown): seen together in at least two
+    photos, one box at least CONTAIN inside the other in every one of them. A thing behind another shifts against it
+    from photo to photo, so it does not stay inside."""
+    parent = list(range(len(objs)))
+
+    def root(i):
+        while parent[i] != i:
+            i = parent[i]
+        return i
+
+    for i in range(len(objs)):
+        for j in range(i + 1, len(objs)):
+            a = {d["idx"]: d["box"] for d in objs[i]}
+            b = {d["idx"]: d["box"] for d in objs[j]}
+            shared = a.keys() & b.keys()
+            if len(shared) >= 2 and all(_inside(a[k], b[k]) >= CONTAIN for k in shared):
+                parent[root(j)] = root(i)
+    groups: dict[int, list[dict]] = {}
+    for i, t in enumerate(objs):
+        groups.setdefault(root(i), []).extend(t)
+    return [sorted(t, key=lambda d: d["idx"]) for t in groups.values()]
+
+
+def join(found: list[tuple[Video, list[list[dict]]]], by_idx: dict[int, dict]) -> list[list[dict]]:
+    """Every object of every video, with what SAM saw as two objects made one: parts of one thing (merge_parts), and,
+    in one walk, an object first seen at most JOIN_PHOTOS photos after another was last seen, looking within JOIN_DEG
+    of the same way: SAM lost the object and found it again, or it crossed into the next video. Objects join in the
+    order they are first seen, each to the closest way."""
+    walks: dict[int, list[tuple[Video, list[list[dict]]]]] = {}
+    for video, objs in found:
+        walks.setdefault(video.clip, []).append((video, merge_parts([list(t) for t in objs])))
+    out: list[list[dict]] = []
+    for videos in walks.values():
+        pos = {idx: n for n, idx in enumerate(sorted(i for v, _ in videos for i in v.idxs))}
+        joined: list[list[dict]] = []
+        for b in sorted((t for _, objs in videos for t in objs), key=lambda t: (pos[t[0]["idx"]], t[0]["box"])):
+            first = b[0]
+            way = direction(by_idx[first["idx"]], first["box"])
+            best = None
+            for a in joined:
+                gap = pos[first["idx"]] - pos[a[-1]["idx"]]
+                angle = _angle(direction(by_idx[a[-1]["idx"]], a[-1]["box"]), way)
+                if 1 <= gap <= JOIN_PHOTOS and angle <= JOIN_DEG and (best is None or angle < best[0]):
+                    best = (angle, a)
+            if best is None:
+                joined.append(b)
+            else:
+                best[1].extend(b)
+        out += joined
+    return out
+
+
+def track_pick(track: list[dict]) -> dict:
+    """The pick for one followed object: its largest sighting whose box is not cut off by the photo's left, right or
+    bottom edge (the whole object is in view), else its largest sighting; the earlier photo on a tie."""
+    whole = [d for d in track if d["box"][0] > EDGE and d["box"][2] < 1000 - EDGE and d["box"][3] < 1000 - EDGE]
+    best = max(whole or track, key=lambda d: (d["area"], -d["idx"]))
+    return {"idx": best["idx"], "area": best["area"], "group": sorted({d["idx"] for d in track}), "box": best["box"]}
+
+
+def merge_walks(picks: list[dict], by_idx: dict[int, dict]) -> list[dict]:
+    """Largest first, a pick from another walk whose photo is within WALKS_M of a kept one's and looks within WALKS_DEG
+    of the same way is the same object. Within one walk SAM's numbering already tells objects apart, so a kept pick
+    takes in at most one pick of each other walk. Photo order."""
+    kept: list[tuple[dict, set]] = []  # (pick, the walks it stands for)
+    for p in sorted(picks, key=lambda p: (-p["area"], p["idx"])):
+        f = by_idx[p["idx"]]
+        walk = f.get("clip")
+        same = next((walks for k, walks in kept if walk not in walks
+                     and geo.haversine_m(f["lat"], f["lng"], by_idx[k["idx"]]["lat"], by_idx[k["idx"]]["lng"]) <= WALKS_M
+                     and _angle(direction(f, p["box"]), direction(by_idx[k["idx"]], k["box"])) <= WALKS_DEG), None)
+        if same is None:
+            kept.append((p, {walk}))
+        else:
+            same.add(walk)
+    return sorted((k for k, _ in kept), key=lambda p: p["idx"])
+
+
+def video_picks(texts: dict[int, str | None], videos: dict[int, Video],
+                by_idx: dict[int, dict]) -> tuple[list[dict], list[int]]:
+    """One pick per object SAM followed, from each video's answer (texts and videos keyed alike, by the video's
+    first photo idx; None: the request failed). Returns the picks and the keys of videos whose answer is missing or
+    unreadable."""
+    found, failed = [], []
+    for key, video in videos.items():
+        text = texts.get(key)
+        try:
+            if text is None:
+                raise ValueError("no answer")
+            found.append((video, tracks(text, video, by_idx)))
+        except ValueError:
+            failed.append(key)
+    return merge_walks([track_pick(t) for t in join(found, by_idx)], by_idx), sorted(failed)
 
 
 def find_areas(api, check: Check, idxs: list[int], photos: dict[int, Path], workers: int,
@@ -164,8 +331,11 @@ def _outcome(decided) -> str:
 def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, Path], by_idx: dict[int, dict],
               workers: int, every: int = SAMPLE_EVERY, known: dict[int, int] | None = None, judge=None,
               audit_seed: int | None = None, audit_share: float = AUDIT_SHARE,
-              dropped: list[dict] | None = None) -> tuple[list[dict], dict]:
+              dropped: list[dict] | None = None,
+              video: tuple[dict[int, str | None], dict[int, Video]] | None = None) -> tuple[list[dict], dict]:
     """Rows for one check over every walk, and what could not be analysed: {"find": [photo idx], "ask": [photo idx]}.
+    A check found by video takes SAM's answers on the videos from the caller, video = (texts, videos) as in
+    video_picks, and "find" then lists the first photo of each video without an answer.
     "not_target" lists the photos of picks the model said are not the target (no row), and `dropped`, when given,
     receives a record of each (db.add_dropped). Of a defect check's dropped picks, DROP_AUDIT_SHARE (at least one),
     chosen with audit_seed, still become rows for a person ("dropped_audit"): a person who finds the target there
@@ -183,20 +353,31 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
         judge.wake()  # the container starts while SAM looks for this check's objects
     picks: list[dict] = []
     failed_find: list[int] = []
-    for clip_idxs in clips.values():
-        areas = find_areas(api, check, clip_idxs[::every], photos, workers, known)
-        if known is not None:
-            known.update({i: a for i, a in areas.items() if a is not None})
-        failed_find += [i for i, a in areas.items() if a is None]
-        for group in groups(areas, clip_idxs):
-            for piece in (split_by_distance(group, by_idx, check.group_m) if check.group_m else [group]):
-                idx = best(piece, areas)
-                picks.append({"idx": idx, "area": areas[idx], "group": piece})
-    picks = merge_near(picks, by_idx)
+    if check.find_by == "video":
+        if video is None:
+            raise ValueError(f"check {check.id} is found by video, but no video answers were given")
+        picks, failed_find = video_picks(*video, by_idx)
+    else:
+        for clip_idxs in clips.values():
+            areas = find_areas(api, check, clip_idxs[::every], photos, workers, known)
+            if known is not None:
+                known.update({i: a for i, a in areas.items() if a is not None})
+            failed_find += [i for i, a in areas.items() if a is None]
+            for group in groups(areas, clip_idxs):
+                for piece in (split_by_distance(group, by_idx, check.group_m) if check.group_m else [group]):
+                    idx = best(piece, areas)
+                    picks.append({"idx": idx, "area": areas[idx], "group": piece})
+        picks = merge_near(picks, by_idx)
+
+    def found(p):
+        """model_outputs.find: SAM's phrase, the object's mask area, its photos and, by video, its box."""
+        return {"phrase": check.find, "mask_area": p["area"], "group_idxs": p["group"],
+                **({"box": p["box"]} if p.get("box") else {})}
 
     def spark(p):
         try:
-            answer = api.spark_json([image_part(photos[p["idx"]]), text_part(prompt(check))], "survey_check", SCHEMA)
+            answer = api.spark_json([image_part(photos[p["idx"]]), text_part(prompt(check, p.get("box")))],
+                                    "survey_check", SCHEMA)
             if not _valid(answer):
                 raise ValueError(f"unexpected answer: {str(answer)[:200]}")
             return {**answer, "model": config.SPARK_MODEL} if judge is not None else answer
@@ -212,8 +393,7 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
             dropped.append({"issue_type": check.id, "frame_idx": p["idx"], "frame_start": min(p["group"]),
                             "frame_end": max(p["group"]), "lat": frame["lat"], "lng": frame["lng"],
                             "captured_at": frame["captured_at"], "audited": audited,
-                            "model_outputs": {"check": answer, "find": {"phrase": check.find, "mask_area": p["area"],
-                                                                        "group_idxs": p["group"]}}})
+                            "model_outputs": {"check": answer, "find": found(p)}})
 
     def row(p, answer, decided, extra=None):
         review_status, reasons, current = decided
@@ -221,8 +401,7 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
         return {"issue_type": check.id, "object_label": current, "frame_start": min(p["group"]),
                 "frame_end": max(p["group"]), "frame_idx": p["idx"], "lat": frame["lat"], "lng": frame["lng"],
                 "confidence": answer.get("confidence"), "review_status": review_status, "review_reasons": reasons,
-                "model_outputs": {"check": answer, "find": {"phrase": check.find, "mask_area": p["area"],
-                                                            "group_idxs": p["group"]}, **(extra or {})},
+                "model_outputs": {"check": answer, "find": found(p), **(extra or {})},
                 "captured_at": frame["captured_at"]}
 
     rows: list[dict] = []
@@ -253,7 +432,7 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
         if failures_in_a_row[0] >= JUDGE_GIVE_UP:
             return {"error": f"gave up on {judge.model} after {JUDGE_GIVE_UP} failures in a row"}
         try:
-            answer = judge.answer(check, photos[p["idx"]])
+            answer = judge.answer(check, photos[p["idx"]], box=p.get("box"))
             if not _valid(answer):
                 raise ValueError(f"unexpected answer from {judge.model}: {str(answer)[:200]}")
         except Exception as exc:  # Spark answers this pick instead

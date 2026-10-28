@@ -174,3 +174,12 @@ def test_a_check_may_name_its_map_icon_and_a_short_question():
     assert named.map_icon == "street-light" and named.question == "Is this a streetlight pole?"
     with pytest.raises(ValueError, match="map_icon"):
         survey_items.parse(INVENTORY.replace("inventory = true", 'inventory = true\nmap_icon = "Tree Icon"'), "us.toml")
+
+
+def test_a_check_is_found_by_photos_unless_it_says_video_and_video_has_no_group_m():
+    assert survey_items.parse(US, "us.toml").checks[0].find_by == "photos"
+    assert survey_items.parse(US + 'find_by = "video"', "us.toml").checks[0].find_by == "video"
+    with pytest.raises(ValueError, match="find_by must be one of"):
+        survey_items.parse(US + 'find_by = "film"', "us.toml")
+    with pytest.raises(ValueError, match="one row per object"):
+        survey_items.parse(US + 'find_by = "video"\ngroup_m = 8', "us.toml")

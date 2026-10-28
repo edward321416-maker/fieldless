@@ -44,24 +44,25 @@ def obstacle_labels(spark_types: list[str], path: PathSpec) -> list[str]:
     return list(dict.fromkeys(labels))[:MAX_OBSTACLE_LABELS]
 
 
-def obstacle_segs(api, chunk: Chunk, labels: list[str]) -> dict[str, dict[int, list[Seg]] | None]:
-    """Per label, confident segments by frame idx in video pixels; None when that label's request failed."""
-    out: dict[str, dict[int, list[Seg]] | None] = {}
+def obstacle_segs(api, chunk: Chunk, labels: list[str], workers: int = 1) -> dict[str, dict[int, list[Seg]] | None]:
+    """Per label, confident segments by frame idx in video pixels; None when that label's request failed. The
+    labels are asked at once (up to workers) on one upload of the chunk."""
+    def one(file_id, label):
+        try:
+            segs = confident(parse(api.sam_video(label, file_id, frames=len(chunk.idxs)), video=True))
+            check_frames(segs, len(chunk.idxs))
+        except CostCapReached:
+            raise
+        except Exception:
+            return None
+        by_idx: dict[int, list[Seg]] = {}
+        for s in segs:
+            by_idx.setdefault(chunk.idxs[s.frame], []).append(s)
+        return by_idx
+
     try:
         with api.uploaded(Path(chunk.video)) as file_id:
-            for label in labels:
-                try:
-                    segs = confident(parse(api.sam_video(label, file_id, frames=len(chunk.idxs)), video=True))
-                    check_frames(segs, len(chunk.idxs))
-                except CostCapReached:
-                    raise
-                except Exception:
-                    out[label] = None
-                    continue
-                by_idx: dict[int, list[Seg]] = {}
-                for s in segs:
-                    by_idx.setdefault(chunk.idxs[s.frame], []).append(s)
-                out[label] = by_idx
+            out = dict(zip(labels, run_parallel(lambda label: one(file_id, label), labels, workers)))
     except CostCapReached:
         raise
     except Exception:

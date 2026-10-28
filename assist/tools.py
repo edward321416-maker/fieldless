@@ -19,7 +19,8 @@ from assist import testset as scoring
 from pipeline import collect
 from pipeline.meta_api import image_part, text_part
 from pipeline.sam_output import confident, parse
-from pipeline.survey_checks import PROMPT, SCHEMA  # the scan's own, so a test asks exactly what a scan asks
+from pipeline.survey_checks import SCHEMA  # the scan's own, so a test asks exactly what a scan asks
+from pipeline.survey_checks import prompt as check_prompt
 
 
 def counted_check(out: dict) -> str:
@@ -88,7 +89,7 @@ class Bench:
         find = find.strip()
         self.find(find)
         hits = [p.id for p in self.ts.visible() if self.areas[find].get(p.id, 0) > 0]
-        prompt = PROMPT.format(ask=ask, target=self.items[item_id].get("target") or find)
+        prompt = check_prompt(SimpleNamespace(ask=ask, target=self.items[item_id].get("target") or find))
         if prompt not in self.prompts:
             self.prompts.append(prompt)
 
@@ -118,7 +119,7 @@ class Bench:
             return cached
         path = Path(self.photo(photo_id))
         if self.judge is not None:
-            out = self.judge.answer(check, path)  # the same PROMPT, built from check.ask and check.target
+            out = self.judge.answer(check, path)  # the same prompt, built from check.ask and check.target
         else:
             out = self.api.spark_json([image_part(path), text_part(prompt)], "survey_check", SCHEMA)
         got = (counted_inventory(out), out.get("note", ""))
@@ -133,7 +134,7 @@ class Bench:
         find, ask = find.strip(), ask.strip()
         self.find(find)
         target = self.items[item_id].get("target") or find
-        prompt = PROMPT.format(ask=ask, target=target)
+        prompt = check_prompt(SimpleNamespace(ask=ask, target=target))
         check = SimpleNamespace(id=item_id, ask=ask, target=target)  # what survey_checks.prompt() reads
         if prompt not in self.prompts:
             self.prompts.append(prompt)

@@ -1,5 +1,6 @@
 # Survey standard: United States (ADA). Each [[check]] is a survey item written as sentences: SAM 3.1 finds `find`
-# in the photos and Muse Spark answers `ask` on the best photo of it. To survey something new, add a [[check]] and
+# in the photos and Muse Spark answers `ask` on the best photo of it. find_by = "video": SAM follows each object
+# through the walk's photos joined as a video, one row per object (pipeline/survey_checks.py). To survey something new, add a [[check]] and
 # run the defects stage again (README, "Survey standards"). No training data is needed.
 standard = "US"
 
@@ -15,6 +16,7 @@ id = "curb_ramp_warning"
 map_icon = "curb-ramp"
 question = "Does the curb ramp have a detectable warning surface (raised domes) at its bottom edge?"
 find = "curb cut"
+find_by = "video"
 target = "curb ramp"
 ask = "A curb ramp is the short sloped section where a pedestrian crossing meets the sidewalk. Driveways, alley entrances and plain raised curbs are not curb ramps; if the photo shows only those, set visible to false. If there is a curb ramp, does it have a detectable warning surface (a panel of raised truncated domes) at its bottom edge? If its bottom edge is too far away or too small to see, answer unclear."
 report_when = "no"
@@ -23,22 +25,21 @@ label_no = "Curb ramp without detectable warning"
 label_unclear = "Curb ramp: detectable warning unclear"
 
 # Street assets (inventory): every confirmed object is a point on the map, compared with the city's own inventory.
-# group_m: things that stand in rows get one row per group_m metres of walk, not one per run of photos. Poles and
-# trees stand closer than 15 m: at 8 m Seattle scans 3 and 4 found 4 more city poles each (13 -> 17 of 31, 15 -> 19 of
-# 32) and 8-9 more city trees (21 -> 29 of 43, 23 -> 32 of 50), for 4-6 more repeats of one object per item and
-# about 36 more Spark answers ($0.57) a scan (eval/glimmer_dense.py, 2026-10-28). Cans and pay stations found no
-# more at 8 m, only noise, so they keep 15 m.
+# find_by is chosen per item on Seattle scan 4's photos (2026-10-28), counting the city's points some photo covers. By
+# video, one row per object SAM followed, before Spark's check: 18 of 29 poles and 4 of 8 litter cans, against 11 and
+# 2 by photos in 8-15 m pieces after it. Trees and pay stations stay on photos, where they found more.
+# group_m (by photos): things that stand in rows get one row per group_m metres of walk, not one per run of photos.
 
 [[check]]
 id = "utility_pole"
 map_icon = "street-light"
-question = "Is the pole closest to the camera a pole for overhead lines or street lighting?"
+question = "Is the marked pole a pole for overhead lines or street lighting?"
 inventory = true
 find = "street light pole"
+find_by = "video"
 target = "utility or streetlight pole"
-ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a pole for overhead lines or street lighting: a wooden or metal utility pole, a streetlight pole, or a traffic-signal pole with a light arm? Answer no for a tree, a sign post, a parking meter, a flagpole or a pole on private land. If the pole is too far away or mostly hidden to tell, answer unclear."
+ask = "Look at the marked pole. Is it a pole for overhead lines or street lighting: a wooden or metal utility pole, a streetlight pole, or a traffic-signal pole with a light arm? Answer no for a tree, a sign post, a parking meter, a flagpole or a pole on private land. If the pole is too far away or mostly hidden to tell, answer unclear."
 label_yes = "Utility or streetlight pole"
-group_m = 8
 judge = "glimmer"  # stage 1 at medium: agreement 0.79 under 0.85, but no fewer found and no extra false keeps, and of
                    # the 15 photos the two models disagreed on Glimmer was right on 10 (Spark drops signal poles)
 
@@ -51,7 +52,7 @@ find = "street tree"
 target = "street tree"
 ask = "Is this tree planted in the sidewalk or in the planting strip between the sidewalk and the street? Answer no for a tree in a private yard, behind a fence or clearly on private land. If you cannot tell where it is planted, answer unclear."
 label_yes = "Street tree"
-group_m = 8
+group_m = 8  # by photos: by video SAM found 16 of the 39 city trees the photos cover (by photos 19), with 7 repeats
 
 [[check]]
 id = "litter_can"
@@ -59,14 +60,16 @@ map_icon = "litter-bin"
 question = "Is this a public litter or recycling can (a fixed city bin)?"
 inventory = true
 find = "trash can"
+find_by = "video"
 target = "public litter can"
 ask = "Is this a public litter or recycling can on the sidewalk (a fixed city bin)? Answer no for a private wheeled bin put out for collection. If you cannot tell, answer unclear."
 label_yes = "Public litter can"
-group_m = 15
 judge = "glimmer"  # Muse Glimmer answers first; passed stage 1 at medium (agreement 0.86, no extra false keeps)
 
 # Written by the Muse Spark item agent (assist.run_inventory) from the city's pay-station list and tested on
 # assist/testsets/seattle_paystations.json: SAM 8/12 (0/6 on negatives), Spark confirmed 8/8 (2026-10-28).
+# Found by photos, one row per 15 m: the kiosk is small, and by video SAM followed none of scan 4's 4 city pay stations
+# (by photos, 2 of 4).
 [[check]]
 id = "parking_pay_station"
 map_icon = "parking-kiosk"

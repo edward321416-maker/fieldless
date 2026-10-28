@@ -109,11 +109,13 @@ def model_name(model_id: str) -> str:
 
 
 def box_of(row: dict) -> list[float] | None:
-    """The model's box around the object, [x1, y1, x2, y2] in 0-1000 of the photo (the evidence photo is the same photo,
-    only resized), or None when it marked none."""
-    box = ((row.get("model_outputs") or {}).get("check") or {}).get("box")
-    if isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box):
-        return [float(v) for v in box]
+    """The box around the object, [x1, y1, x2, y2] in 0-1000 of the photo (the evidence photo is the same photo, only
+    resized): SAM's, for an object it followed by video (the one Spark was asked about), else Spark's; None when
+    neither marked one."""
+    outputs = row.get("model_outputs") or {}
+    for box in ((outputs.get("find") or {}).get("box"), (outputs.get("check") or {}).get("box")):
+        if isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box):
+            return [float(v) for v in box]
     return None
 
 

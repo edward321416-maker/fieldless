@@ -24,7 +24,7 @@ class FakeOpen:
         self.answers = answers
         self.asked = []
 
-    def answer(self, check, photo):
+    def answer(self, check, photo, box=None):
         self.asked.append(photo.name)
         result = self.answers[photo.name]
         if isinstance(result, Exception):
@@ -144,8 +144,10 @@ def test_wake_pings_the_server_in_the_background_and_never_raises(tmp_path):
     while not pinged and time.time() < deadline:
         time.sleep(0.05)
     assert pinged
-    time.sleep(0.1)
-    (logged,) = [json.loads(l) for l in (tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()]
+    log = tmp_path / "c.jsonl"
+    while not (log.exists() and log.read_text(encoding="utf-8").strip()) and time.time() < deadline:
+        time.sleep(0.05)  # the wake thread logs right after the ping; under load that takes a moment
+    (logged,) = [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines()]
     assert logged["kind"] == "glimmer_wake" and "cold start 503" in logged["error"]
 
 

@@ -325,6 +325,17 @@ def test_a_us_scan_tracks_objects_on_the_sidewalk_and_reports_no_fixed_ones(setu
 RAMP_NO = {"visible": True, "answer": "no", "box": [400, 600, 600, 900], "confidence": 0.8, "note": "no domes"}
 
 
+def by_photos(std=None):
+    """The US standard with every check found by photos, the path the tests below cover (video: the tests after)."""
+    std = std or survey_items.load("US")
+    return dataclasses.replace(std, checks=tuple(dataclasses.replace(c, find_by="photos") for c in std.checks))
+
+
+def on_photos(scan):
+    scan.standard = by_photos()
+    return scan
+
+
 def test_a_us_scan_checks_curb_ramps_one_row_per_ramp_with_evidence(setup):
     conn, _, make, _ = setup
     us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
@@ -338,7 +349,7 @@ def test_a_us_scan_checks_curb_ramps_one_row_per_ramp_with_evidence(setup):
     def spark_ramp(schema_name, parts):
         return RAMP_NO if schema_name == "survey_check" else spark(schema_name, parts)
 
-    result = runner.run_scan(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan))
+    result = runner.run_scan(on_photos(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan)))
     assert result["status"] == "done", result
     (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
     assert (ramp["object_label"], ramp["frame_idx"], ramp["review_status"]) == ("no", 4, "needs_review")
@@ -358,13 +369,13 @@ def test_a_curb_ramp_the_model_cannot_see_is_dropped_kept_and_audited_by_a_perso
     def spark_ramp(schema_name, parts):
         return {**RAMP_NO, "visible": False} if schema_name == "survey_check" else spark(schema_name, parts)
 
-    assert runner.run_scan(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan))["status"] == "done"
+    assert runner.run_scan(on_photos(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan)))["status"] == "done"
     (pick,) = db.dropped(conn, us_scan)
     assert (pick["issue_type"], pick["frame_idx"], pick["audited"]) == ("curb_ramp_warning", 2, True)  # 1 of 1
     (row,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
     assert (row["review_status"], row["review_reasons"]) == ("needs_review", ["dropped_audit"])
     db.set_stage(conn, us_scan, "defects", "pending")
-    runner.run_scan(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan))
+    runner.run_scan(on_photos(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan)))
     assert len(db.dropped(conn, us_scan)) == 1  # a rerun replaces them, like the rows
 
 
@@ -382,9 +393,9 @@ def test_rerunning_the_defects_stage_replaces_the_check_rows(setup):
         return next(answers) if schema_name == "survey_check" else spark(schema_name, parts)
 
     api = FakeApi(spark=spark_ramp, sam=sam_ramp)
-    runner.run_scan(make(api, us_scan))
+    runner.run_scan(on_photos(make(api, us_scan)))
     db.set_stage(conn, us_scan, "defects", "pending")
-    runner.run_scan(make(api, us_scan))
+    runner.run_scan(on_photos(make(api, us_scan)))
     assert [i["object_label"] for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"] == ["yes"]
 
 
@@ -473,7 +484,7 @@ def test_an_unknown_check_id_is_refused_before_anything_is_cleared(setup):
 
 
 class DisagreeingOpen:
-    def answer(self, check, photo):
+    def answer(self, check, photo, box=None):
         return {"visible": True, "answer": "yes", "box": [], "confidence": 0.6, "note": "domes"}
 
 
@@ -488,7 +499,7 @@ def test_a_second_model_that_disagrees_adds_the_models_disagree_reason(setup):
     def spark_ramp(schema_name, parts):
         return RAMP_NO if schema_name == "survey_check" else spark(schema_name, parts)
 
-    scan = make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan)
+    scan = on_photos(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan))
     scan.second_opinion = DisagreeingOpen()
     runner.run_scan(scan)
     (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
@@ -512,7 +523,7 @@ def test_rerunning_the_defects_stage_does_not_ask_sam_again_unless_the_phrase_ch
         return RAMP_NO if schema_name == "survey_check" else spark(schema_name, parts)
 
     api = FakeApi(spark=spark_ramp, sam=sam_ramp)
-    standard = survey_items.load("US")
+    standard = by_photos()
     phrases = {c.find for c in standard.checks}
     scan = make(api, us_scan)
     scan.standard = standard
@@ -554,13 +565,13 @@ def test_a_failed_sam_request_is_not_saved_and_is_asked_again(setup):
 
     api = FakeApi(spark=lambda s, p: RAMP_NO if s == "survey_check" else spark(s, p), sam=sam_ramp)
     scan = make(api, us_scan)
-    scan.standard = survey_items.load("US")
+    scan.standard = by_photos()
     runner.run_scan(scan)
     assert json.loads(scan.state("find_curb_ramp_warning").read_text(encoding="utf-8"))["areas"] == {"0": 0, "2": 1600}
     before = len(sam_calls(api, {"curb cut"}))
     broken["on"] = False
     db.set_stage(conn, us_scan, "defects", "pending")
-    runner.run_scan(make(api, us_scan))
+    runner.run_scan(on_photos(make(api, us_scan)))
     assert sam_calls(api, {"curb cut"})[before:] == [("curb cut", "img4.jpg")]  # only the one that failed
 
 
@@ -627,3 +638,68 @@ def test_the_judge_answers_only_the_checks_that_name_it_and_the_audit_is_seeded_
     assert runner.run_scan(scan)["status"] == "done"
     assert ("utility_pole", judge, us_scan) in seen
     assert all(j is None for cid, j, _ in seen if cid != "utility_pole")
+
+
+CHECK_VIDEO = (2048, 1536)  # the check video of 160 x 120 photos (runner.CHECK_VIDEO_SIDE)
+
+
+def video_calls(api):
+    return [c[1] for c in api.calls if c[0] == "sam_video" and "checks_" in c[2]]
+
+
+def ramp_on_video(broken=None):
+    """SAM's answers for the US checks on the check video: one curb ramp followed through photos 1-3."""
+    def sam_v(prompt, media):
+        if isinstance(media, str) and "checks_" in media:
+            if broken and prompt in broken:
+                raise RuntimeError("stream failed")
+            if prompt == "curb cut":
+                return text([line(f, [record("0", 800, 600, 1200, 1400, *CHECK_VIDEO, 0.9)]) for f in (1, 2, 3)])
+            return ""
+        return us_sam(prompt, media)
+    return sam_v
+
+
+def test_a_us_scan_follows_each_object_by_video_on_one_upload_and_asks_spark_about_its_box(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    asked = []
+
+    def spark_v(schema_name, parts):
+        if schema_name == "survey_check":
+            asked.append(parts[1]["text"])
+            return RAMP_NO
+        return spark(schema_name, parts)
+
+    api = FakeApi(spark=spark_v, sam=ramp_on_video())
+    result = runner.run_scan(make(api, us_scan))
+    assert result["status"] == "done", result
+    (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
+    find = ramp["model_outputs"]["find"]
+    assert (ramp["frame_idx"], find["group_idxs"], ramp["object_label"]) == (1, [1, 2, 3], "no")
+    assert f"at {find['box']}" in asked[0]  # Spark was asked about the box SAM followed
+    assert [c[1] for c in api.calls if c[0] == "upload" and c[1].startswith("checks_")] == ["checks_0000.mp4"]
+    video_checks = {c.find for c in survey_items.load("US").checks if c.find_by == "video"}
+    assert sorted(video_calls(api)) == sorted(video_checks)  # every phrase on the one upload
+    assert ("sam_image", "grey parking kiosk", "img0.jpg") in api.calls  # the pay station is still found by photos
+    assert result["unavailable"]["check_requests"] == 0
+
+
+def test_a_rerun_reuses_sams_video_answers_and_asks_again_only_what_failed(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    broken = {"trash can"}
+    api = FakeApi(spark=lambda s, p: RAMP_NO if s == "survey_check" else spark(s, p), sam=ramp_on_video(broken))
+    first = runner.run_scan(make(api, us_scan))
+    assert first["unavailable"]["check_requests"] == 1  # the litter can request on the one video
+    scan = make(api, us_scan)
+    saved = json.loads(scan.state("find_curb_ramp_warning").read_text(encoding="utf-8"))
+    assert saved["phrase"] == "curb cut" and list(saved["videos"]) == ["0"]
+    assert json.loads(scan.state("find_litter_can").read_text(encoding="utf-8"))["videos"] == {}  # failed: not kept
+    before = len(video_calls(api))
+    broken.clear()
+    db.set_stage(conn, us_scan, "defects", "pending")
+    again = runner.run_scan(make(api, us_scan))
+    assert video_calls(api)[before:] == ["trash can"] and again["unavailable"]["check_requests"] == 0
+    (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
+    assert ramp["model_outputs"]["find"]["group_idxs"] == [1, 2, 3]

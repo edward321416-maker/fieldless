@@ -12,8 +12,8 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from pipeline import (collect, config, db, defects, entrance_detect, entrance_read, events, evidence, geo, scene,
-                      second_opinion, sidewalk, survey_checks, survey_items)
+from pipeline import (collect, config, db, defects, entrance_detect, entrance_read, events, evidence, geo, media,
+                      scene, second_opinion, sidewalk, survey_checks, survey_items)
 from pipeline.cost import CostCapReached, CostMeter
 from pipeline.meta_api import RunAborted, error_text
 from pipeline.parallel import run_parallel
@@ -22,7 +22,8 @@ STAGES = ("collect", "chunks", "scene", "sidewalk", "defects", "sidewalk_evidenc
 INDEPENDENT = {"sidewalk", "defects", "sidewalk_evidence", "entrances", "evidence"}
 RERUN_AFTER = {"defects": {"sidewalk"}, "sidewalk_evidence": {"sidewalk", "defects"},
                "evidence": set(STAGES)}  # a done stage reruns if one of these ran
-SCENE_WORKERS = 3  # Spark video requests are large; fewer at a time
+SCENE_WORKERS = 6  # Spark video requests are large; a 400-photo scan has 7 chunks
+CHECK_VIDEO_SIDE = 2048  # checks found by video see the photos at their own size (collect keeps 2048-px photos)
 RESUME_MIN_USD = 0.10
 _photo_locks: dict[str, threading.Lock] = {}
 _photo_locks_guard = threading.Lock()
@@ -194,36 +195,111 @@ def stage_sidewalk(s: Scan) -> None:
     db.clear_issues(s.conn, s.scan_id, ("obstruction", "fixed_obstruction"))
     by_idx, photos = s.by_idx(), s.photos()
     unavailable = {"tactile_photos": [], "obstacle_requests": []}
-    flags: dict[str, bool | None] = {}  # sampled photo -> tactile paving found; the defects stage reads these
-    for clip, clip_idxs in s.clips().items():
-        tactile = sidewalk.surface_segs(s.api, s.standard.path.surface, sidewalk.sampled(clip_idxs, s.tactile_every),
-                                        photos, s.workers)
-        unavailable["tactile_photos"] += [i for i, v in tactile.items() if v is None]
-        flags.update({str(i): None if v is None else bool(v) for i, v in tactile.items()})
-        clip_chunks = [(c, sc) for c, sc in zip(s.chunks, s.scenes) if c.clip == clip]
-        labels = sidewalk.obstacle_labels(sorted({t for _, sc in clip_chunks for t in sc["obstacle_types"]}),
-                                          s.standard.path)
-        found = run_parallel(lambda item: sidewalk.obstacle_segs(s.api, item[0], labels), clip_chunks, s.workers)
+    clips = s.clips()
+    # Every walk's requests go out together, so a scan of few walks still keeps s.workers requests going.
+    tactile = sidewalk.surface_segs(s.api, s.standard.path.surface,
+                                    [i for idxs in clips.values() for i in sidewalk.sampled(idxs, s.tactile_every)],
+                                    photos, s.workers)
+    unavailable["tactile_photos"] += [i for i, v in tactile.items() if v is None]
+    flags = {str(i): None if v is None else bool(v) for i, v in tactile.items()}  # the defects stage reads these
+    labels = {clip: sidewalk.obstacle_labels(sorted({t for c, sc in zip(s.chunks, s.scenes) if c.clip == clip
+                                                     for t in sc["obstacle_types"]}), s.standard.path)
+              for clip in clips}
+    found = run_parallel(lambda c: sidewalk.obstacle_segs(s.api, c, labels[c.clip], s.workers), s.chunks, s.workers)
+    found_events = []
+    for clip, clip_idxs in clips.items():
         ratios: dict[str, dict[int, float]] = {}
-        for (chunk, _), obstacles in zip(clip_chunks, found):
+        for chunk, obstacles in zip(s.chunks, found):
+            if chunk.clip != clip:
+                continue
             unavailable["obstacle_requests"] += [[chunk.idxs[0], label] for label, v in obstacles.items() if v is None]
             for label, by_label in events.chunk_ratios(obstacles, chunk, tactile, by_idx, clip_idxs).items():
                 ratios.setdefault(label, {}).update(by_label)
-        for event in events.find_events(ratios, clip, clip_idxs):
-            if events.is_fixed(event.label) and not s.standard.path.fixed:
-                continue  # US: poles and hydrants at the curb edge are normal, not reported
-            row = _issue_row(s, event, by_idx, photos)
-            if row is not None:
-                db.add_issue(s.conn, s.scan_id, row)
+        found_events += [e for e in events.find_events(ratios, clip, clip_idxs)
+                         if s.standard.path.fixed or not events.is_fixed(e.label)]  # US: poles at the curb are normal
+    for row in run_parallel(lambda e: _issue_row(s, e, by_idx, photos), found_events, s.workers):
+        if row is not None:
+            db.add_issue(s.conn, s.scan_id, row)
     s.state("sidewalk_unavailable").write_text(json.dumps(unavailable), encoding="utf-8")
     s.state("tactile").write_text(json.dumps(flags), encoding="utf-8")
 
 
-def _run_check(s: Scan, check, clips, photos, by_idx, judge=None,
-               dropped: list[dict] | None = None) -> tuple[list[dict], dict]:
-    """survey_checks.run_check, reusing the SAM areas a rerun already paid for: state find_<id>.json keeps the areas
-    measured for the check's `find` phrase, and is ignored when the phrase has changed. Saved even when the run stops
-    part way (cost cap), so the next run only asks for the photos not yet measured."""
+def _check_videos(s: Scan) -> dict[int, survey_checks.Video]:
+    """The videos checks are found on, one per chunk at the photos' own size, keyed by the chunk's first photo idx.
+    Made once per scan (work/checks_<first>.mp4); a rerun finds them made."""
+    photos = s.photos()
+
+    def one(chunk):
+        path = s.work / f"checks_{chunk.idxs[0]:04d}.mp4"
+        if path.exists():
+            info = media.probe(path)
+            size = (info.width, info.height)
+        else:
+            size = media.images_to_mp4([photos[i] for i in chunk.idxs], path, long_side=CHECK_VIDEO_SIDE)
+        return survey_checks.Video(tuple(chunk.idxs), size, chunk.clip)
+
+    return {v.idxs[0]: v for v in run_parallel(one, s.chunks, s.workers)}
+
+
+def _find_on_videos(s: Scan, checks, videos: dict[int, survey_checks.Video]) -> dict[str, dict[int, str | None]]:
+    """SAM's answer for every check found by video on every video: {check id: {video key: text, or None when the
+    request failed}}. Each video is uploaded once and asked every check's phrase at once. State find_<id>.json keeps
+    the answers for the check's phrase, so a rerun asks only what it does not have (as _run_check does for photos)."""
+    answers: dict[str, dict[int, str | None]] = {}
+    for check in checks:
+        answers[check.id] = {}
+        kept = s.state(f"find_{check.id}")
+        try:
+            saved = json.loads(kept.read_text(encoding="utf-8")) if kept.exists() else {}
+            if saved.get("phrase") == check.find:
+                answers[check.id] = {int(k): t for k, t in saved["videos"].items() if int(k) in videos}
+        except (ValueError, KeyError, AttributeError):
+            pass  # a half-written file or a photos check's areas: ask again
+
+    def one_video(key):
+        todo = [c for c in checks if key not in answers[c.id]]
+        if not todo:
+            return {}
+        video = videos[key]
+
+        def ask(file_id, check):
+            try:
+                return s.api.sam_video(check.find, file_id, frames=len(video.idxs))
+            except CostCapReached:
+                raise
+            except Exception:
+                return None  # this video is unavailable for this check (spec 14)
+
+        try:
+            with s.api.uploaded(s.work / f"checks_{key:04d}.mp4") as file_id:
+                texts = run_parallel(lambda c: ask(file_id, c), todo, len(todo))
+        except CostCapReached:
+            raise
+        except Exception:
+            texts = [None] * len(todo)  # the upload failed
+        return dict(zip((c.id for c in todo), texts))
+
+    try:
+        for key, got in zip(videos, run_parallel(one_video, list(videos), s.workers)):
+            for check_id, text in got.items():
+                answers[check_id][key] = text
+    finally:
+        for check in checks:
+            s.state(f"find_{check.id}").write_text(json.dumps(
+                {"phrase": check.find, "videos": {str(k): t for k, t in answers[check.id].items() if t is not None}}),
+                encoding="utf-8")
+    return answers
+
+
+def _run_check(s: Scan, check, clips, photos, by_idx, judge=None, dropped: list[dict] | None = None,
+               video=None) -> tuple[list[dict], dict]:
+    """survey_checks.run_check. A check found by photos reuses the SAM areas a rerun already paid for: state
+    find_<id>.json keeps the areas measured for the check's `find` phrase, and is ignored when the phrase has changed.
+    Saved even when the run stops part way (cost cap), so the next run only asks for the photos not yet measured. A
+    check found by video takes video = (answers, videos) from _find_on_videos."""
+    if check.find_by == "video":
+        return survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers, judge=judge,
+                                       audit_seed=s.scan_id, dropped=dropped, video=video)
     kept = s.state(f"find_{check.id}")
     known: dict[int, int] = {}
     if kept.exists():
@@ -268,12 +344,28 @@ def stage_defects(s: Scan) -> None:
                 db.add_issue(s.conn, s.scan_id, row)
     kept = s.state("checks_unavailable")
     unavailable: dict[str, dict] = json.loads(kept.read_text(encoding="utf-8")) if only and kept.exists() else {}
-    for check in to_run:
+    by_video = [c for c in to_run if c.find_by == "video"]
+    videos = _check_videos(s) if by_video else {}
+    answers = _find_on_videos(s, by_video, videos)
+
+    def one(check):
         judge = s.judge if s.judge is not None and check.judge == "glimmer" else None
         gone: list[dict] = []
-        rows, missing = _run_check(s, check, clips, photos, by_idx, judge, dropped=gone)
+        rows, missing = _run_check(s, check, clips, photos, by_idx, judge, dropped=gone,
+                                   video=(answers[check.id], videos) if check.find_by == "video" else None)
         if s.second_opinion is not None:
             rows = second_opinion.apply(s.second_opinion, check, rows, photos, s.workers)
+        return rows, missing, gone
+
+    # The checks run at once (the API client keeps the requests in flight under its limit); Glimmer's run after, back
+    # to back. Rows are written in to_run's order.
+    plain = [c for c in to_run if not (s.judge is not None and c.judge == "glimmer")]
+    done = dict(zip((c.id for c in plain), run_parallel(one, plain, len(plain))))
+    for check in to_run:
+        if check.id not in done:
+            done[check.id] = one(check)
+    for check in to_run:
+        rows, missing, gone = done[check.id]
         unavailable[check.id] = missing
         for row in rows:
             db.add_issue(s.conn, s.scan_id, row)

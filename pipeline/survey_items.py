@@ -21,6 +21,9 @@ ICON_NAME = re.compile(r"[a-z][a-z0-9-]*")  # a shape in the web icon set
 KOREA = (124.0, 33.0, 132.0, 39.0)  # min_lng, min_lat, max_lng, max_lat
 
 JUDGES = ("spark", "glimmer")  # glimmer: Muse Glimmer served on Modal (docs/specs/2026-10-28-glimmer-modal-design.md)
+# How SAM 3.1 finds a check's objects: "video" tracks each object through the walk's photos joined as a video, one row
+# per object; "photos" looks at every second photo alone and cuts runs of photos into pieces (group_m).
+FIND_BY = ("photos", "video")
 
 @dataclass(frozen=True)
 class PathSpec:
@@ -48,6 +51,7 @@ class Check:
     judge: str = "spark"  # who answers `ask`: "spark" (Muse Spark), or "glimmer" (Muse Glimmer, inventory checks only)
     map_icon: str = ""  # the shape drawn in the item's map marker (web icon set); empty: the target's first letter
     question: str = ""  # a short question for people (the screen); empty: `ask`, the sentence the model is asked
+    find_by: str = "photos"  # FIND_BY
 
     def label(self, answer: str | None) -> tuple[str, str]:
         """(icon, text) for an answer; anything but yes or no is unclear."""
@@ -111,6 +115,11 @@ def _check(table: dict, where: str) -> Check:
         if isinstance(group_m, bool) or not isinstance(group_m, (int, float)) or group_m <= 0:
             raise ValueError(f"{where}: group_m must be a positive number of metres")
         group_m = float(group_m)
+    find_by = table.get("find_by", "photos")
+    if find_by not in FIND_BY:
+        raise ValueError(f"{where}: find_by must be one of {', '.join(FIND_BY)}, not {find_by!r}")
+    if find_by == "video" and group_m is not None:
+        raise ValueError(f"{where}: group_m cuts runs of photos; a check found by video has one row per object")
     judge = table.get("judge", "spark")
     if judge not in JUDGES:
         raise ValueError(f"{where}: judge must be one of {', '.join(JUDGES)}, not {judge!r}")
@@ -123,7 +132,7 @@ def _check(table: dict, where: str) -> Check:
     return Check(id=check_id, find=find, target=target, ask=_need(table, "ask", where), report_when=report,
                  label_yes=label_yes, label_no=label_no, label_unclear=unclear, icon_yes=icon_yes, icon_no=icon_no,
                  inventory=inventory, group_m=group_m, judge=judge, map_icon=map_icon,
-                 question=table.get("question", ""))
+                 question=table.get("question", ""), find_by=find_by)
 
 
 def parse(text: str, where: str) -> Standard:

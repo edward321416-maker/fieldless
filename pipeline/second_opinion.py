@@ -67,9 +67,10 @@ class OpenModel:
                                   timeout=self.timeout, max_retries=self.retries)
         return self._client
 
-    def answer(self, check: Check, photo: Path) -> dict:
-        """The check's answer in survey_checks.SCHEMA, plus "model": who answered. After wake(), it first waits for
-        the server to be up, so the request's timeout counts the answer, not the container's start."""
+    def answer(self, check: Check, photo: Path, box: list[int] | None = None) -> dict:
+        """The check's answer in survey_checks.SCHEMA, plus "model": who answered; with box, about the object SAM
+        marked there. After wake(), it first waits for the server to be up, so the request's timeout counts the
+        answer, not the container's start."""
         ready = self._ready
         if ready is not None:
             ready.wait(self.wake_wait_s)
@@ -77,7 +78,7 @@ class OpenModel:
         messages = [{"role": "system", "content": self.system}] if self.system else []
         messages.append({"role": "user", "content": [
             {"type": "image_url", "image_url": {"url": image_part(photo)["image_url"]}},
-            {"type": "text", "text": prompt(check)}]})
+            {"type": "text", "text": prompt(check, box)}]})
         resp = self.client.chat.completions.create(
             model=self.model, max_tokens=self.max_tokens, messages=messages,
             response_format={"type": "json_schema",
@@ -152,7 +153,7 @@ def apply(model, check: Check, rows: list[dict], photos: dict[int, Path], worker
 
     def one(row):
         try:
-            answer = model.answer(check, photos[row["frame_idx"]])
+            answer = model.answer(check, photos[row["frame_idx"]], box=(row["model_outputs"].get("find") or {}).get("box"))
             if not isinstance(answer, dict) or answer.get("answer") not in ("yes", "no", "unclear"):
                 raise ValueError(f"unexpected answer from {name}: {str(answer)[:200]}")
             return answer
