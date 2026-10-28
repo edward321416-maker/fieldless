@@ -7,6 +7,7 @@ stage that stopped (spec 14). Every stage after scene is independent: one failin
 threads only make API requests; rows are written from the main thread.
 """
 import json
+import multiprocessing
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -85,13 +86,27 @@ class Scan:
         return out
 
 
-def meter_for(conn, scan: dict, scan_cap_usd: float | None = None, public_cap_usd: float | None = None) -> CostMeter:
+class InWorkerProcess(RuntimeError):
+    """A scan was about to start inside a worker process."""
+
+
+def refuse_in_worker() -> None:
+    """Raise InWorkerProcess inside a multiprocessing worker. On Windows a worker re-runs the script that started
+    the parent; on 2026-10-29 a script without a __main__ guard started a scan in each of 8 mask-decoding workers,
+    which spent $23.84 in ten minutes before they were stopped. A scan starts only in a main process."""
+    if multiprocessing.parent_process() is not None:
+        raise InWorkerProcess("a scan never starts inside a worker process (a script without a __main__ guard?)")
+
+
+def meter_for(conn, scan: dict, scan_cap_usd: float | None = None, public_cap_usd: float | None = None,
+              daily_cap_usd: float | None = None) -> CostMeter:
     """The scan's cap: SCAN_COST_CAP_USD (or scan_cap_usd, for a local CLI run the user approved), and no more than
-    what other scans left of today's DAILY_COST_CAP_USD. For a scan a visitor started, also no more than other visitor
-    scans left of public_cap_usd. Spend from earlier attempts of this scan already counts."""
+    what other scans left of today's DAILY_COST_CAP_USD (or daily_cap_usd, likewise approved for one local run). For
+    a scan a visitor started, also no more than other visitor scans left of public_cap_usd. Spend from earlier
+    attempts of this scan already counts."""
     today = db.now()[:10]
     others = db.daily_cost(conn, today) - (scan["cost_usd"] if scan["created_at"].startswith(today) else 0.0)
-    cap = min(scan_cap_usd or config.SCAN_COST_CAP_USD, config.DAILY_COST_CAP_USD - others)
+    cap = min(scan_cap_usd or config.SCAN_COST_CAP_USD, (daily_cap_usd or config.DAILY_COST_CAP_USD) - others)
     if public_cap_usd is not None and scan.get("client_ip_hash"):
         cap = min(cap, public_cap_usd - (db.public_cost(conn) - scan["cost_usd"]))
     return CostMeter(cap_usd=max(0.0, cap), spent_usd=scan["cost_usd"])
@@ -469,6 +484,7 @@ def summary(conn, scan_id: int, work: Path | None = None) -> dict:
 
 
 def run_scan(s: Scan) -> dict:
+    refuse_in_worker()
     conn, scan_id = s.conn, s.scan_id
     started = time.time()
     before = db.get_scan(conn, scan_id)

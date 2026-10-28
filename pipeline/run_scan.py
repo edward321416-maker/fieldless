@@ -16,10 +16,12 @@ import argparse
 import json
 import os
 import sys
+from contextlib import contextmanager
+from pathlib import Path
 
 from pipeline import collect, config, db, second_opinion, sidewalk, survey_items
 from pipeline.meta_api import MetaApi
-from pipeline.runner import STAGES, Scan, meter_for, run_scan
+from pipeline.runner import STAGES, Scan, meter_for, refuse_in_worker, run_scan
 
 
 def parse_bbox(text: str) -> list[float]:
@@ -52,7 +54,35 @@ def positive_float(text: str) -> float:
     return value
 
 
+@contextmanager
+def one_scan_at_a_time(run_dir: Path):
+    """Hold run_dir/scan.lock while a scan runs from the command line; a second scan in the same run folder stops at
+    once instead of spending beside it (each scan reads the day's spend only when it starts). The operating system
+    lets go of the lock when the process ends, however it ends."""
+    path = Path(run_dir) / "scan.lock"
+    handle = open(path, "a+")
+    try:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise ScanAlreadyRunning(f"another scan is running in {run_dir}; wait for it to finish") from None
+        yield
+    finally:
+        handle.close()
+
+
+class ScanAlreadyRunning(RuntimeError):
+    """A command-line scan is already running in this run folder."""
+
+
 def main(argv: list[str] | None = None) -> int:
+    refuse_in_worker()  # before anything is created or spent
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # D1: Korean names crashed a cp949 console
     parser = argparse.ArgumentParser(description="Scan an area's Mapillary photos for the items of a survey standard "
@@ -68,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cap-usd", type=positive_float,
                         help="local runs only: this scan's cost cap in dollars (default: the $3 scan cap); "
                              "the daily cap still applies")
+    parser.add_argument("--daily-cap-usd", type=positive_float,
+                        help="local runs only, with the user's approval: today's cap for this run (default: "
+                             f"${config.DAILY_COST_CAP_USD:.0f} per UTC day per run folder)")
     parser.add_argument("--run", default="dev", help="run folder under <data>/runs")
     parser.add_argument("--glimmer", action="store_true",
                         help="Muse Glimmer (GLIMMER_URL) judges the checks with judge = \"glimmer\". For large runs: its "
@@ -92,6 +125,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.glimmer and not os.environ.get("GLIMMER_URL"):
         parser.error("--glimmer needs GLIMMER_URL, the deployed fieldless-glimmer address")
     run_dir = config.run_dir(args.run)
+    with one_scan_at_a_time(run_dir):
+        return _scan(parser, args, run_dir)
+
+
+def _scan(parser, args, run_dir: Path) -> int:
     conn = db.connect(run_dir / "threshold.db")
     if args.resume is not None:
         try:
@@ -109,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.rerun:
         db.set_stage(conn, scan_id, args.rerun, "pending")
     scan = db.get_scan(conn, scan_id)
-    api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan, args.cap_usd))
+    api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan, args.cap_usd, daily_cap_usd=args.daily_cap_usd))
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,
                            tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir),
                            judge=second_opinion.glimmer_from_env(run_dir) if args.glimmer else None,

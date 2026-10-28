@@ -36,7 +36,7 @@ SETTINGS = {
     "DEMO_SCANS": "4:Seattle (Capitol Hill);1:Seongsu",
     "SCANS_PER_IP_PER_DAY": "0",
     "PUBLIC_COST_CAP_USD": "40",
-    "THRESHOLD_PARSE_PROCESSES": "2",  # mask decoding processes (pipeline/sam_output.py); the container has 2 CPUs
+    "THRESHOLD_PARSE_PROCESSES": "1",  # decode masks in place: Modal's entry point, not ours, starts the container
     "PYTHONUNBUFFERED": "1",
     "PYTHONPATH": APP_DIR,
 }

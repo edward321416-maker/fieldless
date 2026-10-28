@@ -704,3 +704,22 @@ def test_a_rerun_reuses_sams_video_answers_and_asks_again_only_what_failed(setup
     assert video_calls(api)[before:] == ["street light pole"] and again["unavailable"]["check_requests"] == 0
     (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
     assert ramp["model_outputs"]["find"]["group_idxs"] == [1, 2, 3]
+
+
+def test_a_scan_never_starts_inside_a_worker_process(setup, monkeypatch):
+    conn, scan_id, make, _ = setup
+    monkeypatch.setattr(runner.multiprocessing, "parent_process", lambda: object())  # as in a spawned worker
+
+    with pytest.raises(runner.InWorkerProcess):
+        runner.run_scan(make(FakeApi(spark=spark, sam=sam)))
+
+    assert db.get_scan(conn, scan_id)["status"] == "queued"  # nothing ran
+
+
+def test_an_approved_daily_cap_replaces_the_default_for_one_run(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    spent = db.create_scan(conn, "mapillary", BBOX)
+    db.update_scan(conn, spent, cost_usd=config.DAILY_COST_CAP_USD - 1.0)  # today's other scans left $1
+    scan = db.get_scan(conn, db.create_scan(conn, "mapillary", BBOX))
+    assert runner.meter_for(conn, scan, 5.0).cap_usd == pytest.approx(1.0)
+    assert runner.meter_for(conn, scan, 5.0, daily_cap_usd=config.DAILY_COST_CAP_USD + 10).cap_usd == 5.0

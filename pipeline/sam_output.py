@@ -6,8 +6,10 @@ meta_sam_parser is pure Python: a 58 KB answer takes about 1 s to read and 1 s m
 sidewalk request went from 7.6 s to 24.5 s). So boxes are read with the grammar's own regular expressions
 (boxes()), and answers whose masks are needed are decoded in other processes (parse_away())."""
 import atexit
+import multiprocessing
 import os
 import re
+import sys
 import threading
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -144,12 +146,22 @@ def _shutdown() -> None:
 atexit.register(_shutdown)
 
 
+def _pool_safe() -> bool:
+    """Whether worker processes may be started: only when this program was started as a module (python -m ...).
+    A Windows worker re-runs the main script; a script run by path (`python script.py`) would run all over again in
+    every worker (2026-10-29: a scan started in each of 8 workers)."""
+    if multiprocessing.parent_process() is not None:
+        return False  # a worker never starts workers of its own
+    main = sys.modules.get("__main__")
+    return getattr(main, "__spec__", None) is not None
+
+
 def parse_away(text: str, video: bool) -> list[Seg]:
     """parse() with masks, in another process when the answer is large, so decoding never holds this process's GIL
     while other requests stream. Errors are raised as parse() raises them; a pool that broke is replaced and the
-    answer is decoded here instead."""
+    answer is decoded here instead. Decoded here as well when workers are not safe to start (_pool_safe)."""
     global _pool
-    if PARSE_PROCESSES <= 1 or len(text) < POOL_MIN_CHARS:
+    if PARSE_PROCESSES <= 1 or len(text) < POOL_MIN_CHARS or not _pool_safe():
         return parse(text, video)
     with _pool_lock:
         if _pool is None:

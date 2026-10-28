@@ -124,3 +124,21 @@ def test_cap_usd_raises_this_scans_cap_for_a_local_run(monkeypatch):
         run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "cap", "--cap-usd", "0"])
     with pytest.raises(SystemExit):
         run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "cap", "--cap-usd", "lots"])
+
+
+def test_the_command_refuses_to_start_a_scan_inside_a_worker_process(tmp_path, monkeypatch):
+    from pipeline import db, runner
+    monkeypatch.setattr(runner.multiprocessing, "parent_process", lambda: object())
+
+    with pytest.raises(runner.InWorkerProcess):
+        run_scan.main(["--run", "worker", "--bbox", "126.97,37.55,126.99,37.57"])
+
+    assert not (config.run_dir("worker") / "threshold.db").exists() or db.connect(
+        config.run_dir("worker") / "threshold.db").execute("SELECT COUNT(*) FROM scan").fetchone()[0] == 0
+
+
+def test_a_second_scan_in_the_same_run_folder_stops_at_once():
+    with run_scan.one_scan_at_a_time(config.run_dir("busy")):
+        with pytest.raises(run_scan.ScanAlreadyRunning):
+            run_scan.main(["--run", "busy", "--bbox", "126.97,37.55,126.99,37.57"])
+    assert not (config.run_dir("busy") / "threshold.db").exists()  # stopped before anything was made

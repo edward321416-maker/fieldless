@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -108,3 +109,22 @@ def test_a_large_answer_is_decoded_in_another_process_with_the_same_result(monke
     assert away.box == here.box and away.conf == here.conf and (away.mask == here.mask).all()
     with pytest.raises(ValueError):
         sam_output.parse_away("<0f>1<|box;x1=1|><|mask;x=0;y=0;data=1,1,!!|>\n", video=False)
+
+
+def test_masks_are_decoded_in_place_when_the_program_was_started_as_a_script(monkeypatch):
+    import types
+    from pipeline import sam_output
+    monkeypatch.setattr(sam_output, "PARSE_PROCESSES", 2)
+    monkeypatch.setattr(sam_output, "POOL_MIN_CHARS", 0)
+    script = types.ModuleType("__main__")
+    script.__spec__ = None  # python script.py: a worker would run the script again
+    monkeypatch.setitem(sys.modules, "__main__", script)
+
+    def no_pool(*a, **k):
+        raise AssertionError("no worker process may start")
+
+    monkeypatch.setattr(sam_output, "ProcessPoolExecutor", no_pool)
+    monkeypatch.setattr(sam_output, "_pool", None)
+    answer = text([line(0, [record("1", 10, 20, 50, 60, 100, 100, 0.9)])])
+    (seg,) = sam_output.parse_away(answer, video=False)
+    assert seg.box == (10, 20, 50, 60) and seg.mask is not None
