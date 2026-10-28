@@ -5,6 +5,7 @@
 Starting a survey passes the spec 13 limits (invite code if set, area size, surveys per address per day). Scans run
 one at a time on the ScanWorker thread, and the pipeline's own caps ($3 per scan, $10 per day) still apply.
 """
+import json
 import logging
 import re
 import threading
@@ -171,25 +172,56 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         worker.submit(scan_id)
         return {"id": scan_id}
 
+    def city_check(scan_id: int) -> dict | None:
+        """The offline comparison with the city's records (eval, docs/specs/2026-10-28-ui-redesign-design.md 4.1),
+        if one was made for this scan. A file that cannot be read is left out, not an error for the visitor."""
+        path = run_dir / f"city_check_scan{scan_id}.json"
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            log.exception("could not read %s", path)
+            return None
+        return data if isinstance(data, dict) else None
+
+    def headings(conn, scan_id: int) -> dict[int, float | None]:
+        return {f["idx"]: f.get("compass") for f in db.frames(conn, scan_id)}
+
     @app.get("/api/scans/{scan_id}")
     def get_scan(scan_id: int):
         with connect() as conn:
             scan = found(db.get_scan, conn, scan_id, "scan")
             return views.scan_json(scan, db.entrances(conn, scan_id), db.issues(conn, scan_id),
-                                   km=views.surveyed_km(db.frames(conn, scan_id)))
+                                   km=views.surveyed_km(db.frames(conn, scan_id)), city_check=city_check(scan_id))
+
+    @app.get("/api/scans/{scan_id}/walks")
+    def get_walks(scan_id: int):
+        """Each walk's photo positions in order, for the map's coverage line."""
+        with connect() as conn:
+            found(db.get_scan, conn, scan_id, "scan")
+            walks: dict[int, list] = {}
+            for f in db.frames(conn, scan_id):
+                if f["lat"] is not None and f["lng"] is not None:
+                    walks.setdefault(f["clip"], []).append([f["lng"], f["lat"]])
+            return [{"clip": clip, "points": points} for clip, points in sorted(walks.items())]
 
     @app.get("/api/scans/{scan_id}/entrances")
     def get_entrances(scan_id: int):
         with connect() as conn:
             found(db.get_scan, conn, scan_id, "scan")
-            return [views.entrance_json(row) for row in db.entrances(conn, scan_id)]
+            heading = headings(conn, scan_id)
+            return [views.entrance_json(row, heading=heading.get(row["frame_idx"]))
+                    for row in db.entrances(conn, scan_id)]
 
     @app.get("/api/scans/{scan_id}/issues")
     def get_issues(scan_id: int):
         with connect() as conn:
             std = views.standard_of(found(db.get_scan, conn, scan_id, "scan"))
+            heading = headings(conn, scan_id)
             rows = [row for row in db.issues(conn, scan_id) if row["review_status"] != "rejected"]
-            return [views.issue_json(row, std=std) for row in sorted(rows, key=lambda r: views.issue_order(r, std))]
+            return [views.issue_json(row, std=std, heading=heading.get(row["frame_idx"]))
+                    for row in sorted(rows, key=lambda r: views.issue_order(r, std))]
 
     @app.get("/api/scans/{scan_id}/files.zip")
     def get_files(scan_id: int):
@@ -226,7 +258,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             db.add_review_seconds(conn, row["scan_id"], body.seconds)
             if store:
                 store.request_save()
-            return views.entrance_json(db.get_entrance(conn, entrance_id))
+            return entrance_out(conn, entrance_id)
 
     @app.post("/api/issues/{issue_id}/review")
     def review_issue(issue_id: int, body: IssueReview):
@@ -246,7 +278,47 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             db.add_review_seconds(conn, row["scan_id"], body.seconds)
             if store:
                 store.request_save()
-            return views.issue_json(db.get_issue(conn, issue_id), std=std)
+            return issue_out(conn, issue_id)
+
+    def entrance_out(conn, entrance_id: int) -> dict:
+        row = db.get_entrance(conn, entrance_id)
+        return views.entrance_json(row, heading=db.frame_compass(conn, row["scan_id"], row["frame_idx"]))
+
+    def issue_out(conn, issue_id: int) -> dict:
+        row = db.get_issue(conn, issue_id)
+        std = views.standard_of(db.get_scan(conn, row["scan_id"]))
+        return views.issue_json(row, std=std, heading=db.frame_compass(conn, row["scan_id"], row["frame_idx"]))
+
+    def take_back(row: dict, kind: str) -> tuple[dict, float]:
+        """The fields that undo the row's last decision (review.undo) and the seconds to take off the review time."""
+        if row["scan_id"] in demo_ids:
+            raise HTTPException(403, "Demo surveys are read-only")
+        try:
+            return review.undo(row, kind, db.now())
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from None
+
+    @app.post("/api/entrances/{entrance_id}/review/undo")
+    def undo_entrance(entrance_id: int):
+        with review_lock, connect() as conn:
+            row = found(db.get_entrance, conn, entrance_id, "entrance")
+            fields, seconds = take_back(row, "entrance")
+            db.update_entrance(conn, entrance_id, **fields)
+            db.add_review_seconds(conn, row["scan_id"], -seconds)
+            if store:
+                store.request_save()
+            return entrance_out(conn, entrance_id)
+
+    @app.post("/api/issues/{issue_id}/review/undo")
+    def undo_issue(issue_id: int):
+        with review_lock, connect() as conn:
+            row = found(db.get_issue, conn, issue_id, "sidewalk issue")
+            fields, seconds = take_back(row, "issue")
+            db.update_issue(conn, issue_id, **fields)
+            db.add_review_seconds(conn, row["scan_id"], -seconds)
+            if store:
+                store.request_save()
+            return issue_out(conn, issue_id)
 
     if settings.static_dir.is_dir():
         app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="web")

@@ -416,3 +416,47 @@ def test_cant_tell_from_the_photo_keeps_the_item_for_a_site_visit_and_counts_the
     assert db.get_scan(store(), scan_id)["review_seconds"] == 12.0
     again = client.post(f"/api/issues/{broken}/review", json={"action": "confirm", "seconds": 1.0})
     assert again.status_code == 409  # a person has answered it
+
+
+
+def test_walks_headings_and_the_city_check_file(make):
+    client, _ = make()
+    scan_id, *_ = seed()
+    conn = store()
+    db.add_frames(conn, scan_id, [
+        {"idx": i, "clip": clip, "image_id": f"img{i}", "sequence_id": "s", "lat": 37.5623 + i / 1e4,
+         "lng": 126.985, "compass": 90.0 + i, "captured_at": "2025-09-24T07:21:37Z", "creator": "c",
+         "width": 2048, "height": 1536} for i, clip in [(2, 0), (5, 0), (9, 1), (11, 1)]])
+    walks = client.get(f"/api/scans/{scan_id}/walks").json()
+    assert [w["clip"] for w in walks] == [0, 1] and walks[0]["points"][0] == pytest.approx([126.985, 37.5625])
+    assert sorted(r["heading"] for r in client.get(f"/api/scans/{scan_id}/issues").json()) == [95.0, 101.0]
+    assert sorted(e["heading"] for e in client.get(f"/api/scans/{scan_id}/entrances").json()) == [92.0, 99.0]
+    assert "city_check" not in client.get(f"/api/scans/{scan_id}").json()
+    path = config.run_dir("server") / f"city_check_scan{scan_id}.json"
+    path.write_text("{not json", encoding="utf-8")
+    assert "city_check" not in client.get(f"/api/scans/{scan_id}").json()  # a broken file is left out
+    path.write_text('{"scan_id": %d, "items": {}}' % scan_id, encoding="utf-8")
+    assert client.get(f"/api/scans/{scan_id}").json()["city_check"] == {"scan_id": scan_id, "items": {}}
+    assert client.get("/api/scans/999/walks").status_code == 404
+
+
+def test_undo_takes_back_a_decision_and_its_seconds_for_a_minute(make):
+    client, _ = make()
+    scan_id, stairs, sill, _, broken = seed()
+    client.post(f"/api/issues/{broken}/review", json={"action": "reject", "seconds": 8.0})
+    assert client.get(f"/api/scans/{scan_id}/issues").json()[-1]["id"] != broken  # gone from the map
+    back = client.post(f"/api/issues/{broken}/review/undo").json()
+    assert back["review_status"] == "needs_review" and db.get_issue(store(), broken)["corrections"] == []
+    assert db.get_scan(store(), scan_id)["review_seconds"] == 0.0
+    assert client.post(f"/api/issues/{broken}/review/undo").status_code == 409  # nothing left to take back
+    client.post(f"/api/entrances/{sill}/review", json={"action": "correct", "seconds": 5.0, "step_count": 0})
+    back = client.post(f"/api/entrances/{sill}/review/undo").json()
+    assert back["step_count"] == 1 and back["review_status"] == "needs_review"
+    client.post(f"/api/entrances/{stairs}/review", json={"action": "confirm", "seconds": 3.0})
+    conn = store()
+    row = db.get_entrance(conn, stairs)
+    db.update_entrance(conn, stairs, corrections=[{**row["corrections"][0], "at": "2020-01-01T00:00:00Z"}])
+    assert client.post(f"/api/entrances/{stairs}/review/undo").status_code == 409  # too late
+    assert db.get_scan(store(), scan_id)["review_seconds"] == 3.0
+    demo_client, _ = make(demo_scans=((scan_id, "Demo"),))
+    assert demo_client.post(f"/api/entrances/{stairs}/review/undo").status_code == 403

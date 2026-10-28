@@ -65,7 +65,7 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
     paths = ["/api/config", "/api/demo"]
     for scan_id, _ in scans:
         paths += [f"/api/scans/{scan_id}", f"/api/scans/{scan_id}/entrances", f"/api/scans/{scan_id}/issues",
-                  f"/api/scans/{scan_id}/files.zip"]
+                  f"/api/scans/{scan_id}/walks", f"/api/scans/{scan_id}/files.zip"]
     evidence = config.run_dir(run) / "evidence"
     written = []
     for path in paths:

@@ -10,6 +10,15 @@ ISSUE_ICONS = {"missing_blocks": "✖", "cover_cut": "◼", "fixed_obstruction":
 MAX_STEP_M = 50.0  # a longer jump between consecutive photos of one walk is a gap in coverage, not surveyed street
 SCAN_FIELDS = ("id", "status", "stage_status", "bbox", "image_count", "captured_from", "captured_to", "cost_usd",
                "processing_seconds", "review_seconds", "error")
+# What the pipeline's stages find besides a standard's checks, described like a check for the map and its legend, so
+# the web app names no survey item itself (docs/ui-rules.md U2). KR tactile defects come first, as in the standard.
+STAGE_ITEMS = {
+    "missing_blocks": {"target": "missing tactile blocks", "map_icon": "tiles"},
+    "cover_cut": {"target": "tactile line cut by a cover", "map_icon": "cover"},
+    "fixed_obstruction": {"target": "fixed object on tactile paving", "map_icon": "block"},
+    "obstruction": {"target": "object in the walking path", "map_icon": "cone"},
+    "entrance": {"target": "shop entrance", "map_icon": "door"},
+}
 
 
 def is_old(captured_at: str | None, now: datetime | None = None) -> bool:
@@ -97,6 +106,24 @@ def model_name(model_id: str) -> str:
     return MODEL_NAMES.get(model_id, model_id)
 
 
+def box_of(row: dict) -> list[float] | None:
+    """The model's box around the object, [x1, y1, x2, y2] in 0-1000 of the photo (the evidence photo is the same photo,
+    only resized), or None when it marked none."""
+    box = ((row.get("model_outputs") or {}).get("check") or {}).get("box")
+    if isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box):
+        return [float(v) for v in box]
+    return None
+
+
+def items_json(std: survey_items.Standard) -> list[dict]:
+    """Every kind of finding the scan can show, in the order the map gives them colours: the standard's checks, then
+    the stages' own (KR tactile defects only where the standard has them)."""
+    out = [{"id": c.id, "target": c.target, "map_icon": c.map_icon, "kind": "check", "inventory": c.inventory}
+           for c in std.checks]
+    stage = [k for k in STAGE_ITEMS if std.tactile_defects or k not in ("missing_blocks", "cover_cut", "fixed_obstruction")]
+    return out + [{"id": k, **STAGE_ITEMS[k], "kind": "stage", "inventory": False} for k in stage]
+
+
 def check_json(row: dict, std: survey_items.Standard) -> dict | None:
     check = std.check(row["issue_type"])
     if check is None:
@@ -118,8 +145,9 @@ def second_json(row: dict) -> dict | None:
     return {"answer": so["answer"], "agree": so["agree"], "model": model_name(so.get("model") or second_opinion.MODEL)}
 
 
-def entrance_json(row: dict, now: datetime | None = None) -> dict:
-    return {"id": row["id"], "lat": row["lat"], "lng": row["lng"], "name": row.get("place_name") or "",
+def entrance_json(row: dict, now: datetime | None = None, heading: float | None = None) -> dict:
+    """heading: the compass direction of the row's photo (frame.compass), when the caller knows it."""
+    return {"id": row["id"], "lat": row["lat"], "lng": row["lng"], "heading": heading, "name": row.get("place_name") or "",
             "category": row.get("category") or "", "step_count": row.get("step_count"),
             "stairs_detected": row.get("stairs_detected"), "sill_possible": row.get("sill_possible"),
             "label": entrance_label(row), "review_status": row["review_status"],
@@ -127,9 +155,11 @@ def entrance_json(row: dict, now: datetime | None = None) -> dict:
             "captured_at": row.get("captured_at"), "old_photo": is_old(row.get("captured_at"), now)}
 
 
-def issue_json(row: dict, now: datetime | None = None, std: survey_items.Standard | None = None) -> dict:
+def issue_json(row: dict, now: datetime | None = None, std: survey_items.Standard | None = None,
+               heading: float | None = None) -> dict:
     std = std or survey_items.load("KR")
-    return {"id": row["id"], "lat": row["lat"], "lng": row["lng"], "issue_type": row["issue_type"],
+    return {"id": row["id"], "lat": row["lat"], "lng": row["lng"], "heading": heading, "box": box_of(row),
+            "issue_type": row["issue_type"],
             "durable": is_durable(row, std), "defect": std.is_defect(row), "label": issue_label(row, std),
             "check": check_json(row, std), "second_opinion": second_json(row),
             "object_label": row.get("object_label"), "frame_start": row.get("frame_start"),
@@ -138,7 +168,10 @@ def issue_json(row: dict, now: datetime | None = None, std: survey_items.Standar
             "old_photo": is_old(row.get("captured_at"), now)}
 
 
-def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float | None = None) -> dict:
+def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float | None = None,
+              city_check: dict | None = None) -> dict:
+    """city_check: the offline comparison with the city's own records (eval, city_check_scan<N>.json), if one was
+    made for this scan; left out otherwise."""
     std = standard_of(scan)
     live = [i for i in issues if i["review_status"] != "rejected"]
     defects = sum(std.is_defect(i) for i in live)
@@ -148,10 +181,12 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
     with_steps = sum(entrance_label(e)["icon"] == "▲" for e in entrances)  # a possible sill is not counted
     checks = [{"id": c.id, "find": c.find, "target": c.target, "report_when": c.report_when,
                "label_yes": c.label_yes, "label_no": c.label_no, "inventory": c.inventory,
+               "map_icon": c.map_icon, "question": c.question or c.ask,
                **{a: sum(i["issue_type"] == c.id and (i.get("object_label") or "unclear") == a for i in live)
                   for a in ("yes", "no", "unclear")}} for c in std.checks]
     return {**{k: scan[k] for k in SCAN_FIELDS},
-            "standard": std.code, "checks": checks,
+            "standard": std.code, "checks": checks, "items": items_json(std),
+            **({"city_check": city_check} if city_check is not None else {}),
             "km": km,
             "usd_per_km": round(scan["cost_usd"] / km, 2) if km else None,
             "counts": {"defects": defects, "obstructions": obstructions, "entrances": len(entrances),

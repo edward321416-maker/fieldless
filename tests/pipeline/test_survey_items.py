@@ -164,3 +164,13 @@ def test_judge_defaults_to_spark_and_glimmer_is_only_for_inventory_checks():
     ramp = us.replace('id = "curb_ramp_warning"', 'id = "curb_ramp_warning"\njudge = "glimmer"', 1)
     with pytest.raises(ValueError, match="inventory"):
         survey_items.parse(ramp, "us.toml")
+
+
+def test_a_check_may_name_its_map_icon_and_a_short_question():
+    plain = survey_items.parse(INVENTORY, "us.toml").checks[0]
+    assert plain.map_icon == "" and plain.question == ""
+    named = survey_items.parse(INVENTORY.replace("inventory = true", 'inventory = true\nmap_icon = "street-light"\n'
+                                                 'question = "Is this a streetlight pole?"'), "us.toml").checks[0]
+    assert named.map_icon == "street-light" and named.question == "Is this a streetlight pole?"
+    with pytest.raises(ValueError, match="map_icon"):
+        survey_items.parse(INVENTORY.replace("inventory = true", 'inventory = true\nmap_icon = "Tree Icon"'), "us.toml")

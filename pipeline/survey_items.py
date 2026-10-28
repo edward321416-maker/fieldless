@@ -17,6 +17,7 @@ ANSWERS = ("yes", "no")
 KR_DURABLE = ("missing_blocks", "cover_cut", "fixed_obstruction")  # spec 9.3: the KR defect classes
 RESERVED = (*KR_DURABLE, "obstruction")  # issue types other stages write
 CHECK_ID = re.compile(r"[a-z][a-z0-9_]*")
+ICON_NAME = re.compile(r"[a-z][a-z0-9-]*")  # a shape in the web icon set
 KOREA = (124.0, 33.0, 132.0, 39.0)  # min_lng, min_lat, max_lng, max_lat
 
 JUDGES = ("spark", "glimmer")  # glimmer: Muse Glimmer served on Modal (docs/specs/2026-10-28-glimmer-modal-design.md)
@@ -45,6 +46,8 @@ class Check:
     inventory: bool = False  # every confirmed object is an asset point; there is no defect answer
     group_m: float | None = None  # metres of street one row may cover; None: one row per run of photos
     judge: str = "spark"  # who answers `ask`: "spark" (Muse Spark), or "glimmer" (Muse Glimmer, inventory checks only)
+    map_icon: str = ""  # the shape drawn in the item's map marker (web icon set); empty: the target's first letter
+    question: str = ""  # a short question for people (the screen); empty: `ask`, the sentence the model is asked
 
     def label(self, answer: str | None) -> tuple[str, str]:
         """(icon, text) for an answer; anything but yes or no is unclear."""
@@ -114,9 +117,13 @@ def _check(table: dict, where: str) -> Check:
     if judge != "spark" and not inventory:
         raise ValueError(f"{where}: judge {judge!r} is only for inventory checks; Muse Spark judges defects")
     unclear = table.get("label_unclear") or f"{target[:1].upper()}{target[1:]}: unclear from the photo"
+    map_icon = table.get("map_icon", "")
+    if map_icon and not ICON_NAME.fullmatch(map_icon):
+        raise ValueError(f"{where}: map_icon {map_icon!r} must be a lower case shape name, e.g. \"tree\"")
     return Check(id=check_id, find=find, target=target, ask=_need(table, "ask", where), report_when=report,
                  label_yes=label_yes, label_no=label_no, label_unclear=unclear, icon_yes=icon_yes, icon_no=icon_no,
-                 inventory=inventory, group_m=group_m, judge=judge)
+                 inventory=inventory, group_m=group_m, judge=judge, map_icon=map_icon,
+                 question=table.get("question", ""))
 
 
 def parse(text: str, where: str) -> Standard:

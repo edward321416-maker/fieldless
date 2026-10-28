@@ -291,6 +291,11 @@ def dropped(conn, scan_id: int) -> list[dict]:
     return [_decode(r) for r in rows]
 
 
+def frame_compass(conn, scan_id: int, idx: int) -> float | None:
+    row = conn.execute("SELECT compass FROM frame WHERE scan_id = ? AND idx = ?", (scan_id, idx)).fetchone()
+    return None if row is None else row["compass"]
+
+
 def get_entrance(conn, entrance_id: int) -> dict:
     row = conn.execute("SELECT * FROM entrance WHERE id = ?", (entrance_id,)).fetchone()
     if row is None:

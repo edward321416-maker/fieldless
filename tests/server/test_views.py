@@ -61,8 +61,10 @@ def test_entrance_json():
     out = views.entrance_json(entrance(place_name=None), NOW)
     assert out["label"] == {"icon": "▲", "text": "2 steps"} and out["name"] == "" and out["old_photo"] is False
     assert out["stairs_detected"] is True and out["evidence"]["creator"] == "filipb"
-    assert set(out) == {"id", "lat", "lng", "name", "category", "step_count", "stairs_detected", "sill_possible",
-                        "label", "review_status", "review_reasons", "evidence", "captured_at", "old_photo"}
+    assert set(out) == {"id", "lat", "lng", "heading", "name", "category", "step_count", "stairs_detected",
+                        "sill_possible", "label", "review_status", "review_reasons", "evidence", "captured_at",
+                        "old_photo"}
+    assert out["heading"] is None and views.entrance_json(entrance(), NOW, heading=271.5)["heading"] == 271.5
 
 
 @pytest.mark.parametrize("overrides, label", [
@@ -172,9 +174,17 @@ def test_scan_json_counts_by_the_scans_standard():
     out = views.scan_json(scan, [], issues)
     assert out["standard"] == "US"
     assert out["counts"]["defects"] == 1 and out["counts"]["obstructions"] == 1 and out["counts"]["needs_review"] == 2
+    ramp_check = survey_items.load("US").check("curb_ramp_warning")
     assert out["checks"][0] == {"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp", "inventory": False,
                                 "report_when": "no", "label_yes": "Curb ramp with detectable warning",
-                                "label_no": "Curb ramp without detectable warning", "yes": 2, "no": 1, "unclear": 1}
+                                "label_no": "Curb ramp without detectable warning", "yes": 2, "no": 1, "unclear": 1,
+                                "map_icon": ramp_check.map_icon, "question": ramp_check.question or ramp_check.ask}
+    # the map's items: the standard's checks in order, then the stages' own (no KR tactile defects on a US scan)
+    assert [(i["id"], i["kind"]) for i in out["items"]] == [
+        ("curb_ramp_warning", "check"), ("utility_pole", "check"), ("street_tree", "check"), ("litter_can", "check"),
+        ("parking_pay_station", "check"), ("obstruction", "stage"), ("entrance", "stage")]
+    assert all(i["map_icon"] for i in out["items"] if i["kind"] == "stage") and "city_check" not in out
+    assert views.scan_json(scan, [], issues, city_check={"scan_id": 1})["city_check"] == {"scan_id": 1}
     assert [(c["id"], c["inventory"], c["yes"]) for c in out["checks"][1:]] == [
         ("utility_pole", True, 0), ("street_tree", True, 0), ("litter_can", True, 0), ("parking_pay_station", True, 0)]
 
@@ -219,3 +229,15 @@ def test_a_check_row_names_the_model_that_answered_and_an_audit_reads_like_a_sec
                                                  "agree": True}}}
     assert views.check_json(ramp, std)["model"] == "Muse Spark"  # rows from before the model was recorded
     assert views.second_json(ramp) == {"answer": "no", "agree": True, "model": "Muse Spark Open"}
+
+
+def test_an_issue_carries_the_models_box_and_its_photos_heading():
+    us = survey_items.load("US")
+    row = {**issue(issue_type="curb_ramp_warning", object_label="no"),
+           "model_outputs": {"check": {"visible": True, "answer": "no", "box": [100, 600, 300, 900]}}}
+    out = views.issue_json(row, NOW, std=us, heading=93.5)
+    assert out["box"] == [100.0, 600.0, 300.0, 900.0] and out["heading"] == 93.5
+    for box in ([], None, [1, 2, 3], ["a", 1, 2, 3]):  # no box, or not one: the card says the model marked none
+        bad = {**row, "model_outputs": {"check": {"visible": True, "answer": "no", "box": box}}}
+        assert views.issue_json(bad, NOW, std=us)["box"] is None
+    assert views.issue_json(issue(), NOW)["box"] is None and views.issue_json(issue(), NOW)["heading"] is None
