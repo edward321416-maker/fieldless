@@ -50,3 +50,15 @@ def test_the_gate_names_every_failed_rule():
     bad = replay.gate(spark_found=13, flow_found=11, spark_false=0, flow_false=2, agree_share=0.8, unclear_share=0.4)
     assert not bad["pass"] and len(bad["reasons"]) == 4
     assert not replay.gate(13, 13, 0, 0, None, None)["pass"]  # nothing both decided: no evidence, no switch
+
+
+def test_a_higher_reasoning_setting_changes_the_system_line_and_leaves_room_for_the_reasoning(monkeypatch, tmp_path):
+    monkeypatch.setenv("GLIMMER_URL", "https://example.modal.run")
+    monkeypatch.setenv("MODEL_API_KEY", "k")
+    low, medium = replay.judge_for(tmp_path, "low"), replay.judge_for(tmp_path, "medium")
+    assert low.system == "Reasoning strength: low" and low.max_tokens == 2000
+    assert medium.system == "Reasoning strength: medium" and medium.max_tokens == 4000
+    monkeypatch.delenv("GLIMMER_URL")
+    import pytest
+    with pytest.raises(SystemExit, match="GLIMMER_URL"):
+        replay.judge_for(tmp_path)

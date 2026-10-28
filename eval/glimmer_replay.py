@@ -90,6 +90,19 @@ def gate(spark_found: int, flow_found: int, spark_false: int, flow_false: int, a
     return {"pass": not reasons, "reasons": reasons}
 
 
+def judge_for(run_dir: Path, reasoning: str = "low"):
+    """Glimmer as the scan would call it (pipeline.second_opinion.glimmer_from_env), at a reasoning strength the
+    model card allows. Above low, the model reasons longer before the JSON, so the output budget is raised."""
+    from pipeline.second_opinion import glimmer_from_env
+    judge = glimmer_from_env(run_dir)
+    if judge is None:
+        raise SystemExit("set GLIMMER_URL to the deployed fieldless-glimmer address")
+    if reasoning != "low":
+        judge.system = f"Reasoning strength: {reasoning}"
+        judge.max_tokens = max(judge.max_tokens, 4000)
+    return judge
+
+
 def _found(rows: list[dict], data: dict, item: str, seattle: Path) -> dict:
     layer_file, installed = LAYERS[item]
     layer = json.loads((seattle / layer_file).read_text(encoding="utf-8"))
@@ -138,7 +151,6 @@ def run(run_dir: Path, scan_id: int, judge, standard, seattle: Path, limit: int 
 def main(argv=None) -> None:
     from eval.glimmer_ledger import LEDGER, append, check_budget
     from pipeline import config
-    from pipeline.second_opinion import glimmer_from_env
     from pipeline.survey_items import load
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -147,15 +159,16 @@ def main(argv=None) -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--limit", type=int, default=None, help="at most this many picks per item (a smoke test)")
     ap.add_argument("--seattle", default=str(LEDGER.parent / "seattle"))
+    ap.add_argument("--reasoning", choices=("low", "medium", "high"), default="low")
     args = ap.parse_args(argv)
     run_dir = config.run_dir(args.run)
-    judge = glimmer_from_env(run_dir)
-    if judge is None:
-        raise SystemExit("set GLIMMER_URL to the deployed fieldless-glimmer address")
+    judge = judge_for(run_dir, args.reasoning)
     check_budget(LEDGER, planned_usd=1.0)
     started = time.time()
     report = run(run_dir, args.scan, judge, load("us"), Path(args.seattle), limit=args.limit)
-    report["_ledger"] = append(LEDGER, f"replay {args.run} scan {args.scan}", busy_s=time.time() - started)
+    report["_reasoning"] = args.reasoning
+    report["_ledger"] = append(LEDGER, f"replay {args.run} scan {args.scan} {args.reasoning}",
+                               busy_s=time.time() - started)
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
     for item, r in report.items():
         if not item.startswith("_"):

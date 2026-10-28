@@ -10,6 +10,7 @@ import json
 import time
 from pathlib import Path
 
+from assist.tools import counted_inventory
 from eval.glimmer_replay import cascade
 
 SETS = {"utility_pole": "seattle_utility_poles", "street_tree": "seattle_trees", "litter_can": "seattle_litter",
@@ -19,6 +20,16 @@ SETS = {"utility_pole": "seattle_utility_poles", "street_tree": "seattle_trees",
 def flow_false(spark: dict[str, str], glimmer: dict[str, str], negatives: set[str]) -> int:
     """Photos without the target that the flow keeps as the target."""
     return sum(cascade(glimmer.get(p, "unclear"), spark.get(p, "unclear")) == "yes" for p in negatives)
+
+
+def rescore(prev: dict, ts, judge, check, photo) -> dict:
+    """Glimmer only, on the photos SAM found last time (the keys of the earlier run's Spark answers), so a new
+    Glimmer setting is scored against the same Spark answers without paying Meta again."""
+    asked = list(prev["spark"])
+    glimmer = {pid: counted_inventory(judge.answer(check, Path(photo(pid)))) for pid in asked}
+    visible = {p.id for p in ts.visible()}
+    return {"glimmer_kept": sum(glimmer[p] == "yes" for p in asked if p in visible),
+            "flow_false": flow_false(prev["spark"], glimmer, {p.id for p in ts.negatives()}), "glimmer": glimmer}
 
 
 def _answers(bench) -> dict[str, str]:
@@ -32,19 +43,33 @@ def main(argv=None) -> None:
     from pipeline import collect, config
     from pipeline.cost import CostMeter
     from pipeline.meta_api import MetaApi
-    from pipeline.second_opinion import glimmer_from_env
+    from eval.glimmer_replay import judge_for
     from pipeline.survey_items import load
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", required=True)
     ap.add_argument("--run", default="glimmer-testsets")
     ap.add_argument("--cap", type=float, default=1.5, help="Meta spend cap in USD for Spark's answers")
+    ap.add_argument("--reasoning", choices=("low", "medium", "high"), default="low")
+    ap.add_argument("--spark-from", help="an earlier report: reuse its Spark answers and SAM finds (no Meta spend)")
     args = ap.parse_args(argv)
     run_dir = config.run_dir(args.run)
-    judge = glimmer_from_env(run_dir)
-    if judge is None:
-        raise SystemExit("set GLIMMER_URL to the deployed fieldless-glimmer address")
+    judge = judge_for(run_dir, args.reasoning)
     check_budget(LEDGER, planned_usd=0.6)
+    if args.spark_from:
+        prev, standard, report, started = (json.loads(Path(args.spark_from).read_text(encoding="utf-8")), load("us"),
+                                           {}, time.time())
+        for item, name in SETS.items():
+            ts = testset.load(name)
+            got = rescore(prev[item], ts, judge, standard.check(item), collect.photo_path)
+            report[item] = {**{k: prev[item][k] for k in ("spark_kept", "spark_false", "visible", "negatives",
+                                                          "spark")}, **got}
+            print(item, {k: v for k, v in report[item].items() if k not in ("spark", "glimmer")})
+        report["_reasoning"] = args.reasoning
+        report["_ledger"] = append(LEDGER, f"testsets {args.reasoning}", busy_s=time.time() - started)
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+        return
     api = MetaApi(run_dir / "calls.jsonl", CostMeter(args.cap))  # as assist/run_inventory.py builds it
     standard, report, started = load("us"), {}, time.time()
     for item, name in SETS.items():
