@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compassWord, destination, distanceM, distanceToLineM, targetBearing, viewWedge } from "./geo";
 import { fallbackLetter, hasIcon } from "./icons";
-import { badgeOf, colourOf, isLight, PALETTE } from "./items";
+import { badgeOf, colourOf, inkOn, isLight, PALETTE } from "./items";
 import { namedRoads, streetText } from "./streets";
 import type { ItemMeta } from "./types";
 
@@ -75,5 +75,14 @@ describe("street names", () => {
     expect(streetText([-122.3201, 47.6140], roads)).toBe("11th Ave, near E Pike St");
     expect(streetText([-122.3201, 47.618], roads)).toBe("11th Ave");
     expect(streetText([-122.25, 47.618], roads)).toBeNull();
+  });
+});
+
+describe("text on an item's colour", () => {
+  it("takes dark or white, whichever reads at 4.5:1 or better", () => {
+    expect(inkOn("#009E73")).toBe("#111827"); // white on this green is 3.4:1
+    expect(inkOn("#0072B2")).toBe("#ffffff");
+    expect(inkOn("#E6C800")).toBe("#111827");
+    expect(inkOn("#1B7837")).toBe("#ffffff");
   });
 });

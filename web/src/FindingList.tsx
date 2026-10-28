@@ -54,6 +54,8 @@ export default function FindingList(props: Props) {
           const street = props.streets[f.key];
           const status = STATUS_SHORT[f.status] ?? "";
           const selected = f.key === props.selectedKey;
+          // the finding's own words only when they say more than the item's name ("Curb ramp without detectable warning")
+          const title = f.title.toLowerCase() === itemName(props.item, items).toLowerCase() ? "" : f.title;
           return (
             <li key={f.key}>
               <button type="button" ref={selected ? selectedRow : undefined}
@@ -61,8 +63,8 @@ export default function FindingList(props: Props) {
                 onClick={() => props.onPick(f)}
                 aria-label={`${f.title}${street ? `, ${street}` : ""}. ${STATUS_SENTENCE[f.status] ?? ""}`}>
                 <span className="finding-text">
-                  <span className="finding-title">{street ?? f.title}</span>
-                  <span className="finding-sub">Photo {photoMonth(f.picked.item.captured_at)}{street ? ` · ${f.title}` : ""}</span>
+                  <span className="finding-title">{street ?? (title || "Position from the photo")}</span>
+                  <span className="finding-sub">Photo {photoMonth(f.picked.item.captured_at)}{street && title ? ` · ${title}` : ""}</span>
                   {status && <span className={`chip chip-${f.badge ?? "none"}`}>{status}</span>}
                 </span>
                 {evidence ? (

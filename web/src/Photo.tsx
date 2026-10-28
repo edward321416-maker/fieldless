@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { photoMonth } from "./format";
-import { isLight } from "./items";
+import { inkOn } from "./items";
 import type { Evidence } from "./types";
 
 // The official Mapillary logo (press kit v0.0.4, the light-background version, outer margin trimmed); the word if it fails to load.
@@ -81,7 +81,7 @@ export function EvidencePhoto({ evidence, box, boxLabel, colour, alt, large = fa
               width: `${(box[2] - box[0]) / 10}%`, height: `${(box[3] - box[1]) / 10}%`, borderColor: colour }}>
               {!zoomed && (
                 <span ref={tag} className={`photo-box-label${tagPlace(box).inside ? " tag-inside" : ""}${alignRight ? " tag-right" : ""}`}
-                  style={{ background: colour, color: isLight(colour) ? "#111827" : "#ffffff" }}>
+                  style={{ background: colour, color: inkOn(colour) }}>
                   {boxLabel}
                 </span>
               )}

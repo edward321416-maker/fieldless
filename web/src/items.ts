@@ -27,6 +27,19 @@ export function isLight(hex: string): boolean {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.35;
 }
 
+// Text on an item's colour: dark or white, whichever reads better (4.5:1, docs/ui-rules.md U9). The two cross at a
+// luminance of about 0.2: #009E73 takes dark text, #0072B2 white.
+export function inkOn(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const dark = 0.0089; // #111827
+  return (l + 0.05) / (dark + 0.05) >= 1.05 / (l + 0.05) ? "#111827" : "#ffffff";
+}
+
 export const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function itemName(itemId: string, items: ItemMeta[]): string {
