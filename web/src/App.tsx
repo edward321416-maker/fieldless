@@ -5,13 +5,12 @@ import AreaPanel from "./AreaPanel";
 import CoverageGuide from "./CoverageGuide";
 import Attribution from "./Attribution";
 import DemoNotice from "./DemoNotice";
-import IntroPanel, { IntroMapKey } from "./IntroPanel";
+import IntroPanel, { IntroMapKey, IntroPhoto, type Example } from "./IntroPanel";
 import { startsWithIntro } from "./intro";
 import EvidenceCard from "./EvidenceCard";
 import FindingList from "./FindingList";
 import { isFinished } from "./format";
 import { findingsOf, itemName, keyOf, type Finding } from "./items";
-import { itemArt } from "./markerArt";
 import MapView from "./MapView";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
@@ -156,7 +155,6 @@ export default function App() {
   }
 
   const items = scan?.items ?? [];
-  const art = useMemo(() => itemArt(items), [items]);
   const demoName = scan ? demos.find((d) => d.scan_id === scan.id)?.name ?? null : null;
 
   function goIntro() {
@@ -184,6 +182,14 @@ export default function App() {
       .sort((a, b) => (order.get(a.f.item) ?? 99) - (order.get(b.f.item) ?? 99) || a.i - b.i)
       .map(({ f }) => f);
   }, [issues, entrances, scan?.items]);
+  // The introduction's photos: per item, its first finding with a photo; over the map, the first finding the models
+  // were sure of with a box (the panel's order, so no item is chosen by name).
+  const examples: Example[] = useMemo(() => items.flatMap((it) => {
+    const f = findings.find((x) => x.item === it.id && x.picked.item.evidence);
+    return f ? [{ item: it.id, url: f.picked.item.evidence!.url, box: f.box }] : [];
+  }), [items, findings]);
+  const introPhoto = useMemo(() => findings.find((f) => f.status === "auto" && f.box && f.box.length === 4
+    && f.picked.item.evidence) ?? null, [findings]);
   const selected: Finding | null = picked ? findings.find((f) => f.key === keyOf(picked)) ?? null : null;
   // "Utility or streetlight pole · 3 of 20 · position approximate": the marker's name tag (ui-redesign 3.3).
   const selectedLabel = useMemo(() => {
@@ -287,6 +293,7 @@ export default function App() {
         onStreets={setStreets}
       >
         {intro && <IntroMapKey coverage={!!config?.coverage_tiles} />}
+        {intro && wide && introPhoto && scan && <IntroPhoto finding={introPhoto} items={items} photos={scan.image_count} />}
         {newSurvey && (
           <CoverageGuide coverage={!!config?.coverage_tiles} demos={demos}
             onGo={(b) => setFitTo([b[0], b[1], b[2], b[3]])} />
@@ -298,7 +305,7 @@ export default function App() {
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
         {error && <p className="error" role="alert">{error}</p>}
         {intro && (
-          <IntroPanel scan={scan} name={demoName} art={art} canSurvey={!STATIC_DEMO} onSee={seeExample}
+          <IntroPanel scan={scan} name={demoName} examples={examples} canSurvey={!STATIC_DEMO} onSee={seeExample}
             onSurvey={() => {
               setIntro(false);
               setNewSurvey(true);
