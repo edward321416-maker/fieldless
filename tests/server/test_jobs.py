@@ -159,3 +159,24 @@ def test_the_worker_stops_using_glimmer_once_its_total_gpu_estimate_reaches_the_
     assert ScanWorker(tmp_path / "t.db", tmp_path, run=lambda scan_id: None).judge() is not None  # no total cap
     assert ScanWorker(tmp_path / "t.db", tmp_path, run=lambda scan_id: None,
                       glimmer_daily_usd=0.0).judge() is None  # a lower daily cap
+
+
+def test_a_finished_scan_gets_its_report_sentences_and_a_failure_only_logs(caplog):
+    from pipeline import config
+    from tests.assist import survey_scan
+    from tests.assist.test_report import GOOD, NOTES
+    from tests.pipeline.fakes import FakeApi
+
+    scan_id = survey_scan.build("jobs")
+    run_dir = config.run_dir("jobs")
+    worker = ScanWorker(run_dir / "threshold.db", run_dir)
+    conn = db.connect(run_dir / "threshold.db")
+
+    worker._write_report_text(conn, scan_id, FakeApi(spark=lambda name, parts: GOOD))
+    assert db.report_text(conn, scan_id) == NOTES
+
+    def broken(name, parts):
+        raise RuntimeError("model down")
+
+    worker._write_report_text(conn, scan_id, FakeApi(spark=broken))  # does not raise
+    assert db.report_text(conn, scan_id) == NOTES and "report text failed" in caplog.text

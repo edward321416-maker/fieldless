@@ -29,7 +29,7 @@ from pathlib import Path
 
 from assist import export, report_doc, style
 from eval import store
-from pipeline import config, survey_items
+from pipeline import config, db, survey_items
 from pipeline.cost import CostMeter
 from pipeline.meta_api import MetaApi, text_part
 from pipeline.survey_items import Standard
@@ -388,6 +388,22 @@ def write(scan_data: dict, standard: Standard, out_dir: Path, area: str | None =
     return paths
 
 
+def load_city_check(run_dir: Path, scan_id: int) -> dict | None:
+    """The offline comparison with the city's records (eval, city_check_scan<N>.json), if one was made."""
+    path = Path(run_dir) / f"city_check_scan{scan_id}.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+def make_text(conn, run_dir: Path, scan_id: int, api, area: str | None = None) -> dict:
+    """Muse Spark's sentences for one finished scan, checked (narrate) and saved (db.report_text), so the report
+    never asks the model again. The spend goes on api's meter, which the caller charges to the scan."""
+    data = store.load_scan(conn, scan_id)
+    data["city_check"] = load_city_check(run_dir, scan_id)
+    notes = narrate(api, summary(data, views.standard_of(data["scan"]), area=area))
+    db.set_report_text(conn, scan_id, notes, config.SPARK_MODEL)
+    return notes
+
+
 def main(argv: list[str] | None = None) -> dict:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", required=True)
@@ -395,26 +411,33 @@ def main(argv: list[str] | None = None) -> dict:
     ap.add_argument("--standard", help="survey standard code, e.g. US (default: the scan's own)")
     ap.add_argument("--area", help="area name for the title (default: the scan id)")
     ap.add_argument("--narrate", action="store_true",
-                    help=f"add a Muse Spark summary paragraph (needs MODEL_API_KEY; at most ${NARRATE_CAP_USD:.2f})")
+                    help=f"have Muse Spark write the report's sentences (needs MODEL_API_KEY; at most "
+                         f"${NARRATE_CAP_USD:.2f})")
+    ap.add_argument("--save", action="store_true",
+                    help="with --narrate: keep the sentences in the database for the app, and add the spend to the "
+                         "scan's cost")
     ap.add_argument("--out", type=Path, help="output folder (default: <run>/report_scan<N>/)")
     args = ap.parse_args(argv)
+    if args.save and not args.narrate:
+        ap.error("--save needs --narrate")
     run_dir = config.run_dir(args.run)
-    conn = store.open_ro(run_dir / "threshold.db")
+    conn = db.connect(run_dir / "threshold.db") if args.save else store.open_ro(run_dir / "threshold.db")
     try:
         data = store.load_scan(conn, args.scan)
+        data["city_check"] = load_city_check(run_dir, args.scan)
+        standard = survey_items.load(args.standard) if args.standard else views.standard_of(data["scan"])
+        notes = db.report_text(conn, args.scan)
+        if args.narrate:
+            api = MetaApi(run_dir / "calls.jsonl", CostMeter(NARRATE_CAP_USD))
+            notes = narrate(api, summary(data, standard, area=args.area))
+            for problem in notes.get("dropped", []):
+                print(f"Muse Spark sentence dropped: {problem}")
+            print(f"model spend: ${api.meter.spent_usd:.2f}")
+            if args.save:
+                db.set_report_text(conn, args.scan, notes, config.SPARK_MODEL)
+                db.update_scan(conn, args.scan, cost_usd=data["scan"]["cost_usd"] + api.meter.spent_usd)
     finally:
         conn.close()
-    check = run_dir / f"city_check_scan{args.scan}.json"
-    if check.is_file():
-        data["city_check"] = json.loads(check.read_text(encoding="utf-8"))
-    standard = survey_items.load(args.standard) if args.standard else views.standard_of(data["scan"])
-    notes = None
-    if args.narrate:
-        api = MetaApi(run_dir / "calls.jsonl", CostMeter(NARRATE_CAP_USD))
-        notes = narrate(api, summary(data, standard, area=args.area))
-        for problem in notes.get("dropped", []):
-            print(f"Muse Spark paragraph dropped: {problem}")
-        print(f"model spend: ${api.meter.spent_usd:.2f}")
     paths = write(data, standard, args.out or run_dir / f"report_scan{args.scan}", area=args.area, notes=notes)
     for kind, path in paths.items():
         for name, p in (path.items() if isinstance(path, dict) else [(None, path)]):

@@ -6,6 +6,7 @@ import queue
 import threading
 from pathlib import Path
 
+from assist import report
 from pipeline import db, second_opinion
 from pipeline.meta_api import MetaApi, error_text
 from pipeline.runner import Scan, meter_for, run_scan
@@ -135,6 +136,14 @@ class ScanWorker:
             return None
         return model
 
+    def _write_report_text(self, conn, scan_id: int, api) -> None:
+        """The report's sentences once a scan is done (assist.report.make_text), charged to the scan through api's
+        meter. A failure only logs: the report then uses code's own sentences."""
+        try:
+            report.make_text(conn, self.run_dir, scan_id, api)
+        except Exception:
+            log.exception("report text failed for scan %s", scan_id)
+
     def _run_pipeline(self, scan_id: int) -> None:
         conn = db.connect(self.db_path)
         try:
@@ -144,5 +153,7 @@ class ScanWorker:
             api = MetaApi(self.run_dir / "calls.jsonl", meter)
             run_scan(Scan(conn, scan_id, api, self.run_dir, scan["bbox"],
                           second_opinion=second_opinion.from_env(self.run_dir), judge=self.judge()))
+            if db.get_scan(conn, scan_id)["status"] == "done":
+                self._write_report_text(conn, scan_id, api)
         finally:
             conn.close()

@@ -249,3 +249,51 @@ def test_summary_keeps_each_walk_as_a_line_and_dates_the_report():
     _, s = made()
 
     assert len(s["walks"]) == 1 and len(s["walks"][0]) == 6 and s["made"] == "2026-10-28"
+
+
+def test_make_text_saves_spark_sentences_for_the_scan():
+    from pipeline import db
+    scan_id = survey_scan.build()
+    conn = db.connect(config.run_dir("r") / "threshold.db")
+
+    notes = report.make_text(conn, config.run_dir("r"), scan_id, FakeApi(spark=lambda name, parts: GOOD))
+
+    assert notes == NOTES and db.report_text(conn, scan_id) == NOTES
+
+
+def test_cli_save_keeps_the_sentences_and_adds_the_spend_to_the_scan(monkeypatch, capsys):
+    from pipeline import db
+    scan_id = survey_scan.build()
+
+    class Spending(FakeApi):
+        def spark_json(self, parts, schema_name, schema, estimate_usd=0.0):
+            self.meter.spent_usd += 0.03
+            return super().spark_json(parts, schema_name, schema)
+
+    monkeypatch.setattr(report, "MetaApi", lambda log_path, meter: Spending(spark=lambda name, parts: GOOD))
+
+    report.main(["--run", "r", "--scan", str(scan_id), "--narrate", "--save"])
+
+    conn = db.connect(config.run_dir("r") / "threshold.db")
+    assert db.report_text(conn, scan_id) == NOTES
+    assert db.get_scan(conn, scan_id)["cost_usd"] == pytest.approx(0.4567 + 0.03)
+    page = (config.run_dir("r") / f"report_scan{scan_id}" / "report.html").read_text(encoding="utf-8")
+    assert NOTES["summary"] in page
+
+
+def test_cli_without_narrate_uses_the_saved_sentences():
+    from pipeline import db
+    scan_id = survey_scan.build()
+    conn = db.connect(config.run_dir("r") / "threshold.db")
+    db.set_report_text(conn, scan_id, NOTES, "muse-spark-1.3")
+    conn.close()
+
+    report.main(["--run", "r", "--scan", str(scan_id)])
+
+    page = (config.run_dir("r") / f"report_scan{scan_id}" / "report.html").read_text(encoding="utf-8")
+    assert NOTES["summary"] in page
+
+
+def test_save_needs_narrate():
+    with pytest.raises(SystemExit):
+        report.main(["--run", "r", "--scan", "1", "--save"])
