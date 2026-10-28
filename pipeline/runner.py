@@ -249,6 +249,9 @@ def stage_defects(s: Scan) -> None:
     if unknown:
         raise ValueError(f"not a check of the {s.standard.code} standard: {', '.join(unknown)}")
     to_run = [c for c in s.standard.checks if not only or c.id in only]
+    # Checks Muse Glimmer judges run back to back, last: between them its GPU would scale down and start again
+    # (a few minutes each time). sorted() keeps the standard's order within each group.
+    to_run = sorted(to_run, key=lambda c: s.judge is not None and c.judge == "glimmer")
     db.clear_issues(s.conn, s.scan_id, (*(() if only else defects.ISSUE_TYPES), *(c.id for c in to_run)))
     by_idx, photos, clips = s.by_idx(), s.photos(), s.clips()
     failed: list[int] = []

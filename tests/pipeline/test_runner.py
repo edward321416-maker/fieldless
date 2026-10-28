@@ -562,6 +562,27 @@ def test_collecting_again_drops_the_saved_sam_areas(setup):
 
 
 
+def test_the_checks_glimmer_judges_run_back_to_back_so_its_gpu_starts_once(setup, monkeypatch):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    order = []
+
+    def run_check(api, check, clips, photos, by_idx, workers, known=None, judge=None, audit_seed=None, **kw):
+        order.append(check.id)
+        return [], {"find": [], "ask": []}
+
+    monkeypatch.setattr(runner.survey_checks, "run_check", run_check)
+    std = survey_items.load("US")
+    glimmer = {"utility_pole", "litter_can"}  # a Spark check stands between them in the standard
+    std = dataclasses.replace(std, checks=tuple(
+        dataclasses.replace(c, judge="glimmer" if c.id in glimmer else "spark") for c in std.checks))
+    scan = make(FakeApi(spark=spark, sam=us_sam), us_scan)
+    scan.standard, scan.judge = std, object()
+    assert runner.run_scan(scan)["status"] == "done"
+    spark_order = [c.id for c in std.checks if c.id not in glimmer]
+    assert order == spark_order + [c.id for c in std.checks if c.id in glimmer]
+
+
 def test_the_judge_answers_only_the_checks_that_name_it_and_the_audit_is_seeded_by_the_scan(setup, monkeypatch):
     conn, _, make, _ = setup
     us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
