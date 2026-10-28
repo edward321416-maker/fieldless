@@ -74,7 +74,7 @@ def test_markdown_lists_confirmed_defects_and_attributes_every_photo():
             "1 × Curb ramp with detectable warning | 1 / 1 / 0 / 1 | 1 / 1 |") in text
     assert "| streetlight pole (streetlight_pole) | inventory | 2 |" in text
     assert "| litter can (litter_can) | inventory | 0 | - | 0 / 0 / 0 / 0 | - |" in text
-    assert "| entrance | entrance | 1 | 1 × 2 steps | 1 / 0 / 0 / 0 | - |" in text
+    assert "| shop entrance (entrance) | entrance | 1 | 1 × 2 steps | 1 / 0 / 0 / 0 | - |" in text
     photo_lines = [line for line in text.splitlines() if "pKey=" in line]
     assert len(photo_lines) == 1 and "pKey=101" in photo_lines[0]  # the confirmed defect only
     for line in photo_lines:
@@ -83,30 +83,13 @@ def test_markdown_lists_confirmed_defects_and_attributes_every_photo():
     assert "Older than 3 years: 1 of 6" in text and "Summary (written by Muse Spark" not in text
 
 
-def test_html_is_one_self_contained_page_with_attribution_on_every_photo_link():
-    data, s = made(area="Pike & Pine")
-    feats = export.features(data, STANDARD)
-
-    page = report.to_html(s, feats)
-
-    assert page.startswith("<!doctype html>") and "<style>" in page and "<script" not in page
-    assert "Street survey — Pike &amp; Pine" in page and "<link" not in page
-    cells = [c for c in re.findall(r"<td>(.*?)</td>", page) if "pKey=" in c]
-    assert len(cells) == 1 + len(feats)  # the confirmed defect, then every finding
-    creators = {f["properties"]["photo_id"]: f["properties"]["creator"] for f in feats}
-    for cell in cells:
-        photo_id = re.search(r"pKey=(\d+)", cell).group(1)
-        assert f"by {creators[photo_id]}" in cell and "CC BY-SA 4.0" in cell
-
-
-def test_notes_appear_as_muse_spark_paragraph():
+def test_notes_appear_as_muse_spark_paragraph_in_the_markdown():
     _, s = made()
 
-    text, page = report.to_markdown(s, GOOD), report.to_html(s, [], GOOD)
+    text = report.to_markdown(s, NOTES)
 
-    assert "## Summary (written by Muse Spark from the counts below)" in text and GOOD["summary"] in text
+    assert "## Summary (written by Muse Spark from the counts below)" in text and NOTES["summary"] in text
     assert "- curb_ramp_warning: A possible missing warning awaits review." in text
-    assert "<b>streetlight_pole</b>" in page
 
 
 def test_narrate_keeps_a_paragraph_written_from_the_summary():
@@ -233,19 +216,6 @@ def test_a_city_record_check_adds_its_numbers_to_the_items_it_covers():
     assert items["curb_ramp_warning"]["city"] is None
     assert "| City record |" in text and "1 of 3 (Seattle)" in text and "Measured 2026-10-28" in text
     assert "City record" not in report.to_markdown(report.summary(survey_scan.load(), STANDARD, now=NOW))
-
-
-def test_the_html_report_draws_each_items_marker_in_the_apps_colours():
-    from assist import style
-    data = survey_scan.load()
-    data["city_check"] = CITY
-    s = report.summary(data, STANDARD, area="Capitol Hill", now=NOW)
-
-    page = report.to_html(s, export.features(data, STANDARD))
-
-    first = style.item_styles(views.items_json(STANDARD))["curb_ramp_warning"]
-    assert page.count("<svg") >= len(s["items"]) and first["color"] in page
-    assert "1 of 3 (Seattle)" in page and 'href="https://example.org/city.py"' in page
 
 
 def test_summary_lists_every_finding_in_the_ledger_with_its_box_note_and_photo():

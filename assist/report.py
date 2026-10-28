@@ -21,14 +21,13 @@ Why it is built this way:
   default, so the report needs no API key.
 """
 import argparse
-import html
 import json
 import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from assist import export, style
+from assist import export, report_doc, style
 from eval import store
 from pipeline import config, survey_items
 from pipeline.cost import CostMeter
@@ -101,7 +100,8 @@ def _item_entry(item: str, check, rows: list[tuple[dict, dict]], dropped: int = 
             else "check" if check is not None else "other")
     question = ((getattr(check, "question", "") or getattr(check, "ask", "") or "").strip() or None
                 if check is not None else None)
-    return {"item": item, "title": export.title(item, check), "kind": kind, "question": question,
+    title = export.title(item, check) if check is not None else views.STAGE_ITEMS.get(item, {}).get("target", item)
+    return {"item": item, "title": title, "kind": kind, "question": question,
             "found": len(live),
             "photos": len({p["photo_id"] for _, p in live if p["photo_id"]}),
             "by_answer": dict(Counter(str(p["answer"]) for _, p in live if p["answer"] is not None)),
@@ -203,7 +203,7 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
     }
 
 
-# --- text pieces shared by Markdown and HTML -------------------------------------------------------------------
+# --- text pieces of the Markdown report -------------------------------------------------------------------
 
 def _duration(seconds: float) -> str:
     return f"{seconds:.0f} s" if seconds < 120 else f"{seconds / 60:.0f} min"
@@ -318,89 +318,6 @@ def to_markdown(s: dict, notes: dict | None = None) -> str:
     return "\n".join(lines) + "\n"
 
 
-# --- HTML ------------------------------------------------------------------------------------------------------
-
-CSS = """
-:root { color-scheme: light; --ink: #1d232a; --muted: #5b6672; --line: #d5dbe1; --head: #eef2f5; --warn: #9a3412; }
-* { box-sizing: border-box; }
-body { margin: 0; padding: 24px 16px; background: #ffffff; color: var(--ink);
-       font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-main { max-width: 960px; margin: 0 auto; }
-h1 { font-size: 22px; margin: 0 0 8px; }
-h2 { font-size: 16px; margin: 24px 0 8px; }
-p { margin: 6px 0; }
-.muted { color: var(--muted); }
-.table { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
-th { background: var(--head); }
-.defect { color: var(--warn); font-weight: 600; }
-.spark { border-left: 3px solid var(--line); padding-left: 12px; }
-details { margin-top: 16px; }
-summary { cursor: pointer; font-weight: 600; }
-a { color: #0b5cad; }
-@media print { body { padding: 0; } details { display: none; } }
-"""
-
-
-def _h(text) -> str:
-    return html.escape("" if text is None else str(text))
-
-
-def _html_photo(p: dict) -> str:
-    if not p["photo_url"]:
-        return "no photo"
-    text, url, credit = _attribution(p)
-    return f'<a href="{_h(url)}">{_h(text)}</a> {_h(credit)}'
-
-
-def _table(headers, rows: list[list[str]]) -> str:
-    """A table whose cells are already HTML."""
-    head = "".join(f'<th scope="col">{_h(h)}</th>' for h in headers)
-    body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
-    return f'<div class="table"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
-
-
-def to_html(s: dict, features: list[dict], notes: dict | None = None) -> str:
-    """The same report as one self-contained HTML page (inline CSS, no scripts), with every finding listed at the
-    end. Every photo link carries its attribution."""
-    parts = [f"<h1>Street survey — {_h(s['area'])}</h1>", f"<p>{_h(HOW_MADE)}</p>",
-             f'<p class="muted">{_h(_overview(s))}</p>']
-    if notes and notes.get("summary"):
-        prio = "".join(f"<li><b>{_h(p['item'])}</b>: {_h(p['reason'])}</li>" for p in notes.get("priorities", []))
-        parts.append('<section class="spark"><h2>Summary (written by Muse Spark from the counts below)</h2>'
-                     f"<p>{_h(notes['summary'])}</p>{f'<ul>{prio}</ul>' if prio else ''}</section>")
-    rows = []
-    for i in s["items"]:
-        cells = _row_cells(s, i)
-        marker = s.get("styles", {}).get(i["item"])
-        name = (style.marker_svg(marker, size=18) + " " if marker else "") + _h(cells[0])
-        rows.append([name, *(_h(c) for c in cells[1:])])
-    parts.append("<h2>Items</h2>" + _table(_headers(s), rows))
-    if _city_note(s):
-        parts.append(f'<p class="muted">{_h(_city_note(s))} '
-                     f'<a href="{_h(s["city_check"]["method_url"])}">Method</a></p>')
-    parts.append("<h2>Confirmed defects</h2>")
-    if s["defects"]:
-        parts.append(_table(["Item", "Finding", "Photo"],
-                            [[_h(d["title"]), f'<span class="defect">{_h(d["label"])}</span>', _html_photo(d)]
-                             for d in s["defects"]]))
-    else:
-        parts.append("<p>No defect has been confirmed by a person yet.</p>")
-    if _waiting(s):
-        parts.append(f"<p>{_h(_waiting(s))}</p>")
-    parts.append("<h2>Limits</h2><ul>" + "".join(f"<li>{_h(line)}</li>" for line in _limits(s)) + "</ul>")
-    rows = [[_h(p["item"]), _h(p["label"]), _h(p["review_status"]), "yes" if p["defect"] else "",
-             _html_photo(p)] for p in (f["properties"] for f in features)]
-    parts.append(f"<details><summary>All findings ({len(rows)})</summary>"
-                 + _table(["Item", "Finding", "Review status", "Defect", "Photo"], rows) + "</details>")
-    parts.append('<p class="muted">Street photos: Mapillary contributors, CC BY-SA 4.0. Survey by Fieldless.</p>')
-    return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-            f"<title>Street survey — {_h(s['area'])}</title><style>{CSS}</style></head>"
-            f"<body><main>{''.join(parts)}</main></body></html>\n")
-
-
 # --- Muse Spark paragraph --------------------------------------------------------------------------------------
 
 def facts(s: dict) -> dict:
@@ -450,6 +367,13 @@ def narrate(api, s: dict) -> dict:
 
 # --- files and command -----------------------------------------------------------------------------------------
 
+def document(scan_data: dict, standard: Standard, area: str | None = None, notes: dict | None = None,
+             photo_base: str = "evidence/", now: datetime | None = None) -> str:
+    """The report page for one scan (assist.report_doc), with the saved sentences when there are any."""
+    s = summary(scan_data, standard, area=area, now=now)
+    return report_doc.document(s, notes, photo_base=photo_base, limits=_limits(s))
+
+
 def write(scan_data: dict, standard: Standard, out_dir: Path, area: str | None = None,
           notes: dict | None = None) -> dict:
     """report.md, report.html and the export files in out_dir. Returns their paths."""
@@ -459,7 +383,8 @@ def write(scan_data: dict, standard: Standard, out_dir: Path, area: str | None =
     paths["md"] = out_dir / "report.md"
     paths["html"] = out_dir / "report.html"
     paths["md"].write_text(to_markdown(s, notes), encoding="utf-8")
-    paths["html"].write_text(to_html(s, export.features(scan_data, standard), notes), encoding="utf-8")
+    paths["html"].write_text(report_doc.document(s, notes, photo_base="evidence/", limits=_limits(s)),
+                             encoding="utf-8")
     return paths
 
 
