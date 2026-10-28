@@ -19,6 +19,10 @@ export const staticPath = (path: string) => `${path}.json`;
 // A finished survey's files (report, GeoJSON, CSV per item, evidence photos); the static demo has the same zip.
 export const filesUrl = (scanId: number) => `/api/scans/${scanId}/files.zip`;
 
+// A finished survey's results report, a document page for the city; the static demo keeps it as a file.
+export const reportUrl = (scanId: number, isStatic = STATIC_DEMO) =>
+  `/api/scans/${scanId}/report${isStatic ? ".html" : ""}`;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (STATIC_DEMO) {
     if (init?.method && init.method !== "GET") throw new ApiError(405, READ_ONLY);

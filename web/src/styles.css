@@ -238,6 +238,7 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .check-line button { min-height: 44px; font-weight: 600; }
 .download { display: flex; flex-direction: column; gap: 6px; margin: 16px 0 4px; }
 .download .button-link { padding: 12px 16px; text-align: center; }
+.report-link { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
 .item-title { display: flex; align-items: center; gap: 10px; font-size: 1.25rem !important; }
 .item-title-name { flex: 1; }
 .review-progress { margin: 8px 0 4px; }

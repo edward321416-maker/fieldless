@@ -356,6 +356,7 @@ export default function App() {
             onOpenItem={setOpenItem}
             onReview={startReview}
             onIntro={goIntro}
+            hasReport={!!config?.report}
           />
         )}
         {STATIC_DEMO && <DemoNotice />}

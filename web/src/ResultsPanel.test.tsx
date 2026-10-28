@@ -28,7 +28,8 @@ const findings = [finding(1, "curb_ramp", "needs_review", "defect"), finding(2, 
 describe("the finished survey", () => {
   const html = renderToStaticMarkup(
     <ResultsPanel scan={scan} name="Capitol Hill" findings={findings} hidden={new Set(["curb_ramp"])}
-      onToggle={() => undefined} onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined} />);
+      onToggle={() => undefined} onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined}
+      hasReport />);
   it("leads with the cost per km, then one row per item with its city share, then a person's part and the files", () => {
     expect(html).toContain("$4.11");
     expect(html).toContain("per km");
@@ -40,6 +41,13 @@ describe("the finished survey", () => {
     expect(html).toContain("19 of 39 in the city&#x27;s list · 1 to check on site");
     expect(html).toContain("21 the models were unsure of are waiting for a person.");
     expect(html).toContain("Download for a GIS");
+    expect(html).toContain('href="/api/scans/4/report" target="_blank"');
+  });
+  it("offers the report only when the server has it", () => {
+    const without = renderToStaticMarkup(
+      <ResultsPanel scan={scan} name={null} findings={findings} hidden={new Set()} onToggle={() => undefined}
+        onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined} hasReport={false} />);
+    expect(without).not.toContain("Survey report");
   });
   it("lets an item be hidden from its row, and drops the numbered steps and chips", () => {
     expect(html).toContain('aria-label="Show Curb ramp on the map"');

@@ -6,6 +6,7 @@ export interface ServerConfig {
   invite_required: boolean;
   max_bbox_deg2: number;
   coverage_tiles?: boolean; // the server passes Mapillary's coverage tiles on (/api/mapillary/tiles); not the static demo
+  report?: boolean; // a finished survey has its results report for the city (docs/specs/2026-10-29-survey-report-design.md)
 }
 
 export interface Preview {

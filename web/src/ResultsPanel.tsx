@@ -1,4 +1,4 @@
-import { filesUrl, STATIC_DEMO } from "./api";
+import { filesUrl, reportUrl, STATIC_DEMO } from "./api";
 import { BENCHMARKS } from "./benchmarks";
 import { isFinished, yearsSpan } from "./format";
 import { colourOf, itemName, type Finding } from "./items";
@@ -14,6 +14,7 @@ interface Props {
   onOpenItem: (item: string) => void; // an item's findings, one by one (FindingList)
   onReview: () => void;
   onIntro: () => void; // back to what Fieldless does
+  hasReport: boolean; // the server has the survey's results report (/api/config report)
 }
 
 // A finished survey (docs/specs/2026-10-29-cleanup-design.md 4): one number on top, one row per item that is also the
@@ -90,6 +91,9 @@ export default function ResultsPanel(props: Props) {
 
       {isFinished(scan) && (
         <div className="download">
+          {props.hasReport && (
+            <a className="button-link report-link" href={reportUrl(scan.id)} target="_blank" rel="noreferrer">Survey report</a>
+          )}
           <a className="button-link" href={filesUrl(scan.id)} download>Download for a GIS</a>
           <span className="hint small">GeoJSON and a CSV per item, and a one-page report with every photo credited</span>
         </div>
