@@ -103,17 +103,19 @@ def test_collect_numbers_frames_and_clips_and_drops_missing_photos(monkeypatch):
                          "height": 1536}
 
 
-def test_candidate_sequences_fetch_frames_only_while_plan_clips_needs_them(monkeypatch):
-    fetched = []
+def test_candidate_sequences_rank_by_each_sequences_own_frames_not_by_what_the_search_returned(monkeypatch):
+    def frames(seq, n, on_foot, inside=True):
+        return [{"captured_at": 10**13, "on_foot": on_foot, "rec": {**r, "inside": inside}}
+                for r in street(n, 5.0, seq)]
 
-    def sequence_frames(seq):
-        fetched.append(seq)
-        return [{"captured_at": 10**13, "rec": r} for r in street(20, 5.0, seq)]
-
+    whole = {"a": frames("a", 12, None),  # the search saw most of "a"
+             "b": frames("b", 15, True),  # and little of "b", which has the most pedestrian photos
+             "c": frames("c", 30, True, inside=False),  # passes by outside the area
+             "d": frames("d", 15, True)}  # ties with "b": the sequence id settles it, the same every time
     monkeypatch.setattr(collect.mapillary, "search_grid", lambda bbox: ([], None))
-    monkeypatch.setattr(collect.mapillary, "rank_sequences", lambda images, since: ["a", "b", "c"])
-    monkeypatch.setattr(collect.mapillary, "sequence_frames", sequence_frames)
+    monkeypatch.setattr(collect.mapillary, "rank_sequences", lambda images, since: ["a", "b", "c", "d"])
+    monkeypatch.setattr(collect.mapillary, "sequence_frames", lambda seq: whole[seq])
     monkeypatch.setattr(collect.mapillary, "frame_record", lambda img: img["rec"])
-    monkeypatch.setattr(collect, "in_bbox", lambda rec, bbox: True)
-    clips = collect.plan_clips(collect.candidate_sequences((0, 0, 1, 1)), max_photos=20)
-    assert len(clips) == 1 and fetched == ["a", "b"]  # "b" shows the budget is spent; "c" is never fetched
+    monkeypatch.setattr(collect, "in_bbox", lambda rec, bbox: rec["inside"])
+    ranked = collect.candidate_sequences((0, 0, 1, 1))
+    assert [recs[0]["sequence"] for recs in ranked] == ["d", "b", "a"]

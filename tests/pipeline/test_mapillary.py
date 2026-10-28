@@ -81,9 +81,22 @@ def test_search_grid_searches_every_cell_and_keeps_each_photo_once(monkeypatch):
         return 200, {"data": images(1, start=hash(cell) % 10**9 + 10) + images(1, start=0)}
 
     calls = respond(monkeypatch, handler)
-    found, capped = mapillary.search_grid(BBOX, n=4)
+    found, capped = mapillary.search_grid(BBOX, n=4, passes=1)
     assert len(calls) == 16 and not capped
     assert len(found) == 16 + 1
+
+
+def test_search_grid_searches_each_cell_again_and_merges_what_each_pass_returned(monkeypatch):
+    seen = []
+
+    def handler(url, params):  # a cell answers with a different part of its photos each time
+        seen.append(params["bbox"])
+        return 200, {"data": images(1, start=len(seen) * 100)}
+
+    respond(monkeypatch, handler)
+    found, _ = mapillary.search_grid(BBOX, n=2, passes=3)
+    assert len(seen) == 12 and len(set(seen)) == 4
+    assert len(found) == 12
 
 
 def test_search_grid_is_capped_if_any_cell_is(monkeypatch):

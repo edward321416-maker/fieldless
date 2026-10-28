@@ -1,21 +1,23 @@
 """Stage 0a (spec 7.1): choose the photo sequences of an area, thin them by distance, and download the photos.
 
-Pedestrian, non-panorama photos taken since 2020 come first (mapillary.rank_sequences). A sequence that mostly
-re-walks a street already chosen is skipped, so the higher-ranked walk of a street wins. D1: the Myeongdong
-sequence had a photo every 0.5 m, so photos are thinned to one every MIN_GAP_M.
+Sequences with the most pedestrian, non-panorama photos taken since 2020 inside the area come first. A sequence
+that mostly re-walks a street already chosen is skipped, so the higher-ranked walk of a street wins. D1: the
+Myeongdong sequence had a photo every 0.5 m, so photos are thinned to one every MIN_GAP_M.
 """
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
 
 from pipeline import config, geo, mapillary
+from pipeline.parallel import run_parallel
 
 SINCE = "2020-01-01"
 MIN_GAP_M = 2.0
 MIN_TURN_DEG = 15.0  # a close photo is kept when the walker turns: corners and crossings carry warning pads
 MIN_SEQUENCE_PHOTOS = 10
+MAX_CANDIDATES = 40  # sequences fetched whole to be ranked (Capitol Hill has about 20)
 OVERLAP_RADIUS_M = 10.0
 MAX_OVERLAP_SHARE = 0.5
 DOWNLOAD_WORKERS = 8
@@ -74,17 +76,23 @@ def plan_clips(sequences: Iterable[list[dict]], max_photos: int) -> list[list[di
     return clips
 
 
-def candidate_sequences(bbox) -> Iterator[list[dict]]:
-    """Ranked sequences of the area as thinned frame records inside the bbox, fetched one at a time as the caller
-    asks for them (Mapillary API calls)."""
+def candidate_sequences(bbox) -> list[list[dict]]:
+    """The area's sequences as thinned frame records inside the bbox, most pedestrian photos first (Mapillary API
+    calls). A bbox search returns a different part of the photos each time, so it only finds the sequences; each is
+    ranked by all of its own recent flat frames inside the bbox, so the same area gives the same photos."""
     since = mapillary.ms(SINCE)
     images, _ = mapillary.search_grid(tuple(bbox))
-    for seq in mapillary.rank_sequences(images, since):
-        recs = [mapillary.frame_record(img) for img in mapillary.sequence_frames(seq)
-                if not img.get("is_pano") and img.get("captured_at", 0) >= since]
-        recs = thin([r for r in recs if in_bbox(r, bbox)])
+    found = mapillary.rank_sequences(images, since)[:MAX_CANDIDATES]
+    ranked = []
+    for seq, frames in zip(found, run_parallel(mapillary.sequence_frames, found, mapillary.SEARCH_WORKERS)):
+        inside = [img for img in frames if not img.get("is_pano") and img.get("captured_at", 0) >= since
+                  and in_bbox(mapillary.frame_record(img), bbox)]
+        recs = thin([mapillary.frame_record(img) for img in inside])
         if recs:
-            yield recs
+            on_foot = sum(1 for img in inside if img.get("on_foot") is True)
+            flat = sum(1 for img in inside if img.get("on_foot") is not False)
+            ranked.append(((on_foot, flat, max(img["captured_at"] for img in inside), str(seq)), recs))
+    return [recs for _, recs in sorted(ranked, key=lambda item: item[0], reverse=True)]
 
 
 def preview(bbox, max_photos: int = config.MAX_PHOTOS_PER_SCAN, checks: int = 0) -> dict:
