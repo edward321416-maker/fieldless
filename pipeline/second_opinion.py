@@ -36,6 +36,8 @@ GLIMMER_MAX_TOKENS = 4000  # medium reasons longer before the JSON than low, whi
 GLIMMER_TIMEOUT_S = 300  # a cold container takes a few minutes; a request that waits longer falls back to Spark
 GPU_USD_PER_HOUR = 3.95  # Modal H100, the one GPU deploy/modal_glimmer.py uses; the Modal dashboard is the real figure
 GLIMMER_IDLE_S = 120  # the GPU stays on this long after the last call (modal_glimmer.py scaledown_window)
+WAKE_WAIT_S = 480  # how long a woken server may take to start: a cold Glimmer H100 took 220-260 s (2026-10-28)
+WAKE_RETRY_S = 10
 GLIMMER_DAILY_USD = 3.0  # design 4 risk 3: past this estimate the live server judges with Muse Spark for the day
 
 
@@ -43,14 +45,19 @@ class OpenModel:
     """answer(check, photo) on an OpenAI-compatible server with the scan's prompt and schema. The key is held, never
     logged or shown; the default is Spark Open on Baseten with BASETEN_API_KEY."""
 
+    _log_lock = threading.Lock()  # answers and wakes log from several threads; appends must not interleave
+
     def __init__(self, log_path: Path, *, base_url: str = BASE_URL, model: str = MODEL, api_key: str | None = None,
                  max_tokens: int = MAX_TOKENS, system: str | None = None, kind: str = "spark_open",
-                 timeout: float = 120, retries: int = 2, client=None):
+                 timeout: float = 120, retries: int = 2, client=None, wake_wait_s: float = WAKE_WAIT_S,
+                 wake_retry_s: float = WAKE_RETRY_S):
         self.log_path = Path(log_path)
         self.base_url, self.model, self.max_tokens, self.system, self.kind = base_url, model, max_tokens, system, kind
         self.api_key = api_key
         self.timeout, self.retries = timeout, retries
+        self.wake_wait_s, self.wake_retry_s = wake_wait_s, wake_retry_s
         self._client = client
+        self._ready: threading.Event | None = None  # the last wake(): set once the server answered or it gave up
 
     @property
     def client(self):
@@ -61,7 +68,11 @@ class OpenModel:
         return self._client
 
     def answer(self, check: Check, photo: Path) -> dict:
-        """The check's answer in survey_checks.SCHEMA, plus "model": who answered."""
+        """The check's answer in survey_checks.SCHEMA, plus "model": who answered. After wake(), it first waits for
+        the server to be up, so the request's timeout counts the answer, not the container's start."""
+        ready = self._ready
+        if ready is not None:
+            ready.wait(self.wake_wait_s)
         started = time.time()
         messages = [{"role": "system", "content": self.system}] if self.system else []
         messages.append({"role": "user", "content": [
@@ -78,16 +89,25 @@ class OpenModel:
         return {**answer, "model": self.model} if isinstance(answer, dict) else answer
 
     def wake(self) -> None:
-        """Start the server's container with one light request, on a background thread: the caller never waits and
-        a failure is only logged."""
+        """Start the server's container on a background thread, asking for its model list until it answers or
+        wake_wait_s passes. The caller never waits and a failure is only logged; answer() waits for the outcome (on
+        a failure it then tries once and fails, and the caller falls back)."""
+        ready = self._ready = threading.Event()
+
         def ping():
             started = time.time()
             record = {"kind": f"{self.kind}_wake", "model": self.model, "ts": round(started, 1)}
-            try:
-                self.client.models.list()
-            except Exception as exc:
-                record["error"] = error_text(exc)
+            while True:
+                try:
+                    self.client.models.list()
+                    break
+                except Exception as exc:
+                    if time.time() - started + self.wake_retry_s >= self.wake_wait_s:
+                        record["error"] = error_text(exc)
+                        break
+                    time.sleep(self.wake_retry_s)
             record["seconds"] = round(time.time() - started, 1)
+            ready.set()
             try:
                 self._log(record)
             except OSError:
@@ -97,7 +117,7 @@ class OpenModel:
 
     def _log(self, record: dict) -> None:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.log_path.open("a", encoding="utf-8") as f:
+        with self._log_lock, self.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
 
 

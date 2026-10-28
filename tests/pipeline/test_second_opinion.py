@@ -135,7 +135,8 @@ def test_wake_pings_the_server_in_the_background_and_never_raises(tmp_path):
         pinged.append(True)
         raise RuntimeError("cold start 503")
 
-    model = second_opinion.OpenModel(tmp_path / "c.jsonl", client=fake_client({}, {}, models=slow_list), kind="glimmer")
+    model = second_opinion.OpenModel(tmp_path / "c.jsonl", client=fake_client({}, {}, models=slow_list), kind="glimmer",
+                                     wake_wait_s=0.2, wake_retry_s=0.1)  # gives up after the first try
     started = time.time()
     model.wake()
     assert time.time() - started < 0.2  # the scan does not wait for the container
@@ -146,6 +147,43 @@ def test_wake_pings_the_server_in_the_background_and_never_raises(tmp_path):
     time.sleep(0.1)
     (logged,) = [json.loads(l) for l in (tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()]
     assert logged["kind"] == "glimmer_wake" and "cold start 503" in logged["error"]
+
+
+def test_after_wake_an_answer_waits_until_the_cold_server_is_up_before_it_is_sent(tmp_path):
+    events = []
+    tries = []
+
+    def cold_list():
+        tries.append(True)
+        if len(tries) < 3:
+            raise RuntimeError("503 starting")
+        events.append("up")
+
+    sent = {}
+    client = fake_client({"visible": True, "answer": "yes", "box": [], "confidence": 0.9, "note": "a can"}, sent,
+                         models=cold_list)
+    create = client.chat.completions.create
+    client.chat.completions.create = lambda **kw: (events.append("asked"), create(**kw))[1]
+    model = second_opinion.OpenModel(tmp_path / "c.jsonl", client=client, kind="glimmer", wake_wait_s=5,
+                                     wake_retry_s=0.05)
+    model.wake()
+    assert model.answer(CHECK, synthetic_photo(tmp_path / "p.jpg"))["answer"] == "yes"
+    assert events == ["up", "asked"] and len(tries) == 3
+    deadline = time.time() + 5  # the wake thread logs after it lets the answer go
+    while time.time() < deadline and len((tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()) < 2:
+        time.sleep(0.05)
+    logged = [json.loads(l) for l in (tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()]
+    (wake,) = [r for r in logged if r["kind"] == "glimmer_wake"]
+    assert "error" not in wake
+
+
+def test_an_answer_without_a_wake_is_sent_at_once(tmp_path):
+    sent = {}
+    model = second_opinion.OpenModel(tmp_path / "c.jsonl", client=fake_client(
+        {"visible": False, "answer": "no", "box": [], "confidence": 0.9, "note": ""}, sent))
+    started = time.time()
+    model.answer(CHECK, synthetic_photo(tmp_path / "p.jpg"))
+    assert time.time() - started < 1 and sent
 
 
 def test_glimmer_from_env_needs_its_url_and_derives_its_key(tmp_path, monkeypatch):
