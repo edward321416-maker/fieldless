@@ -34,7 +34,7 @@ license: mit
 short_description: Street surveys without the fieldwork
 ---
 
-Public demo of [Fieldless](https://github.com/edward321416-maker/threshold): street surveys Fieldless has already run,
+Public demo of [Fieldless](https://github.com/edward321416-maker/fieldless): street surveys Fieldless has already run,
 read-only. Street photos from Mapillary (CC BY-SA 4.0), credited on every photo.
 """
 

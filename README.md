@@ -6,7 +6,7 @@ One survey covers street assets (utility and streetlight poles, street trees, pu
 
 Live app: https://edward321416--fieldless-web.us-east.modal.run (start your own survey; spend is capped) · Read-only demo: https://huggingface.co/spaces/BBONG1201/fieldless (surveys already run).
 
-This is a work in progress for the Meta Global AI Developer Hackathon. The full README, with measured results, comes with the submission. The repository folder and code keep the earlier working name `threshold`.
+This is a work in progress for the Meta Global AI Developer Hackathon. The full README, with measured results, comes with the submission. The repository was renamed from `threshold`, its earlier working name, which a few settings (`THRESHOLD_DATA`, `THRESHOLD_RUN`) and the database file (`threshold.db`) still use.
 
 ## Built during the Meta Global AI Developer Hackathon
 
@@ -76,9 +76,9 @@ Then open http://localhost:5173. Vite forwards `/api` to port 8000.
 With Docker:
 
 ```bash
-docker build -t threshold .
-docker run --rm -p 8000:8000 -v threshold-data:/data \
-  -e MODEL_API_KEY -e MAPILLARY_TOKEN threshold
+docker build -t fieldless .
+docker run --rm -p 8000:8000 -v fieldless-data:/data \
+  -e MODEL_API_KEY -e MAPILLARY_TOKEN fieldless
 ```
 
 Then open http://localhost:8000.

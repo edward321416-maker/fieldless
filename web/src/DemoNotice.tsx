@@ -1,4 +1,4 @@
-const RUN_IT = "https://github.com/edward321416-maker/threshold#run-the-app";
+const RUN_IT = "https://github.com/edward321416-maker/fieldless#run-the-app";
 
 // The public demo is a static site: it shows surveys already run and cannot start new ones.
 export default function DemoNotice() {

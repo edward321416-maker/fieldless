@@ -15,7 +15,7 @@ from eval import city
 from eval.store import load_scan, open_ro
 
 METHOD = "Rows paired one-to-one with the city's points by photo position and viewing direction (eval/city.py)."
-METHOD_URL = "https://github.com/edward321416-maker/threshold/blob/main/eval/city.py"
+METHOD_URL = "https://github.com/edward321416-maker/fieldless/blob/main/eval/city.py"
 SEATTLE = {  # the layers data/seattle/city_eval_all.sh scores, relative to data/seattle
     "utility_pole": {"layer": "assets/poles.geojson", "name": "Seattle City Light poles", "inventory": True},
     "street_tree": {"layer": "assets/trees.geojson", "name": "SDOT street trees", "inventory": True,
