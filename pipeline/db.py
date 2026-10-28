@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS dropped_pick (
     model_outputs TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS report_text (
+    scan_id INTEGER PRIMARY KEY REFERENCES scan(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    model TEXT,
+    made_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS frame (
     scan_id INTEGER NOT NULL REFERENCES scan(id) ON DELETE CASCADE,
     idx INTEGER NOT NULL,
@@ -289,6 +295,23 @@ def add_dropped(conn, scan_id: int, fields: dict) -> int:
 def dropped(conn, scan_id: int) -> list[dict]:
     rows = conn.execute("SELECT * FROM dropped_pick WHERE scan_id = ? ORDER BY id", (scan_id,)).fetchall()
     return [_decode(r) for r in rows]
+
+
+def set_report_text(conn, scan_id: int, text: dict, model: str | None) -> None:
+    """The survey report's sentences (assist.report.narrate), kept so a report never asks the model again. A newer
+    one replaces the old."""
+    conn.execute("INSERT OR REPLACE INTO report_text (scan_id, text, model, made_at) VALUES (?, ?, ?, ?)",
+                 (scan_id, json.dumps(text, ensure_ascii=False), model, now()))
+    conn.commit()
+
+
+def report_text(conn, scan_id: int) -> dict | None:
+    """The saved sentences, or None: none were made, or the database predates the table (a read-only copy)."""
+    try:
+        row = conn.execute("SELECT text FROM report_text WHERE scan_id = ?", (scan_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return json.loads(row[0]) if row else None
 
 
 def frame_compass(conn, scan_id: int, idx: int) -> float | None:

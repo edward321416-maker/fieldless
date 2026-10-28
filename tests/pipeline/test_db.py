@@ -169,3 +169,23 @@ def test_dropped_picks_are_kept_per_scan_and_cleared_with_their_check(conn, tmp_
     plain.execute("CREATE TABLE scan (id INTEGER PRIMARY KEY)")
     plain.close()
     assert db.dropped(db.connect(old), 1) == []
+
+
+def test_report_text_is_kept_per_scan_and_a_newer_one_replaces_it(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    scan_id = db.create_scan(conn, "test", [0, 0, 1, 1])
+    assert db.report_text(conn, scan_id) is None
+    db.set_report_text(conn, scan_id, {"summary": "first"}, "muse-spark-1.3")
+    db.set_report_text(conn, scan_id, {"summary": "second", "items": {"a": "b"}}, "muse-spark-1.3")
+    assert db.report_text(conn, scan_id) == {"summary": "second", "items": {"a": "b"}}
+
+
+def test_report_text_reads_none_from_a_database_made_before_the_table(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE scan (id INTEGER PRIMARY KEY)")
+    old.close()
+    ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    assert db.report_text(ro, 1) is None  # a read-only copy of an older database has no report_text table
+    ro.close()
