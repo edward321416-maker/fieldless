@@ -1,96 +1,251 @@
-import { useState } from "react";
-import { STATIC_DEMO } from "./api";
-import { labelText, photoMonth, reasonText } from "./format";
-import type { Evidence, Picked } from "./types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, ApiError, STATIC_DEMO } from "./api";
+import { photoMonth, reasonText } from "./format";
+import { compassWord, targetBearing } from "./geo";
+import { STATUS_SENTENCE, type Finding } from "./items";
+import { itemArt } from "./markerArt";
+import { EvidencePhoto, PhotoCredit } from "./Photo";
+import { choiceForKey, choicesFor, type Choice } from "./review";
+import type { CityCheck, ItemMeta, Picked } from "./types";
 
-// The official Mapillary logo (press kit v0.0.4, the light-background version, outer margin trimmed); the word if it fails to load.
-export function MapillaryMark({ alt = "Mapillary" }: { alt?: string }) {
-  const [missing, setMissing] = useState(false);
-  if (missing) return alt ? <span className="mapillary-word">Mapillary</span> : null;
-  return <img src="/mapillary-logo.png" alt={alt} className="mapillary-logo" onError={() => setMissing(true)} />;
-}
-
-export function PhotoCredit({ evidence }: { evidence: Evidence }) {
-  return (
-    <p className="credit">
-      Photo by {evidence.creator ?? "a Mapillary contributor"}, {photoMonth(evidence.captured_at)} ·{" "}
-      <a href={evidence.link} target="_blank" rel="noreferrer">
-        <MapillaryMark alt="" /> View on Mapillary
-      </a>{" "}
-      · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">{evidence.license}</a>
-      {" "}· {evidence.blurred ? "Edited: people and plates blurred, resized" : "Edited: resized"}
-    </p>
-  );
-}
+export { MapillaryMark, PhotoCredit } from "./Photo";
 
 interface Props {
-  picked: Picked;
+  finding: Finding;
+  list: Finding[]; // what the arrows step through: the item's findings, or the review queue
+  queue: boolean; // reviewing: after an answer, go to the next finding waiting for a person
+  items: ItemMeta[];
+  street: string | undefined;
+  city: CityCheck | undefined;
+  onNavigate: (f: Finding) => void;
   onClose: () => void;
-  onReview: () => void;
+  onUpdated: (p: Picked) => void;
 }
 
-export default function EvidenceCard({ picked, onClose, onReview }: Props) {
-  const item = picked.item;
-  const title = picked.kind === "entrance" ? picked.item.name || "Unnamed entrance" : labelText(picked.item.label);
-  const summary = picked.kind === "entrance"
-    ? `${picked.item.name || "Entrance"}: ${picked.item.label.text}`
-    : picked.item.label.text;
+const UNDO_SHOWN_MS = 8000; // the server takes a decision back for 60 seconds (server/review.py UNDO_WINDOW_S)
+
+function aside(heading: number | null, bearing: number | null): string {
+  if (heading === null || bearing === null) return "";
+  const d = ((bearing - heading + 540) % 360) - 180;
+  return Math.abs(d) < 10 ? "straight ahead" : d < 0 ? "ahead, to the left" : "ahead, to the right";
+}
+
+// The evidence card, 3rd version (docs/specs/2026-10-28-ui-redesign-design.md 3.4, docs/ui-rules.md U5): what it
+// is and its status, the photo with the model's box, where it is, what the model was asked and answered, reference
+// chips, and the person's answer with keys and Undo.
+export default function EvidenceCard(props: Props) {
+  const { finding: f, items } = props;
+  const p = f.picked;
+  const art = useMemo(() => itemArt(items), [items]);
+  const target = items.find((it) => it.id === f.item)?.target ?? f.item.replace(/_/g, " ");
+  const index = props.list.findIndex((x) => x.key === f.key);
+  const shownAt = useRef(performance.now());
+  const hiddenMs = useRef(0);
+  const hiddenAt = useRef<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<{ previous: Finding } | null>(null);
+  const [steps, setSteps] = useState(0);
+  const { question, choices } = choicesFor(p);
+  const reviewable = !STATIC_DEMO && ["needs_review", "auto"].includes(f.status);
+
+  useEffect(() => {
+    shownAt.current = performance.now();
+    hiddenMs.current = 0;
+    hiddenAt.current = document.hidden ? performance.now() : null;
+    setError(null);
+    if (p.kind === "entrance") setSteps(p.item.step_count ?? 0);
+  }, [f.key]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) hiddenAt.current = performance.now();
+      else if (hiddenAt.current !== null) {
+        hiddenMs.current += performance.now() - hiddenAt.current;
+        hiddenAt.current = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  function step(by: number) {
+    const next = props.list[index + by];
+    if (next) props.onNavigate(next);
+  }
+
+  function nextAfterAnswer(): Finding | undefined {
+    const after = [...props.list.slice(index + 1), ...props.list.slice(0, index)];
+    return props.queue ? after.find((x) => x.status === "needs_review") : props.list[index + 1];
+  }
+
+  async function answer(choice: { send: Choice["send"] }) {
+    if (busy || !reviewable) return;
+    const hidden = hiddenMs.current + (hiddenAt.current !== null ? performance.now() - hiddenAt.current : 0);
+    const seconds = Math.min(3600, Math.round((performance.now() - shownAt.current - hidden) / 100) / 10);
+    setBusy(true);
+    setError(null);
+    try {
+      const updated: Picked = choice.send.kind === "issue"
+        ? { kind: "issue", item: await api.reviewIssue(p.item.id, { ...choice.send.body, seconds }) }
+        : { kind: "entrance", item: await api.reviewEntrance(p.item.id, { ...choice.send.body, seconds }) };
+      const next = nextAfterAnswer();
+      setSaved({ previous: f });
+      props.onUpdated(updated);
+      if (next) props.onNavigate(next);
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 409 ? "Someone already answered this one." : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undo() {
+    if (!saved) return;
+    const prev = saved.previous.picked;
+    setSaved(null);
+    try {
+      const restored: Picked = prev.kind === "issue"
+        ? { kind: "issue", item: await api.undoIssue(prev.item.id) }
+        : { kind: "entrance", item: await api.undoEntrance(prev.item.id) };
+      props.onUpdated(restored);
+      props.onNavigate({ ...saved.previous, status: restored.item.review_status, picked: restored });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  // Keys: the answers' letters, arrows to step, Z to undo, Escape to close; not while typing in a field.
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t && ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) return;
+      if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+      if (ev.key === "ArrowRight") step(1);
+      else if (ev.key === "ArrowLeft") step(-1);
+      else if (ev.key === "Escape") props.onClose();
+      else if (ev.key.toLowerCase() === "z" && saved) undo();
+      else {
+        const c = reviewable ? choiceForKey(choices, ev.key) : undefined;
+        if (!c) return;
+        answer(c);
+      }
+      ev.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
+    if (!saved) return;
+    const t = window.setTimeout(() => setSaved(null), UNDO_SHOWN_MS);
+    return () => window.clearTimeout(t);
+  }, [saved]);
+
+  const bearing = targetBearing(f.heading, f.box);
+  const facing = f.heading !== null ? `facing ${compassWord(f.heading)}` : "";
+  const where = aside(f.heading, bearing);
+  const check = p.kind === "issue" ? p.item.check : null;
+  const match = p.kind === "issue" && props.city?.items[f.item]?.matched_ids.includes(p.item.id);
+  const evidence = p.item.evidence;
+  const title = p.kind === "entrance" ? `${p.item.name || "Unnamed entrance"}: ${p.item.label.text}` : p.item.label.text;
+
   return (
-    <section className="card" aria-labelledby="card-title">
-      <div className="card-head">
-        <h2 id="card-title">{title}</h2>
-        <button type="button" onClick={onClose} aria-label="Close">×</button>
+    <section className="card evidence-card" aria-labelledby="card-title">
+      <div className="card-nav">
+        <button type="button" onClick={props.onClose}>← Back to the list</button>
+        <span className="hint">
+          {props.queue ? `${props.list.filter((x) => x.status === "needs_review").length} left to review`
+            : index >= 0 ? `${index + 1} of ${props.list.length}` : ""}
+        </span>
+        <span className="card-arrows">
+          <button type="button" onClick={() => step(-1)} disabled={index <= 0} aria-label="Previous (left arrow)">‹</button>
+          <button type="button" onClick={() => step(1)} disabled={index < 0 || index >= props.list.length - 1}
+            aria-label="Next (right arrow)">›</button>
+        </span>
       </div>
-      {item.evidence ? (
+      {saved && (
+        <p className="saved" role="status">
+          Saved · <button type="button" className="link-button inline" onClick={undo}>Undo (Z)</button>
+        </p>
+      )}
+      <h2 id="card-title" className="card-title">
+        <img src={art[f.item]} alt="" width={36} height={36} /> {title}
+      </h2>
+      <p className="status-line">{STATUS_SENTENCE[f.status] ?? f.status}</p>
+
+      {evidence ? (
         <>
-          <img src={item.evidence.url} alt={`Street photo: ${summary}`} className="evidence" />
-          <PhotoCredit evidence={item.evidence} />
-          {picked.kind === "issue" && picked.item.second_opinion && (
-            <p className="hint">
-              {picked.item.second_opinion.agree
-                ? `${picked.item.second_opinion.model} agrees.`
-                : `${picked.item.second_opinion.model} answered differently; check the photo.`}
-            </p>
-          )}
+          <EvidencePhoto evidence={evidence} box={f.box} boxLabel={`the ${target}`} alt={`Street photo: ${title}`} />
+          <PhotoCredit evidence={evidence} />
         </>
       ) : (
         <p className="hint">No evidence photo for this item.</p>
       )}
-      {item.old_photo && <p className="badge">Photo over 3 years old ({photoMonth(item.captured_at)})</p>}
-      {picked.kind === "entrance" ? (
+
+      <h3>Where</h3>
+      <p>
+        {props.street ?? "Street name not on the map"}
+        {facing && <> · photo taken {facing}</>}
+        {where && <>; the {target} is {where}, position approximate</>}.
+      </p>
+
+      {check ? (
+        <>
+          <h3>We asked {check.model}</h3>
+          <blockquote className="asked">{check.question}</blockquote>
+          <p><strong>Answer: {p.kind === "issue" ? p.item.label.text : ""}</strong>
+            {check.note && <> · “{check.note}”</>}</p>
+          {p.kind === "issue" && p.item.defect && (
+            <p className="hint">→ Listed as a possible defect for you to confirm. Look at the boxed {target}.</p>
+          )}
+        </>
+      ) : p.kind === "entrance" ? (
         <dl className="stats">
-          <dt>Steps</dt>
-          <dd>{labelText(picked.item.label)}</dd>
+          <dt>Steps</dt><dd>{p.item.label.text}</dd>
           <dt>Stairs outlined by SAM 3.1</dt>
-          <dd>{picked.item.stairs_detected === null ? "not checked" : picked.item.stairs_detected ? "yes" : "no"}</dd>
+          <dd>{p.item.stairs_detected === null ? "not checked" : p.item.stairs_detected ? "yes" : "no"}</dd>
         </dl>
       ) : (
-        <p>
-          {picked.item.check && `Answered by ${picked.item.check.model}. `}
-          {picked.item.check
-            ? "Part of the street itself, so it is likely the same today unless it was rebuilt."
-            : picked.item.durable
-              ? "A defect of the paving itself, so it is likely still there today."
-              : `Seen in the photo of ${photoMonth(picked.item.captured_at)}; movable objects may be gone now.`}{" "}
-          {picked.item.frame_start !== null && picked.item.frame_end !== null
-            ? `Photos ${picked.item.frame_start}–${picked.item.frame_end} of the walk.`
-            : ""}
+        <p>{p.item.durable ? "A defect of the paving itself, so it is likely still there today."
+          : `Seen in the photo of ${photoMonth(p.item.captured_at)}; movable objects may be gone now.`}</p>
+      )}
+
+      {(match || p.item.old_photo || (p.kind === "issue" && p.item.second_opinion) || p.item.review_reasons.length > 0) && (
+        <p className="chips">
+          {match && <span className="chip">{props.city!.city}'s list has a {target} here</span>}
+          {p.item.old_photo && <span className="chip">Photo over 3 years old ({photoMonth(p.item.captured_at)})</span>}
+          {p.kind === "issue" && p.item.second_opinion && (
+            <span className="chip">{p.item.second_opinion.model} {p.item.second_opinion.agree ? "agrees" : "answered differently"}</span>
+          )}
+          {p.item.review_reasons.map((r) => <span key={r} className="chip">{reasonText(r)}</span>)}
         </p>
       )}
-      {item.review_reasons.length > 0 && (
-        <>
-          <h3>Why it needs a check</h3>
-          <ul>
-            {item.review_reasons.map((r) => <li key={r}>{reasonText(r)}</li>)}
-          </ul>
-        </>
-      )}
-      {item.review_status === "needs_review" && !STATIC_DEMO && (
-        <button type="button" className="primary" onClick={onReview}>Review now</button>
-      )}
-      {item.review_status === "verified" && <p className="badge">Checked by a surveyor</p>}
-      {item.review_status === "field_check" && (
-        <p className="badge">A surveyor could not tell from the photo: check on site</p>
+
+      {error && <p className="error" role="alert">{error}</p>}
+      {reviewable && (
+        <div className="answers">
+          <h3>{question}{f.status === "auto" && <span className="hint small"> (optional: the models were sure)</span>}</h3>
+          {choices.map((c) => (
+            <button key={c.key} type="button" className={c.main ? "answer primary" : "answer"} disabled={busy}
+              onClick={() => answer(c)}>
+              <kbd>{c.key}</kbd> {c.label}
+            </button>
+          ))}
+          {p.kind === "entrance" && !p.item.review_reasons.includes("possible_sill") && (
+            <div className="row">
+              <label className="field inline">
+                Steps
+                <input type="number" min={0} max={50} value={steps}
+                  onChange={(e) => setSteps(Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))))} />
+              </label>
+              <button type="button" disabled={busy}
+                onClick={() => answer({ send: { kind: "entrance", body: { action: "correct", step_count: steps } } })}>
+                Save the step count
+              </button>
+            </div>
+          )}
+        </div>
       )}
     </section>
   );

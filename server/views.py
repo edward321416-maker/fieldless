@@ -128,8 +128,10 @@ def check_json(row: dict, std: survey_items.Standard) -> dict | None:
     check = std.check(row["issue_type"])
     if check is None:
         return None
-    answered_by = ((row.get("model_outputs") or {}).get("check") or {}).get("model") or config.SPARK_MODEL
+    said = (row.get("model_outputs") or {}).get("check") or {}
+    answered_by = said.get("model") or config.SPARK_MODEL
     return {"id": check.id, "find": check.find, "target": check.target, "question": check.ask,
+            "note": said.get("note") or None,  # the model's own one-line reason, shown as it wrote it
             "answer": row.get("object_label") or "unclear", "report_when": check.report_when,
             "label_yes": check.label_yes, "label_no": check.label_no, "inventory": check.inventory,
             "model": model_name(answered_by)}

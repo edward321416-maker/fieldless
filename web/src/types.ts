@@ -20,6 +20,7 @@ export interface CheckInfo {
   find: string;
   target: string; // the noun the survey is about; `find` is SAM's phrase and may differ
   question: string; // the check's `ask` sentence (pipeline/standards)
+  note: string | null; // the model's own one-line reason
   answer: "yes" | "no" | "unclear";
   report_when: "yes" | "no" | ""; // "" for an inventory check
   label_yes: string;

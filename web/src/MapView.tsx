@@ -2,7 +2,7 @@ import * as maplibregl from "maplibre-gl"; // v6 has no default export
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection } from "geojson";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { bboxFromCorners, bboxPolygon, viewToBbox } from "./bbox";
 import { destination, distanceToLineM, targetBearing, viewWedge, type LngLat } from "./geo";
 import { colourOf, itemName, STATUS_SENTENCE, type Badge, type Finding } from "./items";
@@ -41,6 +41,7 @@ interface Props {
   onPick: (f: Finding) => void;
   onReady: (getView: () => Bbox) => void;
   onStreets: (names: Record<string, string>) => void;
+  children?: ReactNode; // drawn over the map (the selected finding's photo)
 }
 
 function areaData(bbox: Bbox | null): FeatureCollection {
@@ -288,7 +289,10 @@ export default function MapView(props: Props) {
     label.current?.remove();
     label.current = null;
     if (f) {
-      map.easeTo({ center: at, zoom: Math.max(map.getZoom(), 19), duration: 600 });
+      // the photo window covers the lower part of a wide map: centre the marker in the part left free
+      const covered = f.picked.item.evidence && map.getContainer().clientWidth > 800
+        ? Math.min(460, map.getContainer().clientHeight * 0.55) : 0;
+      map.easeTo({ center: at, zoom: Math.max(map.getZoom(), 19), duration: 600, padding: { top: 0, bottom: covered, left: 0, right: 0 } });
       label.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, anchor: labelAnchor(bearing),
         offset: 26, className: "map-label" }).setLngLat(at).setText(props.selectedLabel).addTo(map);
     }
@@ -311,6 +315,7 @@ export default function MapView(props: Props) {
       {props.findings.length > 0 && (
         <Legend items={props.items} counts={counts} badges={badges} hidden={props.hidden} onToggle={props.onToggleItem} />
       )}
+      {props.children}
     </div>
   );
 }

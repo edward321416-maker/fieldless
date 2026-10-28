@@ -148,7 +148,7 @@ def test_issue_json_carries_the_check_and_whether_it_is_a_defect():
     assert out["check"] == {"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp",
                             "question": US.checks[0].ask, "answer": "no", "report_when": "no", "label_yes": "Curb ramp with detectable warning",
                             "label_no": "Curb ramp without detectable warning", "inventory": False,
-                            "model": "Muse Spark"}
+                            "model": "Muse Spark", "note": None}
     assert views.issue_json(ramp("yes"), NOW, US)["defect"] is False
     assert views.issue_json(issue(), NOW)["check"] is None and views.issue_json(issue(), NOW)["defect"] is False
     assert views.issue_json(issue(), NOW)["second_opinion"] is None
@@ -242,3 +242,11 @@ def test_an_issue_carries_the_models_box_and_its_photos_heading():
         bad = {**row, "model_outputs": {"check": {"visible": True, "answer": "no", "box": box}}}
         assert views.issue_json(bad, NOW, std=us)["box"] is None
     assert views.issue_json(issue(), NOW)["box"] is None and views.issue_json(issue(), NOW)["heading"] is None
+
+
+def test_a_check_row_carries_the_models_note():
+    us = survey_items.load("US")
+    row = {**issue(issue_type="utility_pole", object_label="yes"),
+           "model_outputs": {"check": {"visible": True, "answer": "yes", "note": "wooden pole with a lamp arm"}}}
+    assert views.issue_json(row, NOW, std=us)["check"]["note"] == "wooden pole with a lamp arm"
+    assert views.issue_json({**row, "model_outputs": {}}, NOW, std=us)["check"]["note"] is None

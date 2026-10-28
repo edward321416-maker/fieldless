@@ -8,7 +8,7 @@ import { isFinished } from "./format";
 import { findingsOf, itemName, keyOf, type Finding } from "./items";
 import MapView from "./MapView";
 import ResultsPanel from "./ResultsPanel";
-import ReviewPanel from "./ReviewPanel";
+import PhotoWindow from "./PhotoWindow";
 import type { Bbox, DemoArea, Entrance, Issue, Picked, Scan, ServerConfig, Walk } from "./types";
 
 const POLL_MS = 3000;
@@ -122,8 +122,15 @@ export default function App() {
     setPicked(p);
   }
 
-  const findings = useMemo(() => findingsOf(issues, entrances), [issues, entrances]);
   const items = scan?.items ?? [];
+  // In the panel's order: item by item, as the standard lists them (the map's colours follow the same order).
+  const findings = useMemo(() => {
+    const all = findingsOf(issues, entrances);
+    const order = new Map((scan?.items ?? []).map((it, i) => [it.id, i]));
+    return all.map((f, i) => ({ f, i }))
+      .sort((a, b) => (order.get(a.f.item) ?? 99) - (order.get(b.f.item) ?? 99) || a.i - b.i)
+      .map(({ f }) => f);
+  }, [issues, entrances, scan?.items]);
   const selected: Finding | null = picked ? findings.find((f) => f.key === keyOf(picked)) ?? null : null;
   // "Utility or streetlight pole · 3 of 20 · position approximate": the marker's name tag (ui-redesign 3.3).
   const selectedLabel = useMemo(() => {
@@ -141,13 +148,22 @@ export default function App() {
 
   function updated(u: Picked) {
     if (u.kind === "entrance") setEntrances((list) => list.map((e) => (e.id === u.item.id ? u.item : e)));
-    else setIssues((list) => list.flatMap((i) => (i.id !== u.item.id ? [i] : u.item.review_status === "rejected" ? [] : [u.item])));
-    // An open card follows the item it shows; a rejected issue's card closes.
-    setPicked((p) => {
-      if (!p || p.kind !== u.kind || p.item.id !== u.item.id) return p;
-      return u.kind === "issue" && u.item.review_status === "rejected" ? null : u;
-    });
+    else if (issues.some((i) => i.id === u.item.id)) {
+      setIssues((list) => list.flatMap((i) => (i.id !== u.item.id ? [i] : u.item.review_status === "rejected" ? [] : [u.item])));
+    } else if (scan && u.item.review_status !== "rejected") {
+      api.issues(scan.id).then(setIssues).catch(() => undefined); // an undone rejection: back on the map, in place
+    }
     if (scan) api.scan(scan.id).then(setScan).catch(() => undefined);
+  }
+
+  const sameItem = selected ? findings.filter((f) => f.item === selected.item) : [];
+  const cardList = reviewing ? findings : sameItem;
+
+  function startReview() {
+    const first = findings.find((f) => f.status === "needs_review");
+    if (!first) return;
+    setPicked(first.picked);
+    setReviewing(true);
   }
 
   return (
@@ -193,16 +209,24 @@ export default function App() {
         onPick={(f) => pick(f.picked)}
         onReady={(fn) => (getView.current = fn)}
         onStreets={setStreets}
-      />
+      >
+        {selected && (
+          <PhotoWindow finding={selected} list={sameItem} items={items} onStep={(f) => setPicked(f.picked)}
+            onClose={() => setPicked(null)} />
+        )}
+      </MapView>
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
         {error && <p className="error" role="alert">{error}</p>}
         <div ref={detailRef}>
-          {reviewing ? (
-            <ReviewPanel entrances={entrances} issues={issues} first={picked} onUpdated={updated}
-              onClose={() => setReviewing(false)} />
-          ) : picked ? (
-            <EvidenceCard picked={picked} onClose={() => setPicked(null)} onReview={() => setReviewing(true)} />
-          ) : null}
+          {selected && (
+            <EvidenceCard finding={selected} list={cardList} queue={reviewing} items={items}
+              street={streets[selected.key]} city={scan?.city_check}
+              onNavigate={(f) => setPicked(f.picked)} onUpdated={updated}
+              onClose={() => {
+                setPicked(null);
+                setReviewing(false);
+              }} />
+          )}
         </div>
         {/* What is being looked at comes first; a new survey is one button away (docs/ui-rules.md U6). */}
         {!STATIC_DEMO && (newSurvey || !scan || !finished) && (
@@ -228,10 +252,7 @@ export default function App() {
             streets={streets}
             selectedKey={selected?.key ?? null}
             onPick={(f) => pick(f.picked)}
-            onReview={() => {
-              setPicked(null);
-              setReviewing(true);
-            }}
+            onReview={startReview}
           />
         )}
         {STATIC_DEMO && <DemoNotice />}
