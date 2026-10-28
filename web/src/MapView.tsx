@@ -33,6 +33,8 @@ const RING_IMAGE = ["concat", "ring:", ...Array.from({ length: RING_SLOTS }, (_,
 
 interface Props {
   selecting: boolean;
+  newSurvey: boolean; // a new survey is open: Mapillary's coverage shows, the map steps back to the neighbourhood
+  coverage: boolean; // the server passes Mapillary's coverage tiles on
   bbox: Bbox | null;
   fitTo: Bbox | null;
   findings: Finding[];
@@ -198,6 +200,11 @@ export default function MapView(props: Props) {
     map.on("idle", () => nameStreets(map));
 
     let start: [number, number] | null = null;
+    let drawTag: maplibregl.Popup | null = null; // "Release to count the photos in this box", at the box's corner
+    const endDraw = () => {
+      drawTag?.remove();
+      drawTag = null;
+    };
     map.on("mousedown", (e: maplibregl.MapMouseEvent) => {
       if (latest.current.selecting) start = [e.lngLat.lng, e.lngLat.lat];
     });
@@ -205,16 +212,21 @@ export default function MapView(props: Props) {
       if (!start) return;
       if (e.originalEvent.buttons === 0 || !latest.current.selecting) {
         start = null; // released outside the map, or drawing was cancelled: stop following the cursor
+        endDraw();
         (map.getSource("area") as maplibregl.GeoJSONSource | undefined)?.setData(areaData(latest.current.bbox));
         return;
       }
-      (map.getSource("area") as maplibregl.GeoJSONSource | undefined)
-        ?.setData(areaData(bboxFromCorners(start, [e.lngLat.lng, e.lngLat.lat])));
+      const drawn = bboxFromCorners(start, [e.lngLat.lng, e.lngLat.lat]);
+      (map.getSource("area") as maplibregl.GeoJSONSource | undefined)?.setData(areaData(drawn));
+      drawTag ??= new maplibregl.Popup({ closeButton: false, closeOnClick: false, anchor: "bottom-left",
+        className: "map-label" }).setText("Release to count the photos in this box").addTo(map);
+      drawTag.setLngLat([drawn[0], drawn[3]]);
     });
     map.on("mouseup", (e: maplibregl.MapMouseEvent) => {
       if (!start) return;
       const bbox = bboxFromCorners(start, [e.lngLat.lng, e.lngLat.lat]);
       start = null;
+      endDraw();
       latest.current.onSelect(bbox);
     });
     mapRef.current = map;
@@ -255,6 +267,23 @@ export default function MapView(props: Props) {
   useEffect(() => {
     if (loaded) (mapRef.current?.getSource("area") as maplibregl.GeoJSONSource | undefined)?.setData(areaData(props.bbox));
   }, [props.bbox, loaded]);
+
+  // A new survey: Mapillary's coverage (walks people already photographed) under the walks, and the neighbourhood in
+  // view (docs/specs/2026-10-28-design-pass2-design.md 2). The tiles come through the server, which holds the token.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    if (props.coverage && !map.getSource("coverage")) {
+      map.addSource("coverage", { type: "vector", minzoom: 6, maxzoom: 14,
+        tiles: [`${window.location.origin}/api/mapillary/tiles/{z}/{x}/{y}`] });
+      map.addLayer({ id: "coverage", type: "line", source: "coverage", "source-layer": "sequence",
+        filter: ["!=", ["get", "is_pano"], true], layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#05CB63", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 16, 3],
+          "line-opacity": 0.9 } }, "walks");
+    }
+    if (map.getLayer("coverage")) map.setLayoutProperty("coverage", "visibility", props.newSurvey ? "visible" : "none");
+    if (props.newSurvey && map.getZoom() > 15) map.easeTo({ zoom: 15, duration: 600 });
+  }, [props.coverage, props.newSurvey, loaded]);
 
   // The markers: one image per item and badge, a source of the findings not hidden by the legend.
   useEffect(() => {

@@ -5,6 +5,7 @@ export type Bbox = [number, number, number, number]; // min_lng, min_lat, max_ln
 export interface ServerConfig {
   invite_required: boolean;
   max_bbox_deg2: number;
+  coverage_tiles?: boolean; // the server passes Mapillary's coverage tiles on (/api/mapillary/tiles); not the static demo
 }
 
 export interface Preview {

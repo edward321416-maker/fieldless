@@ -131,13 +131,23 @@ export default function AreaPanel(props: Props) {
     <section className="panel-section" aria-labelledby="area-title">
       <h2 id="area-title">New survey</h2>
       <Steps at={step} />
+      {step === 0 && (
+        <p className="lead">Choose the streets. Nothing runs, and nothing is spent, until you press Start.</p>
+      )}
       <div className="row">
-        <button type="button" onClick={props.onToggleSelect} aria-pressed={props.selecting}>
-          {props.selecting ? "Cancel drawing" : "Draw a rectangle"}
+        <button type="button" className={props.selecting ? "" : "primary"} onClick={props.onToggleSelect}
+          aria-pressed={props.selecting}>
+          {props.selecting ? "Cancel drawing" : "Draw a box"}
         </button>
         <button type="button" onClick={props.onUseView}>Use this map view</button>
       </div>
-      {props.selecting && <p className="hint">Drag on the map to draw the survey area. On a phone, move the map to the streets and use "Use this map view".</p>}
+      {props.selecting && <p className="hint">Drag on the map to draw a box; release it to count the photos inside. On a phone, move the map to the streets and use "Use this map view".</p>}
+      {step === 0 && !props.selecting && !bbox && (
+        <ol className="next-steps">
+          <li>You see how many photos the box holds, when they were taken, and the estimated cost.</li>
+          <li>Start, and SAM 3.1 and Muse Spark go through the photos. A survey is capped at $3.00.</li>
+        </ol>
+      )}
       {loading && (
         <p role="status">Counting the public street photos of this area on Mapillary… {waited} s (usually under a minute)</p>
       )}

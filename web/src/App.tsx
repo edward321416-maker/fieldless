@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, STATIC_DEMO } from "./api";
 import { contentBounds } from "./bbox";
 import AreaPanel from "./AreaPanel";
+import CoverageGuide from "./CoverageGuide";
 import Attribution from "./Attribution";
 import DemoNotice from "./DemoNotice";
 import EvidenceCard from "./EvidenceCard";
@@ -212,6 +213,8 @@ export default function App() {
       </header>
       <MapView
         selecting={selecting}
+        newSurvey={newSurvey}
+        coverage={!!config?.coverage_tiles}
         bbox={bbox}
         fitTo={fitTo}
         findings={newSurvey ? [] : findings}
@@ -227,6 +230,10 @@ export default function App() {
         onReady={(fn) => (getView.current = fn)}
         onStreets={setStreets}
       >
+        {newSurvey && (
+          <CoverageGuide coverage={!!config?.coverage_tiles} demos={demos}
+            onGo={(b) => setFitTo([b[0], b[1], b[2], b[3]])} />
+        )}
         {selected && !newSurvey && (
           <PhotoWindow finding={selected} list={sameItem} items={items} onStep={(f) => setPicked(f.picked)}
             onClose={() => setPicked(null)} />
