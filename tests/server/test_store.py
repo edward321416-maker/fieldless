@@ -4,7 +4,7 @@ from contextlib import closing
 from pathlib import Path
 
 from pipeline import db
-from server.store import DB_NAME, DatasetStore
+from server.store import DB_NAME, DatasetStore, FolderBackup, folder_store
 
 
 def no_download(*args, **kwargs):
@@ -53,6 +53,39 @@ def test_save_uploads_a_copy_of_the_database_and_the_evidence_only(tmp_path):
     DatasetStore("me/data", tmp_path, api=api, download=no_download).save_now()
     assert api.uploads == [{"repo": "me/data", "type": "dataset", "files": ["evidence/scan1_issue1.jpg", DB_NAME],
                             "scans": 1}]
+
+
+def test_a_backup_folder_round_trip_keeps_the_database_and_evidence(tmp_path):
+    run, backup = tmp_path / "run", tmp_path / "volume"
+    run.mkdir()
+    with closing(db.connect(run / DB_NAME)) as conn:
+        db.create_scan(conn, "mapillary", [0, 0, 1, 1])
+    (run / "evidence").mkdir()
+    (run / "evidence" / "scan1_issue1.jpg").write_bytes(b"jpg")
+    (run / "calls.jsonl").write_text("{}", encoding="utf-8")
+    folder_store(backup, run).save_now()
+    assert sorted(p.relative_to(backup).as_posix() for p in backup.rglob("*") if p.is_file()) == [
+        "evidence/scan1_issue1.jpg", DB_NAME]
+    fresh = tmp_path / "fresh"  # a new container: empty local disk, the same volume
+    assert folder_store(backup, fresh).restore() is True
+    with closing(db.connect(fresh / DB_NAME)) as conn:
+        assert len(db.list_scans(conn)) == 1
+    assert (fresh / "evidence" / "scan1_issue1.jpg").read_bytes() == b"jpg"
+
+
+def test_an_empty_backup_folder_restores_nothing(tmp_path):
+    assert folder_store(tmp_path / "volume", tmp_path / "run").restore() is False
+
+
+def test_a_save_replaces_the_backup_database_whole(tmp_path):
+    run, backup = tmp_path / "run", tmp_path / "volume"
+    run.mkdir()
+    backup.mkdir()
+    (backup / DB_NAME).write_bytes(b"old")
+    db.connect(run / DB_NAME).close()
+    FolderBackup(backup).upload_folder(repo_id=str(backup), repo_type="dataset", folder_path=run, commit_message="x")
+    assert (backup / DB_NAME).read_bytes() == (run / DB_NAME).read_bytes()
+    assert not list(backup.glob("*.part"))
 
 
 def test_a_burst_of_save_requests_is_one_upload(tmp_path):

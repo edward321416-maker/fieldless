@@ -214,6 +214,21 @@ def test_meter_for_leaves_room_only_for_what_is_left_of_the_day(tmp_path):
     assert meter.cap_usd == pytest.approx(6.0)
 
 
+def test_meter_for_keeps_scans_started_by_visitors_inside_the_public_budget(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    local = db.create_scan(conn, "mapillary", BBOX)  # a CLI scan: no address, never counted
+    db.update_scan(conn, local, cost_usd=5.0)
+    public = db.create_scan(conn, "mapillary", BBOX)
+    db.update_scan(conn, public, client_ip_hash="a", cost_usd=1.5)
+    new = db.create_scan(conn, "mapillary", BBOX)
+    db.update_scan(conn, new, client_ip_hash="b")
+    assert db.public_cost(conn) == pytest.approx(1.5)
+    assert runner.meter_for(conn, db.get_scan(conn, new), public_cap_usd=2.0).cap_usd == pytest.approx(0.5)
+    assert runner.meter_for(conn, db.get_scan(conn, public), public_cap_usd=2.0).cap_usd == pytest.approx(2.0)
+    assert runner.meter_for(conn, db.get_scan(conn, new)).cap_usd == pytest.approx(3.0)
+    assert runner.meter_for(conn, db.get_scan(conn, local), public_cap_usd=2.0).cap_usd == pytest.approx(3.0)
+
+
 def test_a_failed_evidence_photo_is_a_row_error_and_is_retried_on_the_next_run(setup, monkeypatch):
     conn, scan_id, make, _ = setup
 

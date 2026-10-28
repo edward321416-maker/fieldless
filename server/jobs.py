@@ -43,9 +43,10 @@ def spend_saver(db_path: Path, scan_id: int, saved_usd: float):
 
 
 class ScanWorker:
-    def __init__(self, db_path: Path, run_dir: Path, run=None, on_done=None):
+    def __init__(self, db_path: Path, run_dir: Path, run=None, on_done=None, public_cap_usd: float | None = None):
         self.db_path = Path(db_path)
         self.run_dir = Path(run_dir)
+        self.public_cap_usd = public_cap_usd  # Settings.public_cost_cap_usd
         self._run = run or self._run_pipeline
         self._on_done = on_done  # called with the scan id after every scan, finished or crashed
         self._queue: queue.Queue = queue.Queue()
@@ -119,7 +120,7 @@ class ScanWorker:
         conn = db.connect(self.db_path)
         try:
             scan = db.get_scan(conn, scan_id)
-            meter = meter_for(conn, scan)
+            meter = meter_for(conn, scan, public_cap_usd=self.public_cap_usd)
             meter.on_spend = spend_saver(self.db_path, scan_id, scan["cost_usd"])
             api = MetaApi(self.run_dir / "calls.jsonl", meter)
             run_scan(Scan(conn, scan_id, api, self.run_dir, scan["bbox"],

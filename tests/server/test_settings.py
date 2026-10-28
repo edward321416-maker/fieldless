@@ -6,6 +6,7 @@ from server import settings
 def test_defaults():
     s = settings.load()
     assert (s.run_name, s.invite_code, s.scans_per_ip_per_day, s.demo_scans) == ("server", None, 3, ())
+    assert s.public_cost_cap_usd is None and s.backup_dir is None
     assert s.max_bbox_deg2 == 0.0001
     assert s.static_dir.name == "dist" and s.static_dir.parent.name == "web"
 
@@ -16,7 +17,11 @@ def test_environment_overrides(monkeypatch):
     monkeypatch.setenv("DEMO_SCANS", "3:Myeongdong;7:Seongsu Atelier-gil;9")
     monkeypatch.setenv("THRESHOLD_RUN", "demo")
     monkeypatch.setenv("HF_DATA_REPO", "me/fieldless-data")
+    monkeypatch.setenv("PUBLIC_COST_CAP_USD", "40")
+    monkeypatch.setenv("BACKUP_DIR", "/backup")
     s = settings.load()
+    assert s.backup_dir is not None and s.backup_dir.name == "backup"
+    assert s.public_cost_cap_usd == 40.0
     assert s.invite_code == "letmein" and s.scans_per_ip_per_day == 5 and s.run_name == "demo"
     assert s.hf_data_repo == "me/fieldless-data"
     assert s.demo_scans == ((3, "Myeongdong"), (7, "Seongsu Atelier-gil"), (9, "Scan 9"))
@@ -40,7 +45,8 @@ def test_bad_numbers_name_their_variable(monkeypatch):
         settings.load()
 
 
-@pytest.mark.parametrize("marker", ["RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID", "SPACE_ID"])
+@pytest.mark.parametrize("marker", ["RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID", "SPACE_ID", "MODAL_TASK_ID",
+                                    "MODAL_IS_REMOTE"])
 def test_any_railway_variable_needs_a_salt(monkeypatch, marker):
     monkeypatch.setenv(marker, "x")
     with pytest.raises(RuntimeError, match="IP_HASH_SALT"):

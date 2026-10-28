@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pipeline import config, db, survey_items
+from pipeline.runner import RESUME_MIN_USD
 from server import limits
 from server.app import create_app
 from server.settings import Settings
@@ -91,6 +92,24 @@ def test_a_failed_preview_is_a_502_with_a_message(tmp_path):
     client = TestClient(create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(), preview=boom))
     response = client.post("/api/preview", json={"bbox": BBOX})
     assert response.status_code == 502 and "Mapillary did not answer" in response.json()["detail"]
+
+
+def test_no_survey_starts_when_the_public_budget_is_used_up(make):
+    client, worker = make(public_cost_cap_usd=2.0)
+    conn = store()
+    local = db.create_scan(conn, "mapillary", BBOX)
+    db.update_scan(conn, local, status="done", cost_usd=1.9)  # a CLI scan does not count
+    assert client.post("/api/scans", json={"bbox": BBOX}).status_code == 202
+    visitor = db.create_scan(conn, "mapillary", BBOX)
+    db.update_scan(conn, visitor, status="done", cost_usd=2.0 - RESUME_MIN_USD / 2, client_ip_hash="x")
+    response = client.post("/api/scans", json={"bbox": BBOX})
+    assert response.status_code == 503 and "finished surveys stay open" in response.json()["detail"]
+
+
+def test_the_worker_gets_the_public_budget(tmp_path):
+    app = create_app(Settings(static_dir=tmp_path / "no-web", public_cost_cap_usd=7.0),
+                     preview=lambda bbox, max_photos, checks=0: PREVIEW)
+    assert app.state.worker.public_cap_usd == 7.0
 
 
 def test_no_survey_starts_when_todays_budget_is_used_up(make):

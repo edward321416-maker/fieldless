@@ -1,5 +1,6 @@
 """Keep the server's data in a private Hugging Face dataset, for hosts whose disk does not survive a restart (a free
-Hugging Face Space sleeps after 48 hours without visits and wakes with an empty disk).
+Hugging Face Space sleeps after 48 hours without visits and wakes with an empty disk), or in a backup folder such as a
+mounted Modal Volume (FolderBackup), where SQLite should not run directly.
 
 On start, the database and evidence photos are restored from the dataset. After a scan finishes or a review is saved,
 they are uploaded again. The photo cache is not kept: finished scans never read it. The token comes from HF_TOKEN in
@@ -81,3 +82,32 @@ class DatasetStore:
                 self.save_now()
             except Exception:
                 log.exception("could not save data to %s", self.repo_id)
+
+
+class FolderBackup:
+    """DatasetStore's api and download for a backup folder: the same restore and save, copied to and from a folder
+    (a Modal Volume mount, which commits what is written to it) instead of a Hugging Face dataset."""
+
+    def __init__(self, backup_dir: Path):
+        self.backup_dir = Path(backup_dir)
+
+    def download(self, repo_id, *, repo_type, local_dir, allow_patterns):
+        local = Path(local_dir)
+        if (self.backup_dir / DB_NAME).exists():
+            shutil.copy2(self.backup_dir / DB_NAME, local / DB_NAME)
+        if (self.backup_dir / "evidence").is_dir():
+            shutil.copytree(self.backup_dir / "evidence", local / "evidence", dirs_exist_ok=True)
+
+    def upload_folder(self, *, repo_id, repo_type, folder_path, commit_message):
+        folder = Path(folder_path)
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        if (folder / "evidence").is_dir():
+            shutil.copytree(folder / "evidence", self.backup_dir / "evidence", dirs_exist_ok=True)
+        part = self.backup_dir / f"{DB_NAME}.part"
+        shutil.copy2(folder / DB_NAME, part)
+        part.replace(self.backup_dir / DB_NAME)  # the backup database is never half-written
+
+
+def folder_store(backup_dir: Path, run_dir: Path) -> DatasetStore:
+    backup = FolderBackup(backup_dir)
+    return DatasetStore(str(backup_dir), run_dir, api=backup, download=backup.download)

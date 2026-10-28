@@ -190,6 +190,12 @@ def set_stage(conn, scan_id: int, stage: str, status: str) -> None:
     update_scan(conn, scan_id, stage_status=stages)
 
 
+def public_cost(conn) -> float:
+    """Spend of the scans visitors started on the server (they carry an address hash; CLI scans do not)."""
+    row = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM scan WHERE client_ip_hash IS NOT NULL").fetchone()
+    return float(row[0])
+
+
 def daily_cost(conn, day: str) -> float:
     row = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM scan WHERE created_at LIKE ?", (f"{day}%",)).fetchone()
     return float(row[0])

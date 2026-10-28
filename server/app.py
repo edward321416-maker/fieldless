@@ -23,7 +23,7 @@ from pipeline.runner import RESUME_MIN_USD
 from server import limits, review, views
 from server.jobs import ScanWorker
 from server.settings import Settings, load
-from server.store import DatasetStore
+from server.store import DatasetStore, folder_store
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,10 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     db_path = run_dir / "threshold.db"
     if store is None and settings.hf_data_repo:
         store = DatasetStore(settings.hf_data_repo, run_dir)
-    worker = worker or ScanWorker(db_path, run_dir, on_done=(lambda _: store.request_save()) if store else None)
+    elif store is None and settings.backup_dir:
+        store = folder_store(settings.backup_dir, run_dir)
+    worker = worker or ScanWorker(db_path, run_dir, on_done=(lambda _: store.request_save()) if store else None,
+                                  public_cap_usd=settings.public_cost_cap_usd)
     preview = preview or collect.preview
 
     start_lock = threading.Lock()  # the per-address check, the new scan and its address tag happen as one step
@@ -85,6 +88,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         worker.stop()
 
     app = FastAPI(title="Fieldless", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.worker = worker
 
     def connect():
         return closing(db.connect(db_path))
@@ -156,6 +160,9 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         with start_lock, connect() as conn:
             if config.DAILY_COST_CAP_USD - db.daily_cost(conn, db.now()[:10]) < RESUME_MIN_USD:
                 raise HTTPException(503, "Today's survey budget is used up. Try again tomorrow (UTC).")
+            cap = settings.public_cost_cap_usd
+            if cap is not None and cap - db.public_cost(conn) < RESUME_MIN_USD:
+                raise HTTPException(503, "The live demo's survey budget is used up; the finished surveys stay open.")
             limits.check_daily_scans(conn, hashed, settings.scans_per_ip_per_day)
             scan_id = db.create_scan(conn, "mapillary", bbox, survey_items.standard_for(bbox))
             db.update_scan(conn, scan_id, client_ip_hash=hashed)

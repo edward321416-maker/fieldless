@@ -90,6 +90,9 @@ def check_invite(given: str | None, expected: str | None) -> None:
 
 
 def check_daily_scans(conn, hashed: str, limit: int, now: datetime | None = None) -> None:
+    """At most limit scans per address in 24 hours; a limit of 0 turns this off."""
+    if limit <= 0:
+        return
     since = ((now or datetime.now(timezone.utc)) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     if db.scans_since(conn, hashed, since) >= limit:
         raise LimitError(429, f"At most {limit} surveys per day can be started from one address")

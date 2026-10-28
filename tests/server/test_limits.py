@@ -75,3 +75,10 @@ def test_check_daily_scans_counts_the_last_24_hours(tmp_path):
     limits.check_daily_scans(conn, "h", 4)
     limits.check_daily_scans(conn, "other", 3)
     limits.check_daily_scans(conn, "h", 3, now=datetime.now(timezone.utc) + timedelta(days=2))
+
+
+def test_a_per_address_limit_of_zero_is_off(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    for _ in range(5):
+        db.update_scan(conn, db.create_scan(conn, "mapillary", BBOX), client_ip_hash="h")
+    limits.check_daily_scans(conn, "h", 0)

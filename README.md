@@ -88,10 +88,12 @@ Then open http://localhost:8000.
 | `THRESHOLD_DATA` | no | data folder (the image uses `/data`) |
 | `INVITE_CODE` | no | if set, starting a survey needs this code |
 | `IP_HASH_SALT` | in production | random salt for the hashed client address; without it a public default is used |
-| `SCANS_PER_IP_PER_DAY` | no | default 3 |
+| `SCANS_PER_IP_PER_DAY` | no | default 3; 0 turns the per-address limit off |
+| `PUBLIC_COST_CAP_USD` | no | total spend of the surveys visitors start; past it, new surveys stop |
 | `DEMO_SCANS` | no | surveys listed first, as `id:Name;id:Name` |
 | `THRESHOLD_RUN` | no | run folder under `<data>/runs`, default `server` |
 | `HF_DATA_REPO` | no | private Hugging Face dataset that keeps the data on a host without a disk (with `HF_TOKEN`) |
+| `BACKUP_DIR` | no | or a backup folder (a mounted Modal Volume) that keeps it |
 | `PROXY_HOPS` | no | trusted proxies that append to `X-Forwarded-For`, default 1 (Railway); 0 when no proxy |
 
 Keys are read only from the environment and are never logged. In production, mount a persistent volume at `/data`: the database, photo cache and evidence photos live there. The server runs one process (`--workers 1`), because surveys run one at a time on a background thread. The image installs the tested package versions in constraints.txt.
@@ -158,6 +160,17 @@ The public demo is a static site: the web app plus the server's answers for a fe
 hf auth login                      # a token with write access to your repos
 python -m deploy.static_site --run <run> --scan <id>:<Name> --out data/site --space USER/fieldless
 ```
+
+### Live on Modal
+
+`deploy/modal_app.py` runs the server on Modal: one always-on container serves the web app and the API and runs surveys one at a time. SQLite runs on the container's disk; after every survey and review the database and evidence photos are copied to a Modal Volume (`BACKUP_DIR`), and a new container restores them from there.
+
+```bash
+python deploy/modal_app.py --seed data/runs/<run>   # once: the demo surveys
+modal deploy deploy/modal_app.py
+```
+
+Both read `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` and the server's keys from the shared `.env`; only the server's keys go into the Modal secret. Anyone can start a survey, with no per-address limit (`SCANS_PER_IP_PER_DAY=0`). Spend stays inside the $3 per-survey and $10 per-day caps and `PUBLIC_COST_CAP_USD` ($40) across all surveys visitors start; past it, new surveys stop and finished ones stay open.
 
 ### On a Hugging Face Docker Space
 
