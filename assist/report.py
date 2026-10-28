@@ -14,16 +14,18 @@ Why it is built this way:
   surveyed_km, the cost per km of scan_json, is_old; Standard.is_defect), so the report and the map never disagree.
   The standard is the scan's own unless --standard names another.
 - Every photo the report points to names its creator, its Mapillary link and the licence (Mapillary's terms).
-- Muse Spark may add a short plain-language paragraph (--narrate). It sees only the summary's facts, and code drops
-  the paragraph if it names an item the summary does not have or writes a number the summary does not hold: the
-  numbers in a report a city acts on come from code. Off by default, so the report needs no API key.
+- Muse Spark writes the report's sentences (--narrate): a summary, a paragraph per item and the priorities. It sees
+  only the summary's facts, and code drops any piece that names an item the survey does not have, holds a digit or
+  judges ("violation", "accessible"): the numbers in a report a city acts on come from code, and a dropped piece is
+  replaced by code's own sentence. --save keeps the sentences in the database for the app (db.report_text). Off by
+  default, so the report needs no API key.
 """
 import argparse
 import html
 import json
 import re
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from assist import export, style
@@ -36,9 +38,11 @@ from server import views
 
 NARRATE_CAP_USD = 0.10
 MAX_PRIORITIES = 5
-NUMBER = re.compile(r"\d+(?:\.\d+)?")
-HOW_MADE = ("Made from public Mapillary street photos: SAM 3.1 found each survey item in the photos, Muse Spark "
-            "judged each one on the best photo, and a person confirms what the models found.")
+DIGIT = re.compile(r"\d")
+BANNED = re.compile(r"\b(?:non-compliant|compliant|violations?|illegal|inaccessible|accessible)\b", re.IGNORECASE)
+HOW_MADE = ("Made from public Mapillary street photos: SAM 3.1 found each survey item in the photos and Muse Spark "
+            "judged each one on the best photo. What the models could not settle is marked for review or a site "
+            "visit.")
 LIMITS_FIXED = (
     "A photo settles only what it shows: measurements (slopes, widths, heights) and anything hidden or out of frame "
     "need a visit.",
@@ -50,23 +54,39 @@ ITEM_HEADERS = ("Item", "Kind", "Found", "Results", "Confirmed / to review / che
                 "Defects confirmed / to confirm")
 
 NARRATE_SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["summary", "priorities"],
+    "type": "object", "additionalProperties": False, "required": ["summary", "items", "priorities"],
     "properties": {
         "summary": {"type": "string"},
+        "items": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["item", "paragraph"],
+            "properties": {"item": {"type": "string"}, "paragraph": {"type": "string"}}}},
         "priorities": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["item", "reason"],
             "properties": {"item": {"type": "string"}, "reason": {"type": "string"}}}},
     },
 }
-NARRATE_PROMPT = """You write the opening paragraph of a street survey report for a city surveyor.
-The JSON below is the whole survey; use nothing else.
-- summary: 3 to 4 plain sentences on what the survey found and what still needs a person. Do not write numbers or
-  dates; say "most", "a few" or "none" instead. State facts; never say "violation", "illegal" or "accessible".
-- priorities: up to {max_priorities} items a surveyor should look at first. "item" is the item's exact "item" value
-  from the JSON; "reason" is one sentence taken from the JSON, also without numbers.
+NARRATE_PROMPT = """You write the prose of a street survey report for a city official. The JSON below is the whole
+survey; use nothing else.
+- summary: 3 to 4 plain sentences: what was surveyed, what was found, and what needs action first.
+- items: for each item in the JSON, in its order, one paragraph of 2 to 3 sentences on what was found and what it
+  means for the city's records or repairs. "item" is the item's exact "item" value.
+- priorities: up to {max_priorities} actions the city should take first. "item" is an exact "item" value; "reason" is
+  one sentence.
+Rules: never write a digit (no numbers, no dates); say "most", "a few", "one" or "none" instead. State facts only;
+never say "violation", "illegal", "compliant" or "accessible". Do not name the place or the survey, and do not write
+about costs or how this survey compares with other surveys.
 Return JSON only.
 
 {facts}"""
+
+
+def text_problem(text: str) -> str | None:
+    """Why a sentence from the model cannot go into the report, or None: a digit (every number comes from code) or a
+    word that judges instead of describing."""
+    if DIGIT.search(text):
+        return "a number"
+    banned = BANNED.search(text)
+    return f"the word {banned.group(0).lower()!r}" if banned else None
 
 
 def _date(stamp: str | None) -> str | None:
@@ -79,7 +99,10 @@ def _item_entry(item: str, check, rows: list[tuple[dict, dict]], dropped: int = 
     defects = [p for _, p in live if p["defect"]]
     kind = ("entrance" if item == export.ENTRANCE else "inventory" if export.is_inventory(check)
             else "check" if check is not None else "other")
-    return {"item": item, "title": export.title(item, check), "kind": kind, "found": len(live),
+    question = ((getattr(check, "question", "") or getattr(check, "ask", "") or "").strip() or None
+                if check is not None else None)
+    return {"item": item, "title": export.title(item, check), "kind": kind, "question": question,
+            "found": len(live),
             "photos": len({p["photo_id"] for _, p in live if p["photo_id"]}),
             "by_answer": dict(Counter(str(p["answer"]) for _, p in live if p["answer"] is not None)),
             "by_label": dict(Counter(p["label"] for _, p in live)),
@@ -89,28 +112,71 @@ def _item_entry(item: str, check, rows: list[tuple[dict, dict]], dropped: int = 
             "dropped": dropped, "city": None}
 
 
+def _note(item: str, row: dict) -> str | None:
+    """The model's one-line note on the photo it judged: Spark's note for a check, the reading's notes for an
+    entrance."""
+    outputs = row.get("model_outputs") or {}
+    source = outputs.get("reading") if item == export.ENTRANCE else outputs.get("check")
+    note = (source or {}).get("notes" if item == export.ENTRANCE else "note")
+    return (note or "").strip() or None
+
+
+def _ledger_entry(item: str, title: str, row: dict, feat: dict) -> dict:
+    p = feat["properties"]
+    lng, lat = (feat["geometry"] or {}).get("coordinates") or (None, None)
+    return {"item": item, "title": title, "row_id": p["row_id"], "label": p["label"], "status": p["status"],
+            "review_status": p["review_status"], "answer": p["answer"], "defect": p["defect"],
+            "photo_id": p["photo_id"], "photo_url": p["photo_url"], "creator": p["creator"],
+            "license": p["license"], "captured_at": p["captured_at"],
+            "evidence": Path(p["evidence"]).name if p["evidence"] else None,
+            "box": None if item == export.ENTRANCE else views.box_of(row), "note": _note(item, row),
+            "lat": lat, "lng": lng}
+
+
+def _walks(frames: list[dict]) -> list[list[tuple[float, float]]]:
+    """Each walk's photo positions in photo order, for the report's map."""
+    out: dict[int, list] = {}
+    for f in sorted(frames, key=lambda f: f["idx"]):
+        if f.get("lat") is not None and f.get("lng") is not None:
+            out.setdefault(f.get("clip", 0), []).append((f["lat"], f["lng"]))
+    return list(out.values())
+
+
 def summary(scan_data: dict, standard: Standard, area: str | None = None, now: datetime | None = None) -> dict:
     """Everything the report states, as data: per item counts by answer, label and review status, defects confirmed
-    and not yet confirmed, photos, km and cost (the app's rules), processing and review seconds, photo dates.
-    Items of the standard come first, found or not; then any other item the scan holds. `now` dates "old" photos."""
+    and not yet confirmed, photos, km and cost (the app's rules), processing and review seconds, photo dates; the
+    ledger of every finding a person did not reject, the actions it calls for, and the walks for the map.
+    Items of the standard come first, found or not; then any other item the scan holds. `now` dates "old" photos
+    and the report."""
     scan, frames = scan_data["scan"], scan_data["frames"]
     by_idx = {f["idx"]: f for f in frames}
     grouped: dict[str, list] = {c.id: [] for c in standard.checks}  # every item of the standard, even if not found
     for item, row in export.rows(scan_data):
-        props = export.feature(item, row, by_idx.get(row.get("frame_idx")), standard, scan["id"])["properties"]
-        grouped.setdefault(item, []).append((row, props))
+        feat = export.feature(item, row, by_idx.get(row.get("frame_idx")), standard, scan["id"])
+        grouped.setdefault(item, []).append((row, feat["properties"], feat))
     set_aside = scan_data.get("dropped") or []
     for d in set_aside:
         grouped.setdefault(d["issue_type"], [])
-    items = [_item_entry(item, standard.check(item), rows, sum(d["issue_type"] == item for d in set_aside))
+    items = [_item_entry(item, standard.check(item), [(r, p) for r, p, _ in rows],
+                         sum(d["issue_type"] == item for d in set_aside))
              for item, rows in grouped.items()]
     city_check = scan_data.get("city_check")
     for i in items:
         c = (city_check or {}).get("items", {}).get(i["item"])
-        i["city"] = {"found": c["found"], "covered": c["covered"]} if c else None
+        if c:
+            matched = set(c.get("matched_ids") or [])
+            kept = [r for r, _, _ in grouped[i["item"]] if r["review_status"] != "rejected"]
+            i["city"] = {"found": c["found"], "covered": c["covered"], "not_seen": max(0, c["covered"] - c["found"]),
+                         "not_in_city": sum(r["id"] not in matched for r in kept)}
     titles = {i["item"]: i["title"] for i in items}
-    defects = [{**p, "title": titles[item]} for item, rows in grouped.items() for _, p in rows
+    defects = [{**p, "title": titles[item]} for item, rows in grouped.items() for _, p, _ in rows
                if p["defect"] and p["review_status"] == "verified"]
+    ledger = [_ledger_entry(item, titles[item], row, feat) for item, rows in grouped.items()
+              for row, _, feat in rows if row["review_status"] != "rejected"]
+    actions = {"repairs": [e for e in ledger if e["defect"]],
+               "site_visits": [e for e in ledger if e["review_status"] == "field_check" or e["answer"] == "unclear"],
+               "city": [{"item": i["item"], "title": i["title"], **i["city"]} for i in items
+                        if i["city"] and (i["city"]["not_seen"] or i["city"]["not_in_city"])]}
     km = views.surveyed_km(frames)
     app = views.scan_json(scan, scan_data["entrances"], scan_data["issues"], km=km)
     dates = sorted(f["captured_at"] for f in frames if f.get("captured_at"))
@@ -123,7 +189,8 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
         "old_photo_years": views.OLD_PHOTO_YEARS,
         "km": km, "cost_usd": round(scan["cost_usd"], 2), "usd_per_km": app["usd_per_km"],
         "processing_seconds": round(scan["processing_seconds"]), "review_seconds": round(scan["review_seconds"]),
-        "items": items, "defects": defects, "city_check": city_check,
+        "items": items, "defects": defects, "city_check": city_check, "ledger": ledger, "actions": actions,
+        "walks": _walks(frames), "made": (now or datetime.now(timezone.utc)).date().isoformat(),
         "styles": style.item_styles(views.items_json(standard)),
         "totals": {"found": sum(i["found"] for i in items),
                    "defects_confirmed": sum(i["defects_confirmed"] for i in items),
@@ -337,37 +404,48 @@ def to_html(s: dict, features: list[dict], notes: dict | None = None) -> str:
 # --- Muse Spark paragraph --------------------------------------------------------------------------------------
 
 def facts(s: dict) -> dict:
-    """What Spark may read: the counts, without photo ids, links or coordinates (their digits would let an invented
-    number pass the check)."""
-    keep = ("area", "standard", "photos", "photo_dates", "old_photos", "km", "cost_usd", "usd_per_km",
-            "processing_seconds", "review_seconds", "totals")
-    items = [{k: i[k] for k in ("item", "title", "kind", "found", "by_answer", "by_review", "defects_confirmed",
-                                "defects_unconfirmed")} for i in s["items"]]
-    return {**{k: s[k] for k in keep}, "items": items}
-
-
-def check_narration(answer: dict, known: dict) -> list[str]:
-    """Problems that make Spark's paragraph unusable: a priority naming an item the summary does not have, or a
-    number in the text that the facts do not hold."""
-    items = {i["item"] for i in known["items"]}
-    problems = [f"unknown item {p['item']!r}" for p in answer.get("priorities", []) if p["item"] not in items]
-    allowed = {float(n) for n in NUMBER.findall(json.dumps(known))}
-    text = " ".join([answer.get("summary", ""), *(p["reason"] for p in answer.get("priorities", []))])
-    problems += [f"number {n} is not in the summary" for n in NUMBER.findall(text) if float(n) not in allowed]
-    return problems
+    """What Spark may read: the counts, without the place, photo ids, links or coordinates."""
+    keep = ("standard", "photos", "photo_dates", "old_photos", "km", "totals")
+    items = [{k: i[k] for k in ("item", "title", "kind", "question", "found", "by_answer", "by_review",
+                                "defects_confirmed", "defects_unconfirmed", "city")} for i in s["items"]]
+    actions = {k: len(v) for k, v in s["actions"].items()}
+    return {**{k: s[k] for k in keep}, "items": items, "actions": actions}
 
 
 def narrate(api, s: dict) -> dict:
-    """Muse Spark's plain summary and up to five priorities, written from the summary's facts only. Returns
-    {"summary", "priorities"}; when code finds a problem, summary is empty and "dropped" lists why."""
+    """Muse Spark's summary, one paragraph per item and up to five priorities, written from the summary's facts.
+    Each piece is checked on its own (text_problem, known item ids); a piece that fails is left out and "dropped"
+    says why, so the report puts code's own sentence in its place."""
     known = facts(s)
     prompt = NARRATE_PROMPT.format(max_priorities=MAX_PRIORITIES, facts=json.dumps(known, ensure_ascii=False))
-    answer = api.spark_json([text_part(prompt)], "survey_report_summary", NARRATE_SCHEMA)
-    answer = {"summary": answer.get("summary", "").strip(), "priorities": answer.get("priorities", [])[:MAX_PRIORITIES]}
-    problems = check_narration(answer, known)
-    if problems:
-        return {"summary": "", "priorities": [], "dropped": problems}
-    return answer
+    answer = api.spark_json([text_part(prompt)], "survey_report_text", NARRATE_SCHEMA)
+    items = {i["item"] for i in s["items"]}
+    out: dict = {"summary": "", "items": {}, "priorities": []}
+    dropped: list[str] = []
+    summary_text = (answer.get("summary") or "").strip()
+    if summary_text and (problem := text_problem(summary_text)):
+        dropped.append(f"summary: {problem}")
+    else:
+        out["summary"] = summary_text
+    for entry in answer.get("items") or []:
+        text = (entry.get("paragraph") or "").strip()
+        if entry.get("item") not in items:
+            dropped.append(f"unknown item {entry.get('item')!r}")
+        elif problem := text_problem(text):
+            dropped.append(f"{entry['item']}: {problem}")
+        elif text:
+            out["items"][entry["item"]] = text
+    for entry in (answer.get("priorities") or [])[:MAX_PRIORITIES]:
+        reason = (entry.get("reason") or "").strip()
+        if entry.get("item") not in items:
+            dropped.append(f"unknown item {entry.get('item')!r}")
+        elif problem := text_problem(reason):
+            dropped.append(f"priority {entry['item']}: {problem}")
+        else:
+            out["priorities"].append({"item": entry["item"], "reason": reason})
+    if dropped:
+        out["dropped"] = dropped
+    return out
 
 
 # --- files and command -----------------------------------------------------------------------------------------

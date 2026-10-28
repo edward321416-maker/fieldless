@@ -12,10 +12,16 @@ from tests.assist.survey_scan import STANDARD
 from tests.pipeline.fakes import FakeApi
 
 NOW = datetime(2026, 10, 28, tzinfo=timezone.utc)
-GOOD = {"summary": "Most curb ramps found have a detectable warning; a person confirmed one without it and a few "
-                   "findings still await review.",
+GOOD = {"summary": "Most curb ramps found have a detectable warning; one without it and a few findings still await "
+                   "review.",
+        "items": [{"item": "curb_ramp_warning", "paragraph": "Most ramps showed a warning surface."},
+                  {"item": "streetlight_pole", "paragraph": "One pole was unclear from its photo."}],
         "priorities": [{"item": "curb_ramp_warning", "reason": "A possible missing warning awaits review."},
                        {"item": "streetlight_pole", "reason": "One pole was unclear from the photo."}]}
+NOTES = {"summary": GOOD["summary"],
+         "items": {"curb_ramp_warning": "Most ramps showed a warning surface.",
+                   "streetlight_pole": "One pole was unclear from its photo."},
+         "priorities": GOOD["priorities"]}
 
 
 def made(area="Capitol Hill"):
@@ -30,7 +36,8 @@ def test_summary_counts_every_item_the_same_way():
 
     assert list(items) == ["curb_ramp_warning", "streetlight_pole", "litter_can", "obstruction", "entrance"]
     assert items["curb_ramp_warning"] == {
-        "item": "curb_ramp_warning", "title": "curb ramp", "kind": "check", "found": 3, "photos": 3,
+        "item": "curb_ramp_warning", "title": "curb ramp", "kind": "check",
+        "question": "Does it have a detectable warning?", "found": 3, "photos": 3,
         "by_answer": {"no": 2, "yes": 1},
         "by_label": {"Curb ramp without detectable warning": 2, "Curb ramp with detectable warning": 1},
         "by_review": {"verified": 1, "auto": 1, "needs_review": 1, "rejected": 1},
@@ -108,34 +115,39 @@ def test_narrate_keeps_a_paragraph_written_from_the_summary():
 
     notes = report.narrate(api, s)
 
-    assert notes == GOOD and api.calls == [("spark", "survey_report_summary")]
+    assert notes == NOTES and api.calls == [("spark", "survey_report_text")]
 
 
-@pytest.mark.parametrize("answer, problem", [
-    ({**GOOD, "priorities": [{"item": "bus_shelter", "reason": "Shelters need checking."}]}, "unknown item"),
-    ({**GOOD, "summary": "41 curb ramps lack a detectable warning."}, "number 41"),
-    ({**GOOD, "priorities": [{"item": "curb_ramp_warning", "reason": "Fix 9 ramps first."}]}, "number 9"),
+@pytest.mark.parametrize("answer, kept, problem", [
+    ({**GOOD, "priorities": [{"item": "bus_shelter", "reason": "Shelters need checking."}]},
+     lambda n: n["priorities"] == [] and n["summary"] == GOOD["summary"], "unknown item 'bus_shelter'"),
+    ({**GOOD, "summary": "41 curb ramps lack a detectable warning."},
+     lambda n: n["summary"] == "" and len(n["items"]) == 2, "summary: a number"),
+    ({**GOOD, "items": [{"item": "curb_ramp_warning", "paragraph": "Fix 9 ramps first."}]},
+     lambda n: n["items"] == {}, "curb_ramp_warning: a number"),
+    ({**GOOD, "summary": "Two ramps are a violation of the rules."},
+     lambda n: n["summary"] == "", "summary: the word 'violation'"),
 ])
-def test_narrate_drops_a_paragraph_with_an_unknown_item_or_an_invented_number(answer, problem):
+def test_narrate_drops_only_the_paragraph_with_an_unknown_item_a_number_or_a_banned_word(answer, kept, problem):
     _, s = made()
 
     notes = report.narrate(FakeApi(spark=lambda name, parts: answer), s)
 
-    assert notes["summary"] == "" and notes["priorities"] == [] and problem in " ".join(notes["dropped"])
-    assert "Summary (written by Muse Spark" not in report.to_markdown(s, notes)
+    assert kept(notes) and problem in " ".join(notes["dropped"])
 
 
-def test_narrate_allows_numbers_copied_from_the_summary_and_sends_no_photo_ids():
-    _, s = made()
+def test_narrate_sends_no_photo_ids_names_or_area():
+    _, s = made(area="Capitol Hill")
     seen = []
 
     def spark(name, parts):
         seen.append(parts[0]["text"])
-        return {**GOOD, "summary": "Photos were taken from 2021-03-01 to 2025-06-05; 3 curb ramps were found."}
+        return GOOD
 
-    notes = report.narrate(FakeApi(spark=spark), s)
+    report.narrate(FakeApi(spark=spark), s)
 
-    assert "dropped" not in notes and "pKey" not in seen[0] and "alice" not in seen[0]
+    assert "pKey" not in seen[0] and "alice" not in seen[0] and "Capitol Hill" not in seen[0]
+    assert "never write a digit" in seen[0] and "compares" in seen[0]
 
 
 def test_cli_writes_the_report_and_export_files(capsys):
@@ -217,7 +229,7 @@ def test_a_city_record_check_adds_its_numbers_to_the_items_it_covers():
     text = report.to_markdown(s)
 
     items = {i["item"]: i for i in s["items"]}
-    assert items["streetlight_pole"]["city"] == {"found": 1, "covered": 3}
+    assert items["streetlight_pole"]["city"] == {"found": 1, "covered": 3, "not_seen": 2, "not_in_city": 1}
     assert items["curb_ramp_warning"]["city"] is None
     assert "| City record |" in text and "1 of 3 (Seattle)" in text and "Measured 2026-10-28" in text
     assert "City record" not in report.to_markdown(report.summary(survey_scan.load(), STANDARD, now=NOW))
@@ -234,3 +246,36 @@ def test_the_html_report_draws_each_items_marker_in_the_apps_colours():
     first = style.item_styles(views.items_json(STANDARD))["curb_ramp_warning"]
     assert page.count("<svg") >= len(s["items"]) and first["color"] in page
     assert "1 of 3 (Seattle)" in page and 'href="https://example.org/city.py"' in page
+
+
+def test_summary_lists_every_finding_in_the_ledger_with_its_box_note_and_photo():
+    data, s = made()
+
+    ledger = s["ledger"]
+
+    assert len(ledger) == s["totals"]["found"] == 7  # every finding a person did not reject
+    first = ledger[0]
+    assert (first["item"], first["evidence"], first["creator"], first["license"]) == (
+        "curb_ramp_warning", f"scan{data['scan']['id']}_issue1.jpg", "alice", "CC BY-SA 4.0")
+    assert [e["item"] for e in ledger][-1] == "entrance"  # items in the summary's order
+    assert all(e["lat"] is not None for e in ledger)
+
+
+def test_summary_sorts_actions_into_repairs_site_visits_and_city_updates():
+    data = survey_scan.load()
+    data["city_check"] = CITY
+    s = report.summary(data, STANDARD, area="Capitol Hill", now=NOW)
+
+    repairs, visits, city = s["actions"]["repairs"], s["actions"]["site_visits"], s["actions"]["city"]
+
+    assert [(e["item"], e["review_status"]) for e in repairs] == [("curb_ramp_warning", "verified"),
+                                                                  ("curb_ramp_warning", "needs_review")]
+    assert [(e["item"], e["answer"]) for e in visits] == [("streetlight_pole", "unclear")]
+    assert city == [{"item": "streetlight_pole", "title": "streetlight pole", "found": 1, "covered": 3,
+                     "not_seen": 2, "not_in_city": 1}]
+
+
+def test_summary_keeps_each_walk_as_a_line_and_dates_the_report():
+    _, s = made()
+
+    assert len(s["walks"]) == 1 and len(s["walks"][0]) == 6 and s["made"] == "2026-10-28"
