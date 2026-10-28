@@ -87,9 +87,13 @@ def test_a_scan_runs_every_stage_and_stores_entrances_issues_and_evidence(setup)
                                      "defect_checks": 0, "check_requests": 0}
     assert (scan.work / "entrance0" / "stairs_0000_0004.mp4").exists()  # each entrance has its own folder
     assert json.loads(scan.state("defects_checks").read_text(encoding="utf-8"))[0]["candidate"] == "sample"
-    for row in (ent, issue):
+    frames = {f["idx"]: f for f in db.frames(conn, scan_id)}
+    for kind, row in (("entrance", ent), ("issue", issue)):
         assert (scan.run_dir / "evidence" / row["evidence"]["image"]).exists()
         assert row["evidence"]["license"] == "CC BY-SA 4.0"
+        # the photo's id is in the file name, so a reused row id never writes over another photo's file
+        image_id = frames[row["frame_idx"]]["image_id"]
+        assert row["evidence"]["image"] == f"scan{scan_id}_{kind}{row['id']}_{image_id}.jpg"
     stored = db.get_scan(conn, scan_id)
     assert stored["image_count"] == N and stored["captured_from"] == "2025-09-24T10:00:00Z"
 

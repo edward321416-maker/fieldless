@@ -285,6 +285,13 @@ def stage_defects(s: Scan) -> None:
     s.state("checks_unavailable").write_text(json.dumps(unavailable), encoding="utf-8")
 
 
+def evidence_name(scan_id: int, kind: str, row_id: int, image_id: str) -> str:
+    """The evidence file of one row. The photo's id is part of the name: a rerun gives new rows the ids of deleted ones
+    (SQLite reuses the highest), so without it a rerun wrote over the files of a database copy that was later put back,
+    and six rows showed another row's photo (scan 4's litter cans, 2026-10-28)."""
+    return f"scan{scan_id}_{kind}{row_id}_{image_id}.jpg"
+
+
 def stage_evidence(s: Scan, kinds: tuple[str, ...] = ("entrance", "issue")) -> None:
     """Blurred, attributed evidence photos for rows that have none yet. A row whose photo failed keeps an error
     record and is tried again on the next run; the stage then fails, so the failure is visible."""
@@ -300,7 +307,8 @@ def stage_evidence(s: Scan, kinds: tuple[str, ...] = ("entrance", "issue")) -> N
         frame = by_idx[row["frame_idx"]]
         try:
             photo = _original_photo(frame["image_id"]) if kind == "entrance" else photos[row["frame_idx"]]
-            return evidence.make_evidence(s.api, photo, frame, out / f"scan{s.scan_id}_{kind}{row['id']}.jpg")
+            return evidence.make_evidence(s.api, photo, frame, out / evidence_name(s.scan_id, kind, row["id"],
+                                                                                   frame["image_id"]))
         except CostCapReached:
             raise
         except Exception as exc:  # no photo is stored without blurring; this row is retried on the next run

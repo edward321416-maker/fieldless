@@ -190,8 +190,11 @@ def test_evidence_is_served_only_by_its_name(make):
     (folder / "scan1_entrance1.jpg").write_bytes(b"\xff\xd8\xffjpeg")
     (folder / "notes.txt").write_text("not a photo", encoding="utf-8")
     (folder / "secret.jpg").write_bytes(b"\xff\xd8\xffjpeg")
+    (folder / "scan1_issue2_4001.jpg").write_bytes(b"\xff\xd8\xffjpeg")  # named with the photo's id (runner)
     ok = client.get("/api/evidence/scan1_entrance1.jpg")
     assert ok.status_code == 200 and ok.headers["content-type"] == "image/jpeg"
+    assert client.get("/api/evidence/scan1_issue2_4001.jpg").status_code == 200
+    assert client.get("/api/evidence/scan1_issue2_x.jpg").status_code == 404
     assert client.get("/api/evidence/scan1_issue9.jpg").status_code == 404
     assert client.get("/api/evidence/threshold.db").status_code == 404
     assert client.get("/api/evidence/..%2Fthreshold.db").status_code == 404

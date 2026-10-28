@@ -28,7 +28,8 @@ from server.store import DatasetStore, folder_store
 
 log = logging.getLogger(__name__)
 
-EVIDENCE_NAME = re.compile(r"scan\d+_(entrance|issue)\d+\.jpg", re.ASCII)  # used with fullmatch
+# used with fullmatch; scans before 2026-10-28 22:00 KST named the files without the photo id (runner.evidence_name)
+EVIDENCE_NAME = re.compile(r"scan\d+_(entrance|issue)\d+(_\d+)?\.jpg", re.ASCII)
 
 
 class BboxBody(BaseModel):
