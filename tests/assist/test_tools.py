@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -118,3 +119,20 @@ def test_confirm_reuses_answers_when_only_the_phrase_changes(tmp_path):
     assert sum(1 for c in api.calls if c[0] == "spark") == 7  # only photo c is new
     with pytest.raises(ValueError, match="unknown item"):
         bench.confirm("nope", "pole", "?")
+
+
+def test_confirm_asks_the_injected_judge_and_never_spark(tmp_path):
+    api, bench = make_inventory(tmp_path)
+    asked = []
+
+    class Judge:
+        def answer(self, check, photo):
+            asked.append((check.id, check.ask, check.target, Path(photo).stem))
+            return {**ANSWERS[Path(photo).stem], "model": "glimmer"}
+
+    bench = Bench(api, bench.ts, items=[POLE], photo=bench.photo, workers=1, judge=Judge())
+    r = bench.confirm("streetlight_pole", "utility pole", "Is this a streetlight pole?")
+    assert not [c for c in api.calls if c[0] == "spark"]
+    assert sorted(a[3] for a in asked) == ["a", "b", "d", "k", "m", "n"]  # SAM's hits; u is labelled unclear
+    assert asked[0][:3] == ("streetlight_pole", "Is this a streetlight pole?", "streetlight pole")
+    assert (r["kept_true"], r["kept_false"]) == (1, 1)  # the same answers Spark gave in the test above

@@ -10,6 +10,7 @@ there a "no" is right, because the pipeline drops the find. Its answers are coun
 (survey_checks.status: an answer with visible=false is unclear), so the score says what a scan would record."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 
@@ -35,8 +36,11 @@ def counted_inventory(out: dict) -> str:
 
 
 class Bench:
-    def __init__(self, api, testset, items: list[dict] = (), photo=collect.photo_path, workers: int = 4):
+    def __init__(self, api, testset, items: list[dict] = (), photo=collect.photo_path, workers: int = 4, judge=None):
         self.api, self.ts, self.photo, self.workers = api, testset, photo, workers
+        # judge.answer(check, photo): the model that will run an inventory item in scans (Muse Glimmer on Modal when
+        # the item's judge is glimmer), so the agent tests the wording on that model. None: Muse Spark.
+        self.judge = judge
         self.items = {i["id"]: i for i in items}  # the drafted items, so an item is scored by its own section
         self.areas: dict[str, dict[str, float]] = {}  # phrase -> photo id -> largest mask share of the photo
         self.answers: dict[tuple[str, str, str], tuple[str, str]] = {}  # (find, ask, photo id) -> (answer, note)
@@ -102,13 +106,17 @@ class Bench:
         self.history.append({"tool": "score_ask", **result})
         return result
 
-    def _confirmation(self, prompt: str, photo_id: str) -> tuple[str, str]:
+    def _confirmation(self, prompt: str, photo_id: str, check) -> tuple[str, str]:
         """(counted answer, note) for one photo. Cached by prompt, not by phrase: the photo and the question decide
         Spark's answer, so trying another phrase pays only for photos no earlier phrase found."""
         cached = self.confirmations.get((prompt, photo_id))
         if cached:
             return cached
-        out = self.api.spark_json([image_part(Path(self.photo(photo_id))), text_part(prompt)], "survey_check", SCHEMA)
+        path = Path(self.photo(photo_id))
+        if self.judge is not None:
+            out = self.judge.answer(check, path)  # the same PROMPT, built from check.ask and check.target
+        else:
+            out = self.api.spark_json([image_part(path), text_part(prompt)], "survey_check", SCHEMA)
         got = (counted_inventory(out), out.get("note", ""))
         self.confirmations[(prompt, photo_id)] = got
         return got
@@ -120,11 +128,13 @@ class Bench:
             raise ValueError(f"unknown item {item_id!r}")
         find, ask = find.strip(), ask.strip()
         self.find(find)
-        prompt = PROMPT.format(ask=ask, target=self.items[item_id].get("target") or find)
+        target = self.items[item_id].get("target") or find
+        prompt = PROMPT.format(ask=ask, target=target)
+        check = SimpleNamespace(id=item_id, ask=ask, target=target)  # what survey_checks.prompt() reads
         if prompt not in self.prompts:
             self.prompts.append(prompt)
         hits = [p.id for p in (*self.ts.visible(), *self.ts.negatives()) if self.areas[find].get(p.id, 0) > 0]
-        rows = dict(zip(hits, self._map(lambda i: self._confirmation(prompt, i), hits)))
+        rows = dict(zip(hits, self._map(lambda i: self._confirmation(prompt, i, check), hits)))
         score = scoring.score_confirm(self.ts, {i: a for i, (a, _) in rows.items()})
         for w in score["wrong_visible"] + score["wrong_negatives"]:
             w["note"] = rows[w["photo_id"]][1]
