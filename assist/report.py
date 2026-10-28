@@ -26,7 +26,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from assist import export
+from assist import export, style
 from eval import store
 from pipeline import config, survey_items
 from pipeline.cost import CostMeter
@@ -86,7 +86,7 @@ def _item_entry(item: str, check, rows: list[tuple[dict, dict]], dropped: int = 
             "by_review": dict(Counter(r["review_status"] for r, _ in rows)),
             "defects_confirmed": sum(p["review_status"] == "verified" for p in defects),
             "defects_unconfirmed": sum(p["review_status"] != "verified" for p in defects),
-            "dropped": dropped}
+            "dropped": dropped, "city": None}
 
 
 def summary(scan_data: dict, standard: Standard, area: str | None = None, now: datetime | None = None) -> dict:
@@ -104,6 +104,10 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
         grouped.setdefault(d["issue_type"], [])
     items = [_item_entry(item, standard.check(item), rows, sum(d["issue_type"] == item for d in set_aside))
              for item, rows in grouped.items()]
+    city_check = scan_data.get("city_check")
+    for i in items:
+        c = (city_check or {}).get("items", {}).get(i["item"])
+        i["city"] = {"found": c["found"], "covered": c["covered"]} if c else None
     titles = {i["item"]: i["title"] for i in items}
     defects = [{**p, "title": titles[item]} for item, rows in grouped.items() for _, p in rows
                if p["defect"] and p["review_status"] == "verified"]
@@ -119,7 +123,8 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
         "old_photo_years": views.OLD_PHOTO_YEARS,
         "km": km, "cost_usd": round(scan["cost_usd"], 2), "usd_per_km": app["usd_per_km"],
         "processing_seconds": round(scan["processing_seconds"]), "review_seconds": round(scan["review_seconds"]),
-        "items": items, "defects": defects,
+        "items": items, "defects": defects, "city_check": city_check,
+        "styles": style.item_styles(views.items_json(standard)),
         "totals": {"found": sum(i["found"] for i in items),
                    "defects_confirmed": sum(i["defects_confirmed"] for i in items),
                    "defects_unconfirmed": sum(i["defects_unconfirmed"] for i in items),
@@ -135,6 +140,26 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
 
 def _duration(seconds: float) -> str:
     return f"{seconds:.0f} s" if seconds < 120 else f"{seconds / 60:.0f} min"
+
+
+def _headers(s: dict) -> tuple[str, ...]:
+    """The items table's headers: a "City record" column only when the survey has a city-record check."""
+    return (*ITEM_HEADERS, "City record") if s.get("city_check") else ITEM_HEADERS
+
+
+def _city_cell(s: dict, i: dict) -> str:
+    c = i.get("city")
+    return f"{c['found']} of {c['covered']} ({s['city_check']['city']})" if c else "-"
+
+
+def _row_cells(s: dict, i: dict) -> list[str]:
+    return [*_item_cells(i), *([_city_cell(s, i)] if s.get("city_check") else [])]
+
+
+def _city_note(s: dict) -> str | None:
+    """How the city-record numbers were measured, under the items table."""
+    cc = s.get("city_check")
+    return f"City record: {cc['method']} Measured {cc['measured_at']}." if cc else None
 
 
 def _item_cells(i: dict) -> list[str]:
@@ -210,8 +235,10 @@ def to_markdown(s: dict, notes: dict | None = None) -> str:
         lines += ["## Summary (written by Muse Spark from the counts below)", "", notes["summary"], ""]
         lines += [f"- {_md(p['item'])}: {_md(p['reason'])}" for p in notes.get("priorities", [])]
         lines += [""] if notes.get("priorities") else []
-    lines += ["## Items", "", "| " + " | ".join(ITEM_HEADERS) + " |", "|" + "---|" * len(ITEM_HEADERS)]
-    lines += ["| " + " | ".join(_md(c) for c in _item_cells(i)) + " |" for i in s["items"]]
+    headers = _headers(s)
+    lines += ["## Items", "", "| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
+    lines += ["| " + " | ".join(_md(c) for c in _row_cells(s, i)) + " |" for i in s["items"]]
+    lines += ["", _city_note(s)] if _city_note(s) else []
     lines += ["", "## Confirmed defects", ""]
     if s["defects"]:
         lines += ["| Item | Finding | Photo |", "|---|---|---|"]
@@ -276,7 +303,16 @@ def to_html(s: dict, features: list[dict], notes: dict | None = None) -> str:
         prio = "".join(f"<li><b>{_h(p['item'])}</b>: {_h(p['reason'])}</li>" for p in notes.get("priorities", []))
         parts.append('<section class="spark"><h2>Summary (written by Muse Spark from the counts below)</h2>'
                      f"<p>{_h(notes['summary'])}</p>{f'<ul>{prio}</ul>' if prio else ''}</section>")
-    parts.append("<h2>Items</h2>" + _table(ITEM_HEADERS, [[_h(c) for c in _item_cells(i)] for i in s["items"]]))
+    rows = []
+    for i in s["items"]:
+        cells = _row_cells(s, i)
+        marker = s.get("styles", {}).get(i["item"])
+        name = (style.marker_svg(marker, size=18) + " " if marker else "") + _h(cells[0])
+        rows.append([name, *(_h(c) for c in cells[1:])])
+    parts.append("<h2>Items</h2>" + _table(_headers(s), rows))
+    if _city_note(s):
+        parts.append(f'<p class="muted">{_h(_city_note(s))} '
+                     f'<a href="{_h(s["city_check"]["method_url"])}">Method</a></p>')
     parts.append("<h2>Confirmed defects</h2>")
     if s["defects"]:
         parts.append(_table(["Item", "Finding", "Photo"],
@@ -365,6 +401,9 @@ def main(argv: list[str] | None = None) -> dict:
         data = store.load_scan(conn, args.scan)
     finally:
         conn.close()
+    check = run_dir / f"city_check_scan{args.scan}.json"
+    if check.is_file():
+        data["city_check"] = json.loads(check.read_text(encoding="utf-8"))
     standard = survey_items.load(args.standard) if args.standard else views.standard_of(data["scan"])
     notes = None
     if args.narrate:

@@ -34,7 +34,7 @@ def test_summary_counts_every_item_the_same_way():
         "by_answer": {"no": 2, "yes": 1},
         "by_label": {"Curb ramp without detectable warning": 2, "Curb ramp with detectable warning": 1},
         "by_review": {"verified": 1, "auto": 1, "needs_review": 1, "rejected": 1},
-        "defects_confirmed": 1, "defects_unconfirmed": 1, "dropped": 0}
+        "defects_confirmed": 1, "defects_unconfirmed": 1, "dropped": 0, "city": None}
     pole, can = items["streetlight_pole"], items["litter_can"]
     assert (pole["kind"], pole["found"], pole["by_answer"], pole["defects_unconfirmed"]) == (
         "inventory", 2, {"yes": 1, "unclear": 1}, 0)
@@ -201,3 +201,36 @@ def test_finds_the_models_set_aside_are_counted_and_listed_with_their_spot_check
     ramp = next(i for i in s["items"] if i["item"] == "curb_ramp_warning")
     assert ramp["dropped"] == 2 and (s["totals"]["dropped"], s["totals"]["dropped_audited"]) == (2, 1)
     assert "Set aside by the models as not the target: 2" in text and "1 of them went to a person" in text
+
+
+CITY = {"scan_id": 1, "city": "Seattle", "measured_at": "2026-10-28", "reviewed": True, "method": "m",
+        "method_url": "https://example.org/city.py",
+        "items": {"streetlight_pole": {"layer": "City poles", "found": 1, "covered": 3, "matched_ids": [5],
+                                       "rejected_at_city_point": []}}}
+
+
+def test_a_city_record_check_adds_its_numbers_to_the_items_it_covers():
+    data = survey_scan.load()
+    data["city_check"] = CITY
+
+    s = report.summary(data, STANDARD, area="Capitol Hill", now=NOW)
+    text = report.to_markdown(s)
+
+    items = {i["item"]: i for i in s["items"]}
+    assert items["streetlight_pole"]["city"] == {"found": 1, "covered": 3}
+    assert items["curb_ramp_warning"]["city"] is None
+    assert "| City record |" in text and "1 of 3 (Seattle)" in text and "Measured 2026-10-28" in text
+    assert "City record" not in report.to_markdown(report.summary(survey_scan.load(), STANDARD, now=NOW))
+
+
+def test_the_html_report_draws_each_items_marker_in_the_apps_colours():
+    from assist import style
+    data = survey_scan.load()
+    data["city_check"] = CITY
+    s = report.summary(data, STANDARD, area="Capitol Hill", now=NOW)
+
+    page = report.to_html(s, export.features(data, STANDARD))
+
+    first = style.item_styles(views.items_json(STANDARD))["curb_ramp_warning"]
+    assert page.count("<svg") >= len(s["items"]) and first["color"] in page
+    assert "1 of 3 (Seattle)" in page and 'href="https://example.org/city.py"' in page
