@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import json
+import time
 from types import SimpleNamespace
 
 from pipeline import second_opinion, survey_items
@@ -85,3 +88,81 @@ def test_from_env_needs_the_baseten_key(tmp_path, monkeypatch):
     assert second_opinion.from_env(tmp_path) is None
     monkeypatch.setenv("BASETEN_API_KEY", "test-not-a-real-key")
     assert isinstance(second_opinion.from_env(tmp_path), second_opinion.OpenModel)
+
+
+def fake_client(reply: dict, sent: dict, models=None):
+    def create(**kwargs):
+        sent.update(kwargs)
+        message = SimpleNamespace(content=json.dumps(reply))
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=None)
+
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
+                           models=SimpleNamespace(list=models or (lambda: [])))
+
+
+def test_an_open_model_takes_its_server_model_and_system_prompt_and_names_itself_in_the_answer(tmp_path):
+    sent = {}
+    reply = {"visible": True, "answer": "yes", "box": [], "confidence": 0.8, "note": "a pole"}
+    model = second_opinion.OpenModel(tmp_path / "calls_glimmer.jsonl", base_url="https://x.modal.run/v1",
+                                     model="meta-models/Muse-Glimmer-30B", api_key="k", max_tokens=1234,
+                                     system="Reasoning strength: low", kind="glimmer",
+                                     client=fake_client(reply, sent))
+    answer = model.answer(CHECK, synthetic_photo(tmp_path / "p.jpg"))
+    assert answer == {**reply, "model": "meta-models/Muse-Glimmer-30B"}
+    assert sent["model"] == "meta-models/Muse-Glimmer-30B" and sent["max_tokens"] == 1234
+    assert sent["messages"][0] == {"role": "system", "content": "Reasoning strength: low"}
+    assert sent["messages"][1]["role"] == "user"
+    (logged,) = [json.loads(l) for l in (tmp_path / "calls_glimmer.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert logged["kind"] == "glimmer" and logged["model"] == "meta-models/Muse-Glimmer-30B" and "ts" in logged
+
+
+def test_the_default_open_model_is_spark_open_on_baseten_without_a_system_prompt(tmp_path):
+    sent = {}
+    model = second_opinion.OpenModel(tmp_path / "calls_open.jsonl", client=fake_client(
+        {"visible": True, "answer": "no", "box": [], "confidence": 0.9, "note": "plain"}, sent))
+    assert model.answer(CHECK, synthetic_photo(tmp_path / "p.jpg"))["model"] == second_opinion.MODEL
+    assert [m["role"] for m in sent["messages"]] == ["user"]
+    assert model.base_url == second_opinion.BASE_URL and model.kind == "spark_open"
+
+
+def test_wake_pings_the_server_in_the_background_and_never_raises(tmp_path):
+    pinged = []
+
+    def slow_list():
+        time.sleep(0.3)
+        pinged.append(True)
+        raise RuntimeError("cold start 503")
+
+    model = second_opinion.OpenModel(tmp_path / "c.jsonl", client=fake_client({}, {}, models=slow_list), kind="glimmer")
+    started = time.time()
+    model.wake()
+    assert time.time() - started < 0.2  # the scan does not wait for the container
+    deadline = time.time() + 5
+    while not pinged and time.time() < deadline:
+        time.sleep(0.05)
+    assert pinged
+    time.sleep(0.1)
+    (logged,) = [json.loads(l) for l in (tmp_path / "c.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert logged["kind"] == "glimmer_wake" and "cold start 503" in logged["error"]
+
+
+def test_glimmer_from_env_needs_its_url_and_derives_its_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("GLIMMER_URL", raising=False)
+    assert second_opinion.glimmer_from_env(tmp_path) is None
+    monkeypatch.setenv("GLIMMER_URL", "https://me--fieldless-glimmer-serve.modal.run/")
+    model = second_opinion.glimmer_from_env(tmp_path)
+    assert model.base_url == "https://me--fieldless-glimmer-serve.modal.run/v1"
+    assert model.model == "meta-models/Muse-Glimmer-30B" and model.system == "Reasoning strength: low"
+    assert model.kind == "glimmer" and model.log_path == tmp_path / "calls_glimmer.jsonl"
+    from pipeline import config
+    expected = hmac.new(config.api_key().encode(), b"fieldless-glimmer-key", hashlib.sha256).hexdigest()
+    assert model.api_key == expected
+    assert "fieldless" not in repr(model) and expected not in repr(model)  # the key is never shown
+
+
+def test_apply_records_the_open_models_own_name(tmp_path):
+    photos = {4: synthetic_photo(tmp_path / "4.jpg")}
+    model = FakeOpen({"4.jpg": {"visible": True, "answer": "no", "box": [], "confidence": 0.9, "note": "plain"}})
+    model.model = "some-open-model"
+    (out,) = second_opinion.apply(model, CHECK, [row("no")], photos, 1)
+    assert out["model_outputs"]["second_opinion"]["model"] == "some-open-model"

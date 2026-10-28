@@ -16,3 +16,4 @@ def no_real_keys(monkeypatch):
     monkeypatch.setenv("MODEL_API_KEY", FAKE_KEY)
     monkeypatch.setenv("MAPILLARY_TOKEN", FAKE_KEY)
     monkeypatch.delenv("BASETEN_API_KEY", raising=False)  # pipeline.config loads .env at import; no test may use it
+    monkeypatch.delenv("GLIMMER_URL", raising=False)  # nor reach the Glimmer server a shell may point to
