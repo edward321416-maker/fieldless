@@ -198,3 +198,13 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
   .legend-toggle { display: block; }
   .legend-folded { padding: 0 8px; }
 }
+
+/* new survey (ui-redesign 3.5) */
+.steps { display: flex; gap: 4px; list-style: none; margin: 4px 0 12px; padding: 0; font-size: 0.85rem; color: var(--muted); }
+.steps li { display: flex; align-items: center; gap: 4px; flex: 1; padding: 4px 6px; border-radius: 8px; background: #f3f4f6; }
+.steps .step-now { background: #eef2ff; color: var(--accent); font-weight: 600; }
+.steps .step-done { color: #15803d; }
+.step-n { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #fff; font-size: 0.75rem; }
+.item-chip { display: inline-flex; align-items: center; gap: 4px; }
+.bar { height: 8px; border-radius: 999px; background: #e5e7eb; overflow: hidden; margin: 6px 0; }
+.bar span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }

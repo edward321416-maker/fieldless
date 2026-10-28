@@ -77,7 +77,10 @@ def test_health_and_config(make):
 
 def test_preview_checks_the_area(make):
     client, _ = make()
-    assert client.post("/api/preview", json={"bbox": BBOX}).json() == PREVIEW
+    body = client.post("/api/preview", json={"bbox": BBOX}).json()
+    assert {k: body[k] for k in PREVIEW} == PREVIEW
+    assert body["standard"] == "KR" and body["cap_usd"] == config.SCAN_COST_CAP_USD
+    assert [i["id"] for i in body["items"]][-2:] == ["obstruction", "entrance"]  # what the survey would look for
     too_big = client.post("/api/preview", json={"bbox": [126.9, 37.5, 127.0, 37.6]})
     assert too_big.status_code == 422 and "too large" in too_big.json()["detail"]
     assert client.post("/api/preview", json={"bbox": [126.99, 37.56, 126.98, 37.57]}).status_code == 422

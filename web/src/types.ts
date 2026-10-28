@@ -13,6 +13,10 @@ export interface Preview {
   captured_from: string | null;
   captured_to: string | null;
   est_cost_usd: number;
+  walks?: [number, number][][]; // the walks the survey would follow, [lng, lat]
+  standard?: string;
+  items?: ItemMeta[]; // what the survey would look for
+  cap_usd?: number; // the survey's spending cap
 }
 
 export interface CheckInfo {

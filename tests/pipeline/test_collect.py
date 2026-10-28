@@ -58,6 +58,7 @@ def test_preview_counts_without_downloading(monkeypatch):
     monkeypatch.setattr(collect, "fetch_photo", lambda r: pytest.fail("preview must not download"))
     p = collect.preview((126.9, 37.4, 127.1, 37.6), max_photos=400)
     assert p["photos"] == 20 and p["sequences"] == 1
+    assert len(p["walks"]) == 1 and len(p["walks"][0]) == 20 and p["walks"][0][0] == [127.0, 37.5]
     assert p["captured_from"] == "2025-01-01T00:00:00Z" and p["captured_to"] == "2025-01-01T00:00:19Z"
     assert p["est_cost_usd"] == pytest.approx(0.2 * config.EST_USD_PER_100_PHOTOS, abs=0.01)
     with_checks = collect.preview((126.9, 37.4, 127.1, 37.6), max_photos=400, checks=5)

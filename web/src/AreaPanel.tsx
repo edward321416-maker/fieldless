@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import { bboxTooLarge, bboxTooSmall } from "./bbox";
 import { dollars, isFinished, stageState, yearsSpan } from "./format";
+import { itemName } from "./items";
+import { itemArt } from "./markerArt";
 import type { Bbox, Preview, Scan } from "./types";
 
 interface Props {
@@ -13,6 +15,22 @@ interface Props {
   onToggleSelect: () => void;
   onUseView: () => void;
   onStarted: (scanId: number) => void;
+  onPreview: (p: Preview | null) => void; // the map draws the walks the survey would follow
+}
+
+const STEPS = ["Area", "Preview", "Running", "Results"];
+
+// Where a new survey stands (docs/specs/2026-10-28-ui-redesign-design.md 3.5): the four steps, the current one marked.
+function Steps({ at }: { at: number }) {
+  return (
+    <ol className="steps" aria-label="Steps of a new survey">
+      {STEPS.map((s, i) => (
+        <li key={s} className={i < at ? "step-done" : i === at ? "step-now" : ""} aria-current={i === at ? "step" : undefined}>
+          <span className="step-n" aria-hidden="true">{i < at ? "✓" : i + 1}</span> {s}
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 const STATE_ICON: Record<string, string> = { done: "✓", running: "…", failed: "✕", stopped: "■", pending: "○" };
@@ -53,6 +71,7 @@ export default function AreaPanel(props: Props) {
 
   useEffect(() => {
     setPreview(null);
+    props.onPreview(null);
     setMessage(null);
     setLoading(false);
     if (!bbox) return;
@@ -67,7 +86,11 @@ export default function AreaPanel(props: Props) {
     let cancelled = false;
     setLoading(true);
     api.preview(bbox)
-      .then((p) => !cancelled && setPreview(p))
+      .then((p) => {
+        if (cancelled) return;
+        setPreview(p);
+        props.onPreview(p);
+      })
       .catch((e: Error) => !cancelled && setMessage(e.message))
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -89,9 +112,16 @@ export default function AreaPanel(props: Props) {
     }
   }
 
+  const finished = props.scan !== null && isFinished(props.scan);
+  const step = props.scan ? (finished ? 3 : 2) : preview ? 1 : 0;
+  const stages = props.scan ? stageState(props.scan) : [];
+  const done = stages.filter((s) => s.state === "done").length;
+  const items = preview?.items ?? [];
+  const art = itemArt(items);
   return (
     <section className="panel-section" aria-labelledby="area-title">
-      <h2 id="area-title">1. Choose streets to survey</h2>
+      <h2 id="area-title">New survey</h2>
+      <Steps at={step} />
       <div className="row">
         <button type="button" onClick={props.onToggleSelect} aria-pressed={props.selecting}>
           {props.selecting ? "Cancel drawing" : "Draw a rectangle"}
@@ -106,14 +136,28 @@ export default function AreaPanel(props: Props) {
           {preview.photos === 0 ? (
             <p>Not enough recent pedestrian photos here. Try a nearby street.</p>
           ) : (
-            <dl className="stats">
-              <dt>Street photos</dt>
-              <dd>{preview.photos} in {preview.sequences} walk{preview.sequences === 1 ? "" : "s"}</dd>
-              <dt>Taken</dt>
-              <dd>{yearsSpan(preview.captured_from, preview.captured_to)}</dd>
-              <dt>Estimated cost</dt>
-              <dd>{dollars(preview.est_cost_usd)}</dd>
-            </dl>
+            <>
+              <dl className="stats">
+                <dt>Street photos</dt>
+                <dd>{preview.photos} in {preview.sequences} walk{preview.sequences === 1 ? "" : "s"}</dd>
+                <dt>Taken</dt>
+                <dd>{yearsSpan(preview.captured_from, preview.captured_to)}</dd>
+                <dt>Cost</dt>
+                <dd>est. {dollars(preview.est_cost_usd)}{preview.cap_usd ? ` (cap ${dollars(preview.cap_usd)})` : ""}</dd>
+              </dl>
+              {items.length > 0 && (
+                <>
+                  <p className="hint small">What the survey will look for ({preview.standard} survey items):</p>
+                  <p className="chips">
+                    {items.map((it) => (
+                      <span key={it.id} className="chip item-chip">
+                        <img src={art[it.id]} alt="" width={20} height={20} /> {itemName(it.id, items)}
+                      </span>
+                    ))}
+                  </p>
+                </>
+              )}
+            </>
           )}
           {props.inviteRequired && preview.photos > 0 && (
             <label className="field">
@@ -139,6 +183,11 @@ export default function AreaPanel(props: Props) {
           ) : (
             <>
               <h3>Survey {props.scan.id}: {props.scan.status.replace(/_/g, " ")}</h3>
+              <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={stages.length} aria-valuenow={done}
+                aria-label="Steps done">
+                <span style={{ width: `${(100 * done) / Math.max(1, stages.length)}%` }} />
+              </div>
+              <p className="hint small">{done} of {stages.length} steps · {dollars(props.scan.cost_usd)} spent so far</p>
               <StageList scan={props.scan} />
             </>
           )}

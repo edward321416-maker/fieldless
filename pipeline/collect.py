@@ -98,11 +98,15 @@ def candidate_sequences(bbox) -> list[list[dict]]:
 def preview(bbox, max_photos: int = config.MAX_PHOTOS_PER_SCAN, checks: int = 0) -> dict:
     """What a scan of the area would cover and cost with a standard of this many photo checks, without downloading
     photos (spec 5 step 1)."""
-    frames = [f for clip in plan_clips(candidate_sequences(bbox), max_photos) for f in clip]
+    clips = plan_clips(candidate_sequences(bbox), max_photos)
+    frames = [f for clip in clips for f in clip]
     times = sorted(f["captured_at"] for f in frames)
     return {"photos": len(frames), "sequences": len({f["sequence"] for f in frames}),
             "captured_from": times[0] if times else None, "captured_to": times[-1] if times else None,
-            "est_cost_usd": round(len(frames) / 100 * config.est_usd_per_100_photos(checks), 2)}
+            "est_cost_usd": round(len(frames) / 100 * config.est_usd_per_100_photos(checks), 2),
+            # the walks the survey would follow, for the map (the photos are public already)
+            "walks": [[[f["lng"], f["lat"]] for f in clip if f["lat"] is not None and f["lng"] is not None]
+                      for clip in clips]}
 
 
 def photo_path(image_id: str) -> Path:

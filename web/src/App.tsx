@@ -33,6 +33,7 @@ export default function App() {
   const [picked, setPicked] = useState<Picked | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [newSurvey, setNewSurvey] = useState(false);
+  const [previewWalks, setPreviewWalks] = useState<Walk[]>([]);
   // Over 800 px the photo opens over the map (PhotoWindow); on a phone it stays in the card.
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 801px)").matches);
   useEffect(() => {
@@ -211,7 +212,7 @@ export default function App() {
         hidden={hidden}
         onToggleItem={toggleItem}
         onShowAll={() => setHidden(new Set())}
-        walks={newSurvey ? [] : walks}
+        walks={newSurvey ? previewWalks : walks}
         selected={newSurvey ? null : selected}
         selectedLabel={selectedLabel}
         onSelect={onSelect}
@@ -252,6 +253,7 @@ export default function App() {
               setNewSurvey(false);
               openScan(id);
             }}
+            onPreview={(p) => setPreviewWalks((p?.walks ?? []).map((points, clip) => ({ clip, points })))}
           />
         )}
         {scan && finished && !newSurvey && (

@@ -148,8 +148,11 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     def post_preview(body: BboxBody):
         bbox = limits.check_bbox(body.bbox, settings.max_bbox_deg2)
         try:
-            checks = len(survey_items.load(survey_items.standard_for(bbox)).checks)
-            return preview(bbox, config.photo_budget(checks=checks), checks=checks)
+            std = survey_items.load(survey_items.standard_for(bbox))
+            checks = len(std.checks)
+            found = preview(bbox, config.photo_budget(checks=checks), checks=checks)
+            # what the survey would look for, and its spending cap, for the preview step (ui-redesign 3.5)
+            return {**found, "standard": std.code, "items": views.items_json(std), "cap_usd": config.SCAN_COST_CAP_USD}
         except (mapillary.MapillaryError, httpx.HTTPError, ValueError):  # ValueError: a reply that is not JSON
             log.exception("preview failed")
             raise HTTPException(502, "Mapillary did not answer. Try again in a minute.") from None
