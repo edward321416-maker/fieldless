@@ -12,6 +12,8 @@ the Volume (server/store.py, FolderBackup), which Modal commits, and a new conta
 
 Spend limits: the $3 per-scan and $10 per-day caps (pipeline/config.py) and PUBLIC_COST_CAP_USD across all scans
 visitors start. There is no per-address limit. Scans started from the CLI (the seeded demo surveys) never count.
+Muse Glimmer's GPU: GLIMMER_DAILY_USD a day and GLIMMER_TOTAL_USD in all, the live site's share of the $40 the user
+set for Glimmer (development and measurement stop at $30, eval/glimmer_ledger.py). Past either, Muse Spark judges.
 """
 import argparse
 import hashlib
@@ -33,6 +35,8 @@ SETTINGS = {
     "DEMO_SCANS": "4:Seattle (Capitol Hill);1:Seongsu",
     "SCANS_PER_IP_PER_DAY": "0",
     "PUBLIC_COST_CAP_USD": "40",
+    "GLIMMER_DAILY_USD": "1.5",
+    "GLIMMER_TOTAL_USD": "10",
     "PYTHONUNBUFFERED": "1",
     "PYTHONPATH": APP_DIR,
 }

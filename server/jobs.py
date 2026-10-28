@@ -43,10 +43,12 @@ def spend_saver(db_path: Path, scan_id: int, saved_usd: float):
 
 
 class ScanWorker:
-    def __init__(self, db_path: Path, run_dir: Path, run=None, on_done=None, public_cap_usd: float | None = None):
+    def __init__(self, db_path: Path, run_dir: Path, run=None, on_done=None, public_cap_usd: float | None = None,
+                 glimmer_daily_usd: float = second_opinion.GLIMMER_DAILY_USD, glimmer_total_usd: float | None = None):
         self.db_path = Path(db_path)
         self.run_dir = Path(run_dir)
         self.public_cap_usd = public_cap_usd  # Settings.public_cost_cap_usd
+        self.glimmer_daily_usd, self.glimmer_total_usd = glimmer_daily_usd, glimmer_total_usd  # Settings.glimmer_*
         self._run = run or self._run_pipeline
         self._on_done = on_done  # called with the scan id after every scan, finished or crashed
         self._queue: queue.Queue = queue.Queue()
@@ -117,12 +119,19 @@ class ScanWorker:
             log.exception("could not mark scan %s as failed", scan_id)
 
     def judge(self):
-        """Muse Glimmer for checks that name it (GLIMMER_URL set), unless today's GPU estimate has reached
-        GLIMMER_DAILY_USD: then Muse Spark judges every check until tomorrow (UTC)."""
+        """Muse Glimmer for checks that name it (GLIMMER_URL set), unless today's GPU estimate has reached the daily
+        cap (then Muse Spark judges every check until tomorrow, UTC) or the whole log's has reached the total cap
+        (then Muse Spark judges from now on)."""
         model = second_opinion.glimmer_from_env(self.run_dir)
-        if model is not None and second_opinion.gpu_usd_today(model.log_path) >= second_opinion.GLIMMER_DAILY_USD:
+        if model is None:
+            return None
+        if second_opinion.gpu_usd_today(model.log_path) >= self.glimmer_daily_usd:
             log.info("today's Glimmer GPU estimate is over $%.2f; Muse Spark judges every check",
-                     second_opinion.GLIMMER_DAILY_USD)
+                     self.glimmer_daily_usd)
+            return None
+        if self.glimmer_total_usd is not None and second_opinion.gpu_usd_total(model.log_path) >= self.glimmer_total_usd:
+            log.info("the Glimmer GPU estimate is over its total of $%.2f; Muse Spark judges every check",
+                     self.glimmer_total_usd)
             return None
         return model
 

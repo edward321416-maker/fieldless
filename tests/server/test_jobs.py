@@ -142,3 +142,20 @@ def test_the_worker_uses_glimmer_only_while_todays_gpu_estimate_is_under_its_cap
         _json.dumps({"kind": "glimmer", "ts": _time.time() - 60, "seconds": hours * 3600}) + "\n",
         encoding="utf-8")
     assert worker.judge() is None
+
+
+def test_the_worker_stops_using_glimmer_once_its_total_gpu_estimate_reaches_the_cap(tmp_path, monkeypatch):
+    import json as _json
+    import time as _time
+    from pipeline import second_opinion
+    monkeypatch.setenv("GLIMMER_URL", "https://me--fieldless-glimmer-serve.modal.run")
+    worker = ScanWorker(tmp_path / "t.db", tmp_path, run=lambda scan_id: None, glimmer_total_usd=1.0)
+    assert worker.judge() is not None
+    hours = 1.0 / second_opinion.GPU_USD_PER_HOUR  # a day ago: under today's cap, but the total reaches $1
+    (tmp_path / "calls_glimmer.jsonl").write_text(
+        _json.dumps({"kind": "glimmer", "ts": _time.time() - 2 * 86_400, "seconds": hours * 3600}) + "\n",
+        encoding="utf-8")
+    assert worker.judge() is None
+    assert ScanWorker(tmp_path / "t.db", tmp_path, run=lambda scan_id: None).judge() is not None  # no total cap
+    assert ScanWorker(tmp_path / "t.db", tmp_path, run=lambda scan_id: None,
+                      glimmer_daily_usd=0.0).judge() is None  # a lower daily cap

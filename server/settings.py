@@ -3,6 +3,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pipeline import second_opinion
+
 ROOT = Path(__file__).resolve().parent.parent
 # Any one of these means a hosted server (Railway, Hugging Face Spaces, Modal), where the public default salt must not
 # be used.
@@ -19,6 +21,10 @@ class Settings:
     # Total spend of the scans visitors start; past it the live site stops new scans (finished ones stay open). It
     # keeps a public server from running the free credit out and onto the card. None: no such cap.
     public_cost_cap_usd: float | None = None
+    # Muse Glimmer's GPU on Modal (pipeline.second_opinion's estimate): past either cap, Muse Spark judges every check,
+    # today or from then on. The total keeps the live site inside its share of the GPU budget the user set.
+    glimmer_daily_usd: float = second_opinion.GLIMMER_DAILY_USD
+    glimmer_total_usd: float | None = None
     max_bbox_deg2: float = 0.0001  # about 1.1 x 0.9 km in Seoul; a scan stops at 400 photos anyway
     demo_scans: tuple[tuple[int, str], ...] = ()  # spec 13 demo mode: pre-processed areas shown first
     hf_data_repo: str | None = None  # private Hugging Face dataset that keeps the data on a host without a disk
@@ -52,6 +58,10 @@ def load() -> Settings:
         scans_per_ip_per_day=_number("SCANS_PER_IP_PER_DAY", os.environ.get("SCANS_PER_IP_PER_DAY") or "3"),
         public_cost_cap_usd=(_number("PUBLIC_COST_CAP_USD", os.environ["PUBLIC_COST_CAP_USD"], float)
                              if os.environ.get("PUBLIC_COST_CAP_USD") else None),
+        glimmer_daily_usd=(_number("GLIMMER_DAILY_USD", os.environ["GLIMMER_DAILY_USD"], float)
+                           if os.environ.get("GLIMMER_DAILY_USD") else second_opinion.GLIMMER_DAILY_USD),
+        glimmer_total_usd=(_number("GLIMMER_TOTAL_USD", os.environ["GLIMMER_TOTAL_USD"], float)
+                           if os.environ.get("GLIMMER_TOTAL_USD") else None),
         demo_scans=_demo_scans(os.environ.get("DEMO_SCANS") or ""),
         hf_data_repo=os.environ.get("HF_DATA_REPO") or None,
         backup_dir=Path(os.environ["BACKUP_DIR"]) if os.environ.get("BACKUP_DIR") else None,

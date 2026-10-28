@@ -66,7 +66,9 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     elif store is None and settings.backup_dir:
         store = folder_store(settings.backup_dir, run_dir)
     worker = worker or ScanWorker(db_path, run_dir, on_done=(lambda _: store.request_save()) if store else None,
-                                  public_cap_usd=settings.public_cost_cap_usd)
+                                  public_cap_usd=settings.public_cost_cap_usd,
+                                  glimmer_daily_usd=settings.glimmer_daily_usd,
+                                  glimmer_total_usd=settings.glimmer_total_usd)
     preview = preview or collect.preview
 
     start_lock = threading.Lock()  # the per-address check, the new scan and its address tag happen as one step

@@ -90,6 +90,9 @@ Then open http://localhost:8000.
 | `IP_HASH_SALT` | in production | random salt for the hashed client address; without it a public default is used |
 | `SCANS_PER_IP_PER_DAY` | no | default 3; 0 turns the per-address limit off |
 | `PUBLIC_COST_CAP_USD` | no | total spend of the surveys visitors start; past it, new surveys stop |
+| `GLIMMER_URL` | no | the deployed `fieldless-glimmer` address; checks with `judge = "glimmer"` ask Muse Glimmer first |
+| `GLIMMER_DAILY_USD` | no | Glimmer's estimated GPU spend a day, default 3; past it, Muse Spark judges until tomorrow (UTC) |
+| `GLIMMER_TOTAL_USD` | no | Glimmer's estimated GPU spend in all; past it, Muse Spark judges from then on |
 | `DEMO_SCANS` | no | surveys listed first, as `id:Name;id:Name` |
 | `THRESHOLD_RUN` | no | run folder under `<data>/runs`, default `server` |
 | `HF_DATA_REPO` | no | private Hugging Face dataset that keeps the data on a host without a disk (with `HF_TOKEN`) |

@@ -158,20 +158,31 @@ def gpu_usd_today(log_path: Path, now: float | None = None) -> float:
     of the container, which costs from its first call (or wake) to its last answer plus GLIMMER_IDLE_S."""
     now = time.time() if now is None else now
     day = datetime.fromtimestamp(now, timezone.utc).date()
+    return _sessions_usd([s for s in _spans(log_path) if datetime.fromtimestamp(s[0], timezone.utc).date() == day])
+
+
+def gpu_usd_total(log_path: Path) -> float:
+    """Estimated GPU spend over the whole log, counted as gpu_usd_today counts a day."""
+    return _sessions_usd(_spans(log_path))
+
+
+def _spans(log_path: Path) -> list[tuple[float, float]]:
     try:
         lines = Path(log_path).read_text(encoding="utf-8").splitlines()
     except OSError:
-        return 0.0
+        return []
     spans = []
     for line in lines:
         try:
             record = json.loads(line)
             start = float(record["ts"])
-            end = start + float(record.get("seconds") or 0)
+            spans.append((start, start + float(record.get("seconds") or 0)))
         except (ValueError, KeyError, TypeError):
             continue
-        if datetime.fromtimestamp(start, timezone.utc).date() == day:
-            spans.append((start, end))
+    return spans
+
+
+def _sessions_usd(spans: list[tuple[float, float]]) -> float:
     seconds, session = 0.0, None
     for start, end in sorted(spans):
         if session is not None and start <= session[1] + GLIMMER_IDLE_S:

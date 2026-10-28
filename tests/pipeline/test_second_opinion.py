@@ -188,3 +188,5 @@ def test_gpu_spend_today_counts_each_session_from_first_wake_to_last_answer_plus
     expected = ((320 + 120) + (30 + 120)) * rate
     assert second_opinion.gpu_usd_today(log, now=day + 4000) == pytest.approx(expected)
     assert second_opinion.gpu_usd_today(tmp_path / "missing.jsonl") == 0.0
+    assert second_opinion.gpu_usd_total(log) == pytest.approx(expected + (999 + 120) * rate)  # yesterday too
+    assert second_opinion.gpu_usd_total(tmp_path / "missing.jsonl") == 0.0

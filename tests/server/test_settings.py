@@ -7,6 +7,7 @@ def test_defaults():
     s = settings.load()
     assert (s.run_name, s.invite_code, s.scans_per_ip_per_day, s.demo_scans) == ("server", None, 3, ())
     assert s.public_cost_cap_usd is None and s.backup_dir is None
+    assert s.glimmer_daily_usd == 3.0 and s.glimmer_total_usd is None
     assert s.max_bbox_deg2 == 0.0001
     assert s.static_dir.name == "dist" and s.static_dir.parent.name == "web"
 
@@ -19,7 +20,10 @@ def test_environment_overrides(monkeypatch):
     monkeypatch.setenv("HF_DATA_REPO", "me/fieldless-data")
     monkeypatch.setenv("PUBLIC_COST_CAP_USD", "40")
     monkeypatch.setenv("BACKUP_DIR", "/backup")
+    monkeypatch.setenv("GLIMMER_DAILY_USD", "1.5")
+    monkeypatch.setenv("GLIMMER_TOTAL_USD", "10")
     s = settings.load()
+    assert s.glimmer_daily_usd == 1.5 and s.glimmer_total_usd == 10.0
     assert s.backup_dir is not None and s.backup_dir.name == "backup"
     assert s.public_cost_cap_usd == 40.0
     assert s.invite_code == "letmein" and s.scans_per_ip_per_day == 5 and s.run_name == "demo"

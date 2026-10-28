@@ -16,6 +16,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 DB_NAME = "threshold.db"
+GPU_LOG = "calls_glimmer.jsonl"  # Muse Glimmer's calls: kept so the server's GPU total survives a restart
 SAVE_DELAY_S = 20.0  # reviews come in bursts; one upload covers a burst
 
 
@@ -41,7 +42,7 @@ class DatasetStore:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         try:
             self._download(self.repo_id, repo_type="dataset", local_dir=self.run_dir,
-                           allow_patterns=[DB_NAME, "evidence/*"])
+                           allow_patterns=[DB_NAME, GPU_LOG, "evidence/*"])
         except Exception:
             log.exception("could not restore data from %s", self.repo_id)
             return False
@@ -62,6 +63,8 @@ class DatasetStore:
             evidence = self.run_dir / "evidence"
             if evidence.is_dir():
                 shutil.copytree(evidence, staging / "evidence")
+            if (self.run_dir / GPU_LOG).exists():
+                shutil.copy2(self.run_dir / GPU_LOG, staging / GPU_LOG)
             self._api.upload_folder(repo_id=self.repo_id, repo_type="dataset", folder_path=staging,
                                     commit_message="Save survey data")
 
@@ -97,12 +100,16 @@ class FolderBackup:
             shutil.copy2(self.backup_dir / DB_NAME, local / DB_NAME)
         if (self.backup_dir / "evidence").is_dir():
             shutil.copytree(self.backup_dir / "evidence", local / "evidence", dirs_exist_ok=True)
+        if (self.backup_dir / GPU_LOG).exists():
+            shutil.copy2(self.backup_dir / GPU_LOG, local / GPU_LOG)
 
     def upload_folder(self, *, repo_id, repo_type, folder_path, commit_message):
         folder = Path(folder_path)
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         if (folder / "evidence").is_dir():
             shutil.copytree(folder / "evidence", self.backup_dir / "evidence", dirs_exist_ok=True)
+        if (folder / GPU_LOG).exists():
+            shutil.copy2(folder / GPU_LOG, self.backup_dir / GPU_LOG)
         part = self.backup_dir / f"{DB_NAME}.part"
         shutil.copy2(folder / DB_NAME, part)
         part.replace(self.backup_dir / DB_NAME)  # the backup database is never half-written
