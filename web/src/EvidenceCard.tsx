@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { STATIC_DEMO } from "./api";
 import { labelText, photoMonth, reasonText } from "./format";
-import type { Picked } from "./MapView";
-import type { Evidence } from "./types";
+import type { Evidence, Picked } from "./types";
 
 // The official Mapillary logo (press kit v0.0.4, the light-background version, outer margin trimmed); the word if it fails to load.
 export function MapillaryMark({ alt = "Mapillary" }: { alt?: string }) {

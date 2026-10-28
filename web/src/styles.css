@@ -26,7 +26,22 @@ button, input, select { font: inherit; }
 .top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
 .top h1 { margin: 0; font-size: 1.25rem; }
 .top p { margin: 0; color: var(--muted); }
-.map { min-height: 300px; }
+.map-wrap { position: relative; min-height: 300px; }
+.map { position: absolute; inset: 0; }
+.legend { position: absolute; top: 8px; left: 8px; z-index: 2; max-height: calc(100% - 16px); overflow-y: auto;
+  background: #fff; border-radius: 8px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25); padding: 4px 8px; font-size: 14px; }
+.legend ul { list-style: none; margin: 0; padding: 0; }
+.legend-item { display: flex; align-items: center; gap: 2px; width: 100%; min-height: 44px; padding: 0 4px 0 0;
+  border: none; border-radius: 8px; background: none; text-align: left; }
+.legend-item:hover { background: #f3f4f6; }
+.legend-name { flex: 1; padding-right: 12px; }
+.legend-count { font-weight: 600; min-width: 2ch; text-align: right; }
+.legend-off img { opacity: 0.3; }
+.legend-off .legend-name, .legend-off .legend-count { color: var(--muted); text-decoration: line-through; }
+.legend-badges { border-top: 1px solid var(--line); margin-top: 4px !important; padding: 4px 0 !important; }
+.legend-badges li { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; }
+.map-tip .maplibregl-popup-content { padding: 6px 8px; font-size: 13px; }
+.map-label .maplibregl-popup-content { padding: 4px 8px; font-size: 13px; font-weight: 600; }
 .panel { overflow-y: auto; border-left: 1px solid var(--line); padding: 0 16px 16px; }
 .panel-section, .card { border-bottom: 1px solid var(--line); padding: 12px 0; }
 .panel h2 { font-size: 1.05rem; margin: 4px 0 8px; }

@@ -1,5 +1,5 @@
 import type {
-  Bbox, DemoArea, Entrance, EntranceReview, Issue, IssueReview, Preview, Scan, ServerConfig,
+  Bbox, DemoArea, Entrance, EntranceReview, Issue, IssueReview, Preview, Scan, ServerConfig, Walk,
 } from "./types";
 
 export class ApiError extends Error {
@@ -60,4 +60,7 @@ export const api = {
   issues: (id: number) => request<Issue[]>(`/api/scans/${id}/issues`),
   reviewEntrance: (id: number, body: EntranceReview) => request<Entrance>(`/api/entrances/${id}/review`, post(body)),
   reviewIssue: (id: number, body: IssueReview) => request<Issue>(`/api/issues/${id}/review`, post(body)),
+  walks: (id: number) => request<Walk[]>(`/api/scans/${id}/walks`),
+  undoEntrance: (id: number) => request<Entrance>(`/api/entrances/${id}/review/undo`, post({})),
+  undoIssue: (id: number) => request<Issue>(`/api/issues/${id}/review/undo`, post({})),
 };

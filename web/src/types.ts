@@ -36,9 +36,37 @@ export interface CheckCount {
   label_yes: string;
   label_no: string;
   inventory: boolean;
+  map_icon: string;
+  question: string; // a short question for people; the check's ask sentence when the standard gives none
   yes: number;
   no: number;
   unclear: number;
+}
+
+// Every kind of finding a scan can show, in the order the map colours them (server/views.py items_json).
+export interface ItemMeta {
+  id: string;
+  target: string;
+  map_icon: string; // a shape of the web icon set; empty: the target's first letter
+  kind: "check" | "stage";
+  inventory: boolean;
+}
+
+// The offline comparison with the city's own records (eval, city_check_scan<N>.json), demo surveys only.
+export interface CityCheck {
+  scan_id: number;
+  city: string;
+  measured_at: string;
+  reviewed: boolean;
+  method: string;
+  method_url: string;
+  items: Record<string, { layer: string; found: number; covered: number; matched_ids: number[];
+    rejected_at_city_point: number[] }>;
+}
+
+export interface Walk {
+  clip: number;
+  points: [number, number][]; // [lng, lat] in photo order
 }
 
 export interface Scan {
@@ -56,6 +84,8 @@ export interface Scan {
   usd_per_km: number | null;
   standard: "KR" | "US";
   checks: CheckCount[];
+  items: ItemMeta[];
+  city_check?: CityCheck;
   error: string | null;
   counts: {
     defects: number; obstructions: number; entrances: number; entrances_with_steps: number; needs_review: number;
@@ -82,6 +112,7 @@ export interface Entrance {
   id: number;
   lat: number;
   lng: number;
+  heading: number | null; // the photo's compass direction
   name: string;
   category: string;
   step_count: number | null;
@@ -101,6 +132,8 @@ export interface Issue {
   id: number;
   lat: number;
   lng: number;
+  heading: number | null; // the photo's compass direction
+  box: number[] | null; // the model's box around the object, [x1, y1, x2, y2] in 0-1000 of the photo
   issue_type: string; // KR classes, "obstruction", or a check id
   durable: boolean; // missing blocks, covers and fixed objects stay; a movable obstruction is a fact at photo time
   defect: boolean;
@@ -135,3 +168,5 @@ export interface IssueReview {
   answer?: "yes" | "no";
   seconds: number;
 }
+
+export type Picked = { kind: "entrance"; item: Entrance } | { kind: "issue"; item: Issue };

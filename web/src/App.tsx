@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, STATIC_DEMO } from "./api";
 import AreaPanel from "./AreaPanel";
 import Attribution from "./Attribution";
 import DemoNotice from "./DemoNotice";
 import EvidenceCard from "./EvidenceCard";
 import { isFinished } from "./format";
-import MapView, { type Picked } from "./MapView";
+import { findingsOf, itemName, keyOf, type Finding } from "./items";
+import MapView from "./MapView";
 import ResultsPanel from "./ResultsPanel";
 import ReviewPanel from "./ReviewPanel";
-import type { Bbox, DemoArea, Entrance, Issue, Scan, ServerConfig } from "./types";
+import type { Bbox, DemoArea, Entrance, Issue, Picked, Scan, ServerConfig, Walk } from "./types";
 
 const POLL_MS = 3000;
 
@@ -26,11 +27,11 @@ export default function App() {
   const [scan, setScan] = useState<Scan | null>(null);
   const [entrances, setEntrances] = useState<Entrance[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
-  const [showEntrances, setShowEntrances] = useState(true);
-  const [showIssues, setShowIssues] = useState(true);
+  const [walks, setWalks] = useState<Walk[]>([]);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [streets, setStreets] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<Picked | null>(null);
   const [reviewing, setReviewing] = useState(false);
-  const [focus, setFocus] = useState<{ lat: number; lng: number } | null>(null);
   const [fitTo, setFitTo] = useState<Bbox | null>(null);
   const [error, setError] = useState<string | null>(null);
   const getView = useRef<(() => Bbox) | null>(null);
@@ -87,6 +88,7 @@ export default function App() {
         setIssues(i);
       })
       .catch((e: Error) => !cancelled && setError(e.message));
+    api.walks(scan.id).then((w) => !cancelled && setWalks(w)).catch(() => !cancelled && setWalks([]));
     return () => {
       cancelled = true;
     };
@@ -109,6 +111,7 @@ export default function App() {
     if (id === scanId) return; // already open: keep its results on screen
     setEntrances([]);
     setIssues([]);
+    setWalks([]);
     setScan(null);
     setScanId(id);
   }
@@ -116,8 +119,24 @@ export default function App() {
   function pick(p: Picked) {
     setReviewing(false);
     setPicked(p);
-    setFocus({ lat: p.item.lat, lng: p.item.lng });
   }
+
+  const findings = useMemo(() => findingsOf(issues, entrances), [issues, entrances]);
+  const items = scan?.items ?? [];
+  const selected: Finding | null = picked ? findings.find((f) => f.key === keyOf(picked)) ?? null : null;
+  // "Utility or streetlight pole · 3 of 20 · position approximate": the marker's name tag (ui-redesign 3.3).
+  const selectedLabel = useMemo(() => {
+    if (!selected) return "";
+    const same = findings.filter((f) => f.item === selected.item);
+    return `${itemName(selected.item, items)} · ${same.indexOf(selected) + 1} of ${same.length} · position approximate`;
+  }, [selected, findings, items]);
+  const toggleItem = (item: string) =>
+    setHidden((h) => {
+      const next = new Set(h);
+      if (next.has(item)) next.delete(item);
+      else next.add(item);
+      return next;
+    });
 
   function updated(u: Picked) {
     if (u.kind === "entrance") setEntrances((list) => list.map((e) => (e.id === u.item.id ? u.item : e)));
@@ -143,15 +162,18 @@ export default function App() {
       <MapView
         selecting={selecting}
         bbox={bbox}
-        entrances={entrances}
-        issues={issues}
-        showEntrances={showEntrances}
-        showIssues={showIssues}
-        focus={focus}
         fitTo={fitTo}
+        findings={findings}
+        items={items}
+        hidden={hidden}
+        onToggleItem={toggleItem}
+        walks={walks}
+        selected={selected}
+        selectedLabel={selectedLabel}
         onSelect={onSelect}
-        onPick={pick}
+        onPick={(f) => pick(f.picked)}
         onReady={(fn) => (getView.current = fn)}
+        onStreets={setStreets}
       />
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
         {error && <p className="error" role="alert">{error}</p>}
@@ -192,10 +214,7 @@ export default function App() {
             scan={scan}
             entrances={entrances}
             issues={issues}
-            showEntrances={showEntrances}
-            showIssues={showIssues}
-            onShowEntrances={setShowEntrances}
-            onShowIssues={setShowIssues}
+            streets={streets}
             onPick={pick}
             onReview={() => {
               setPicked(null);

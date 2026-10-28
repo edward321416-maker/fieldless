@@ -1,17 +1,13 @@
 import { Fragment } from "react";
 import { filesUrl, STATIC_DEMO } from "./api";
 import { dollars, isFinished, issueTone, km, minutes, photoMonth } from "./format";
-import type { Picked } from "./MapView";
-import type { Entrance, Issue, Scan } from "./types";
+import type { Entrance, Issue, Picked, Scan } from "./types";
 
 interface Props {
   scan: Scan;
   entrances: Entrance[];
   issues: Issue[];
-  showEntrances: boolean;
-  showIssues: boolean;
-  onShowEntrances: (v: boolean) => void;
-  onShowIssues: (v: boolean) => void;
+  streets: Record<string, string>; // "11th Ave, near E Pike St" by finding key, from the map's road names
   onPick: (p: Picked) => void;
   onReview: () => void;
 }
@@ -19,8 +15,8 @@ interface Props {
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const STATUS_TEXT: Record<string, string> = { needs_review: "To review", field_check: "Check on site" };
 
-function IssueButton({ issue, onPick }: { issue: Issue; onPick: (p: Picked) => void }) {
-  const parts = [STATUS_TEXT[issue.review_status] ?? "", issue.durable ? "" : photoMonth(issue.captured_at)];
+function IssueButton({ issue, street, onPick }: { issue: Issue; street?: string; onPick: (p: Picked) => void }) {
+  const parts = [STATUS_TEXT[issue.review_status] ?? "", street ?? "", issue.durable ? "" : photoMonth(issue.captured_at)];
   const status = parts.filter(Boolean).join(" · ");
   return (
     <li>
@@ -119,17 +115,6 @@ export default function ResultsPanel(props: Props) {
           CSV per item for a GIS, and the evidence photos.
         </p>
       )}
-      <fieldset>
-        <legend>Map layers</legend>
-        <label>
-          <input type="checkbox" checked={props.showIssues} onChange={(e) => props.onShowIssues(e.target.checked)} />
-          Sidewalk
-        </label>
-        <label>
-          <input type="checkbox" checked={props.showEntrances} onChange={(e) => props.onShowEntrances(e.target.checked)} />
-          Entrances
-        </label>
-      </fieldset>
       {us ? (
         props.scan.checks.map((c) => {
           const rows = props.issues.filter((i) => i.issue_type === c.id);
@@ -139,7 +124,7 @@ export default function ResultsPanel(props: Props) {
               {rows.length === 0 ? (
                 <p>None found.</p>
               ) : (
-                <ul className="item-list">{rows.map((i) => <IssueButton key={`i${i.id}`} issue={i} onPick={props.onPick} />)}</ul>
+                <ul className="item-list">{rows.map((i) => <IssueButton key={`i${i.id}`} issue={i} street={props.streets[`issue:${i.id}`]} onPick={props.onPick} />)}</ul>
               )}
             </Fragment>
           );
@@ -150,7 +135,7 @@ export default function ResultsPanel(props: Props) {
           {defects.length === 0 ? (
             <p>No missing blocks, covers or fixed objects found.</p>
           ) : (
-            <ul className="item-list">{defects.map((i) => <IssueButton key={`i${i.id}`} issue={i} onPick={props.onPick} />)}</ul>
+            <ul className="item-list">{defects.map((i) => <IssueButton key={`i${i.id}`} issue={i} street={props.streets[`issue:${i.id}`]} onPick={props.onPick} />)}</ul>
           )}
         </>
       )}
@@ -163,7 +148,7 @@ export default function ResultsPanel(props: Props) {
       {once.length === 0 ? (
         <p>None found.</p>
       ) : (
-        <ul className="item-list">{once.map((i) => <IssueButton key={`i${i.id}`} issue={i} onPick={props.onPick} />)}</ul>
+        <ul className="item-list">{once.map((i) => <IssueButton key={`i${i.id}`} issue={i} street={props.streets[`issue:${i.id}`]} onPick={props.onPick} />)}</ul>
       )}
       <h3>Entrances</h3>
       {props.entrances.length === 0 ? (

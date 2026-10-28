@@ -6,7 +6,7 @@ import type { Scan } from "./types";
 
 const scan = (stage_status: Record<string, string>, status = "running", standard: "KR" | "US" = "KR"): Scan => ({
   id: 1, status, stage_status, bbox: [0, 0, 1, 1], image_count: 0, captured_from: null, captured_to: null,
-  cost_usd: 0, processing_seconds: 0, review_seconds: 0, km: null, usd_per_km: null, standard, checks: [], error: null,
+  cost_usd: 0, processing_seconds: 0, review_seconds: 0, km: null, usd_per_km: null, standard, checks: [], items: [], error: null,
   counts: { defects: 0, obstructions: 0, entrances: 0, entrances_with_steps: 0, needs_review: 0, field_check: 0 },
 });
 
@@ -15,7 +15,7 @@ describe("format", () => {
     expect(labelText({ icon: "◼", text: "Tactile line cut by a cover" })).toBe("◼ Tactile line cut by a cover");
   });
   it("asks the reviewer a question that fits the item", () => {
-    const base = { id: 1, lat: 0, lng: 0, durable: true, defect: true, object_label: null, frame_start: 1, frame_end: 1,
+    const base = { id: 1, lat: 0, lng: 0, heading: null, box: null, durable: true, defect: true, object_label: null, frame_start: 1, frame_end: 1,
       review_status: "needs_review", review_reasons: [], evidence: null, captured_at: null, old_photo: false, check: null, second_opinion: null };
     expect(issueQuestion({ ...base, issue_type: "missing_blocks", label: { icon: "✖", text: "" } })).toBe("Are tactile blocks missing here?");
     expect(issueQuestion({ ...base, issue_type: "obstruction", label: { icon: "⛔", text: "" } })).toBe("Is the tactile paving blocked here?");
@@ -30,7 +30,7 @@ describe("format", () => {
   it("colours a check row by whether it is a defect, not by its answer", () => {
     const check = { id: "ramp", find: "curb cut", target: "curb ramp", question: "?", answer: "no" as const,
       report_when: "no" as const, label_yes: "Y", label_no: "N", inventory: false, model: "Muse Spark" };
-    const row = { id: 1, lat: 0, lng: 0, durable: true, defect: true, object_label: "no", frame_start: 1, frame_end: 1,
+    const row = { id: 1, lat: 0, lng: 0, heading: null, box: null, durable: true, defect: true, object_label: "no", frame_start: 1, frame_end: 1,
       review_status: "needs_review", review_reasons: [], evidence: null, captured_at: null, old_photo: false,
       second_opinion: null, issue_type: "ramp", label: { icon: "✖", text: "N" }, check };
     expect(issueTone(row)).toBe("check-defect");

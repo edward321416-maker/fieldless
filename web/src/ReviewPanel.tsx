@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { PhotoCredit } from "./EvidenceCard";
 import { issueQuestion, labelText, median, reasonText } from "./format";
-import type { Picked } from "./MapView";
-import type { Entrance, Issue } from "./types";
+import type { Entrance, Issue, Picked } from "./types";
 
 interface Props {
   entrances: Entrance[];
