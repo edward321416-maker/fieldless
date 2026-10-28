@@ -25,9 +25,10 @@ label_no = "Curb ramp without detectable warning"
 label_unclear = "Curb ramp: detectable warning unclear"
 
 # Street assets (inventory): every confirmed object is a point on the map, compared with the city's own inventory.
-# find_by is chosen per item on Seattle scan 4's photos (2026-10-28), counting the city's points some photo covers. By
-# video, one row per object SAM followed, before Spark's check: 18 of 29 poles and 4 of 8 litter cans, against 11 and
-# 2 by photos in 8-15 m pieces after it. Trees and pay stations stay on photos, where they found more.
+# find_by is chosen per item on Seattle scan 4's photos (2026-10-28, a rerun of a copy), counting the city's points
+# some photo covers, after Spark's check. Poles by video: 12 of 29 in 24 rows, against 11 in 20 by photos in 8 m
+# pieces. Curb ramps by video: 9 of 39 in 10 rows, against 10 in 19 by photos (15 of them rejected by a person).
+# Litter cans, trees and pay stations stay on photos, where they found more.
 # group_m (by photos): things that stand in rows get one row per group_m metres of walk, not one per run of photos.
 
 [[check]]
@@ -52,7 +53,7 @@ find = "street tree"
 target = "street tree"
 ask = "Is this tree planted in the sidewalk or in the planting strip between the sidewalk and the street? Answer no for a tree in a private yard, behind a fence or clearly on private land. If you cannot tell where it is planted, answer unclear."
 label_yes = "Street tree"
-group_m = 8  # by photos: by video SAM found 16 of the 39 city trees the photos cover (by photos 19), with 7 repeats
+group_m = 8  # by photos: by video 16 of the 39 city trees before Spark's check (by photos 19 after it), 7 repeats
 
 [[check]]
 id = "litter_can"
@@ -60,10 +61,10 @@ map_icon = "litter-bin"
 question = "Is this a public litter or recycling can (a fixed city bin)?"
 inventory = true
 find = "trash can"
-find_by = "video"
 target = "public litter can"
 ask = "Is this a public litter or recycling can on the sidewalk (a fixed city bin)? Answer no for a private wheeled bin put out for collection. If you cannot tell, answer unclear."
 label_yes = "Public litter can"
+group_m = 15  # by photos: by video 1 of the 8 city cans after Spark's check, by photos 2
 judge = "glimmer"  # Muse Glimmer answers first; passed stage 1 at medium (agreement 0.86, no extra false keeps)
 
 # Written by the Muse Spark item agent (assist.run_inventory) from the city's pay-station list and tested on

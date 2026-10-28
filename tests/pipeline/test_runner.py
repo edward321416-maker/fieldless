@@ -615,8 +615,9 @@ def test_the_checks_glimmer_judges_run_back_to_back_so_its_gpu_starts_once(setup
     scan = make(FakeApi(spark=spark, sam=us_sam), us_scan)
     scan.standard, scan.judge = std, object()
     assert runner.run_scan(scan)["status"] == "done"
-    spark_order = [c.id for c in std.checks if c.id not in glimmer]
-    assert order == spark_order + [c.id for c in std.checks if c.id in glimmer]
+    spark_ids = [c.id for c in std.checks if c.id not in glimmer]
+    assert sorted(order[:len(spark_ids)]) == sorted(spark_ids)  # Spark's checks run at once, in any order
+    assert order[len(spark_ids):] == [c.id for c in std.checks if c.id in glimmer]  # then Glimmer's, back to back
 
 
 def test_the_judge_answers_only_the_checks_that_name_it_and_the_audit_is_seeded_by_the_scan(setup, monkeypatch):
@@ -688,18 +689,18 @@ def test_a_us_scan_follows_each_object_by_video_on_one_upload_and_asks_spark_abo
 def test_a_rerun_reuses_sams_video_answers_and_asks_again_only_what_failed(setup):
     conn, _, make, _ = setup
     us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
-    broken = {"trash can"}
+    broken = {"street light pole"}
     api = FakeApi(spark=lambda s, p: RAMP_NO if s == "survey_check" else spark(s, p), sam=ramp_on_video(broken))
     first = runner.run_scan(make(api, us_scan))
-    assert first["unavailable"]["check_requests"] == 1  # the litter can request on the one video
+    assert first["unavailable"]["check_requests"] == 1  # the pole request on the one video
     scan = make(api, us_scan)
     saved = json.loads(scan.state("find_curb_ramp_warning").read_text(encoding="utf-8"))
     assert saved["phrase"] == "curb cut" and list(saved["videos"]) == ["0"]
-    assert json.loads(scan.state("find_litter_can").read_text(encoding="utf-8"))["videos"] == {}  # failed: not kept
+    assert json.loads(scan.state("find_utility_pole").read_text(encoding="utf-8"))["videos"] == {}  # failed: not kept
     before = len(video_calls(api))
     broken.clear()
     db.set_stage(conn, us_scan, "defects", "pending")
     again = runner.run_scan(make(api, us_scan))
-    assert video_calls(api)[before:] == ["trash can"] and again["unavailable"]["check_requests"] == 0
+    assert video_calls(api)[before:] == ["street light pole"] and again["unavailable"]["check_requests"] == 0
     (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
     assert ramp["model_outputs"]["find"]["group_idxs"] == [1, 2, 3]

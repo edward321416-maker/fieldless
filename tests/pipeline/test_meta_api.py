@@ -58,7 +58,8 @@ class FakeClient:
         self.streamed.append(kwargs)
         return FakeStream(self.streams.pop(0))
 
-    def _upload(self, purpose, file):
+    def _upload(self, purpose, file, timeout=None):
+        self.upload_timeout = timeout
         return SimpleNamespace(id="file-1")
 
 
@@ -180,6 +181,7 @@ def test_an_uploaded_file_is_deleted_even_when_the_body_fails(tmp_path):
             assert file_id == "file-1"
             raise RuntimeError("stage failed")
     assert client.deleted == ["file-1"]
+    assert client.upload_timeout == ma.UPLOAD_TIMEOUT_S  # a stuck upload is retried, not waited on for 300 s
 
 
 def test_contributor_models_are_refused(tmp_path, monkeypatch):

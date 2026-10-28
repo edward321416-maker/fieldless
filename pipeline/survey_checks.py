@@ -4,9 +4,9 @@ A check found by video (find_by = "video") gives SAM 3.1 the walk's photos joine
 object it finds from photo to photo under one number. Each followed object is one row, judged on its largest view
 that is not cut off by the photo's edge. What SAM saw as two objects is made one where it can tell (parts of one
 thing, an object lost for a photo or crossing into the next video), and two walks that saw one object from the same
-place are merged. Of the city points Seattle scan 4's photos cover, this found 18 of 29 poles and 4 of 8 litter cans
-before Spark's check, against 11 and 2 by photos after it, and 13 of 39 curb ramps (2026-10-28). Each item says
-which way it is found (pipeline/standards/us.toml).
+place are merged. On a rerun of Seattle scan 4 it found as many city poles and curb ramps as photos did (12 and 9;
+by photos 11 and 10), in one row per object with SAM's own box, and half the curb ramp rows (10, against 19). Each
+item says which way it is found (pipeline/standards/us.toml).
 
 A check found by photos looks for `find` on every second photo of each walk. Sampled photos in a row that show it
 are one object, seen best where its mask is largest (a check with `group_m` cuts a long run into pieces of that many
@@ -97,9 +97,9 @@ def _angle(a: float | None, b: float | None) -> float:
 
 def tracks(text: str, video: Video, by_idx: dict[int, dict]) -> list[list[dict]]:
     """The objects SAM followed in one video's answer, each a list of sightings {"idx", "area", "box"} in photo
-    order: box on a 0-1000 scale of the photo, area the mask's area in photo pixels. Raises ValueError for an answer
-    that does not fit the video."""
-    segs = confident(parse(text, video=True))
+    order: box on a 0-1000 scale of the photo, area the box's area in photo pixels (masks are not decoded). Raises
+    ValueError for an answer that does not fit the video."""
+    segs = confident(parse(text, video=True, masks=False))
     check_frames(segs, len(video.idxs))
     out: dict[str, list[dict]] = {}
     for s in segs:
@@ -371,8 +371,9 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
 
     def found(p):
         """model_outputs.find: SAM's phrase, the object's mask area, its photos and, by video, its box."""
-        return {"phrase": check.find, "mask_area": p["area"], "group_idxs": p["group"],
-                **({"box": p["box"]} if p.get("box") else {})}
+        if p.get("box"):  # followed by video: the area is the box's
+            return {"phrase": check.find, "box_area": p["area"], "group_idxs": p["group"], "box": p["box"]}
+        return {"phrase": check.find, "mask_area": p["area"], "group_idxs": p["group"]}
 
     def spark(p):
         try:

@@ -78,3 +78,9 @@ def test_box_prompt_numbers_objects_from_one_and_keeps_at_most_16():
     assert box_prompt([(1, 2, 3, 4), (5, 6, 7, 8)], 2048, 1536) == (
         "<0f>1<|box;x1=1;y1=2;x2=3;y2=4;w=2048;h=1536|>,2<|box;x1=5;y1=6;x2=7;y2=8;w=2048;h=1536|>")
     assert box_prompt([(0, 0, 9, 9)] * 20, 100, 100).count("<|box") == MAX_BOXES == 16
+
+
+def test_parse_can_keep_only_the_boxes():
+    answer = text([line(0, [record("0", 10, 20, 50, 60, 100, 100, 0.9)])])
+    (seg,) = parse(answer, video=True, masks=False)
+    assert seg.mask is None and seg.box == (10, 20, 50, 60) and seg.area == 40 * 40

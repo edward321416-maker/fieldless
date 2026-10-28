@@ -19,6 +19,7 @@ from pipeline import config
 from pipeline.cost import CostMeter, sam_image_cost, sam_video_cost, spark_cost
 
 ATTEMPTS = 5  # rate limits, 5xx and transport errors
+UPLOAD_TIMEOUT_S = 90  # a 30 MB video goes up in about 15 s; one stuck upload once waited the 300 s client timeout
 MAX_CONSECUTIVE_FAILURES = 5  # this many failed requests in a row stop the run
 
 
@@ -243,7 +244,7 @@ class MetaApi:
     def upload(self, path: Path) -> str:
         def attempt():
             with open(path, "rb") as f:
-                file = self.client.files.create(purpose="user_data", file=f)
+                file = self.client.files.create(purpose="user_data", file=f, timeout=UPLOAD_TIMEOUT_S)
             return file.id, 0.0, {"bytes": Path(path).stat().st_size}
 
         return self._request("upload", 0.0, attempt, path=Path(path).name)

@@ -47,8 +47,9 @@ def _order(seg: Seg) -> tuple:
     return seg.frame, len(seg.obj), seg.obj  # "2" before "10"
 
 
-def parse(text: str, video: bool) -> list[Seg]:
-    """Segments in a SAM answer, sorted by frame then object. An empty answer means nothing was found.
+def parse(text: str, video: bool, masks: bool = True) -> list[Seg]:
+    """Segments in a SAM answer, sorted by frame then object. An empty answer means nothing was found. masks=False
+    keeps only boxes: decoding every mask of a 2048-wide video's answer took over a minute (2026-10-28).
     Raises ValueError when the parser reports an error (a malformed record)."""
     if not text.strip():
         return []
@@ -68,7 +69,8 @@ def parse(text: str, video: bool) -> list[Seg]:
             boxes[key] = record
         elif record.kind == "mask":
             b = record.bounds
-            segs.append(Seg(key[0], key[1], (b.left, b.top, b.right, b.bottom), record.confidence, _mask(record)))
+            segs.append(Seg(key[0], key[1], (b.left, b.top, b.right, b.bottom), record.confidence,
+                            _mask(record) if masks else None))
     with_mask = {(s.frame, s.obj) for s in segs}
     for key, r in boxes.items():
         if key not in with_mask:

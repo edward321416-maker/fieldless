@@ -397,7 +397,7 @@ def test_tracks_are_the_objects_sam_followed_with_photo_boxes_and_areas():
     first, second = survey_checks.tracks(answer, video, walk(3))
     assert [d["idx"] for d in first] == [0, 1] and [d["idx"] for d in second] == [1]
     assert first[1]["box"] == [200, 167, 400, 833]  # 0-1000 of the photo
-    assert first[1]["area"] == 64 * 160 // 4  # the mask's area in photo pixels (the video is twice the size)
+    assert first[1]["area"] == 64 * 160 // 4  # the box's area in photo pixels (the video is twice the size)
     with pytest.raises(ValueError):
         survey_checks.tracks(text([line(5, [vrec("1", 0, 10)])]), video, walk(3))  # frame 5 of a 3-frame video
 
@@ -468,7 +468,7 @@ def test_run_check_by_video_makes_one_row_per_followed_object_and_asks_about_its
     assert missing == {"find": [4], "ask": [], "not_target": []}
     (row,) = rows
     assert (row["frame_idx"], row["frame_start"], row["frame_end"], row["object_label"]) == (1, 0, 1, "no")
-    assert row["model_outputs"]["find"] == {"phrase": "curb cut", "mask_area": 60 * 160 // 4, "group_idxs": [0, 1],
+    assert row["model_outputs"]["find"] == {"phrase": "curb cut", "box_area": 60 * 160 // 4, "group_idxs": [0, 1],
                                             "box": [375, 167, 562, 833]}
     assert "at [375, 167, 562, 833]" in asked[0]
     with pytest.raises(ValueError, match="found by video"):
