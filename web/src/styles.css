@@ -227,3 +227,33 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .lead { margin: 8px 0; color: #374151; }
 .next-steps { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 0.9rem; }
 .next-steps li { margin: 4px 0; }
+.tabs-label { align-self: center; color: var(--muted); font-size: 0.85rem; margin-right: 2px; }
+.intro { padding: 16px 0; display: flex; flex-direction: column; gap: 14px; }
+.intro h2 { margin: 0; font-size: 1.55rem; line-height: 1.2; }
+.intro-lead { margin: 0; color: #374151; line-height: 1.5; }
+.intro-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.compare-card { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; background: #f9fafb; font-size: 0.8rem; color: #374151; }
+.compare-card strong { font-size: 1.75rem; line-height: 1.15; color: var(--ink); font-variant-numeric: tabular-nums; }
+.compare-card strong small { font-size: 0.9rem; font-weight: 600; color: var(--muted); }
+.compare-ours { border-color: #bfdbfe; background: #eff6ff; }
+.compare-label { font-size: 0.8rem; font-weight: 700; color: #4b5563; }
+.compare-ours .compare-label { color: var(--accent); }
+.compare-source { font-size: 0.75rem; color: #4b5563; }
+.intro-scope { margin: -6px 0 0; font-size: 0.8rem; color: #4b5563; }
+.intro-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; line-height: 1.4; }
+.intro-steps li { display: flex; gap: 10px; }
+.intro-n { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff;
+  font-size: 0.8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.intro-items .chips { margin: 6px 0 0; }
+.intro-actions { display: flex; flex-direction: column; gap: 8px; }
+.intro-actions button { min-height: 44px; font-weight: 600; }
+.intro-key { position: absolute; left: 12px; bottom: 32px; z-index: 2; background: #fff; border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); padding: 8px 12px; display: flex; flex-direction: column; gap: 6px;
+  font-size: 13px; color: #374151; }
+.intro-key > span { display: flex; align-items: center; gap: 8px; }
+.key-line { display: inline-block; width: 24px; height: 4px; border-radius: 2px; }
+.key-coverage { background: #05CB63; }
+.key-walk { background: #475569; opacity: 0.8; }
+.brand-link { display: flex; align-items: center; gap: 8px; padding: 4px; margin: -4px; border: none; background: none;
+  font: inherit; font-weight: 700; color: inherit; cursor: pointer; min-height: 40px; }

@@ -35,6 +35,8 @@ interface Props {
   selecting: boolean;
   newSurvey: boolean; // a new survey is open: Mapillary's coverage shows, the map steps back to the neighbourhood
   coverage: boolean; // the server passes Mapillary's coverage tiles on
+  showCoverage: boolean; // draw that coverage now (the introduction, a new survey)
+  areaLabel: string | null; // a name tag on the area box ("Example survey area · Capitol Hill")
   bbox: Bbox | null;
   fitTo: Bbox | null;
   findings: Finding[];
@@ -104,6 +106,7 @@ export default function MapView(props: Props) {
   const label = useRef<maplibregl.Popup | null>(null);
   const [loaded, setLoaded] = useState(false);
   const latest = useRef(props);
+  const findingsData = useRef<FeatureCollection>(EMPTY); // what the findings source holds, to lay it out again
   latest.current = props;
 
   useEffect(() => {
@@ -118,7 +121,7 @@ export default function MapView(props: Props) {
       map.addSource("area", { type: "geojson", data: areaData(latest.current.bbox) });
       map.addSource("selection", { type: "geojson", data: EMPTY });
       // Each cluster counts its findings per palette slot, so its ring shows the items inside (design pass 2).
-      map.addSource("findings", { type: "geojson", data: EMPTY, cluster: true, clusterRadius: 12, clusterMaxZoom: 16,
+      map.addSource("findings", { type: "geojson", data: EMPTY, cluster: true, clusterRadius: 12, clusterMaxZoom: 17,
         clusterProperties: Object.fromEntries(Array.from({ length: RING_SLOTS }, (_, i) =>
           [`s${i}`, ["+", ["case", ["==", ["get", "slot"], i], 1, 0]]])) });
       map.addLayer({ id: "walks", type: "line", source: "walks", layout: { "line-cap": "round", "line-join": "round" },
@@ -149,13 +152,22 @@ export default function MapView(props: Props) {
           "icon-ignore-placement": true } });
       setLoaded(true);
     });
-    // An image the map asks for but nobody added yet (a style reload): draw it from its name.
+    let relayout = 0;
+    // An image the map asks for but nobody added yet (a cluster's ring, a style reload): draw it from its name.
     map.on("styleimagemissing", (e: { id: string }) => {
       const ring = ringCounts(e.id);
       if (ring) {
         if (map.hasImage(e.id)) return;
         const c = ringCanvas(ring);
         map.addImage(e.id, c.getContext("2d")!.getImageData(0, 0, c.width, c.height), { pixelRatio: RATIO });
+        // A cluster's mix is known only once the tile is laid out, after the image was asked for: lay the findings
+        // out once more so the new rings are drawn (otherwise only the count shows).
+        if (!relayout) {
+          relayout = window.setTimeout(() => {
+            relayout = 0;
+            (map.getSource("findings") as maplibregl.GeoJSONSource | undefined)?.setData(findingsData.current);
+          }, 50);
+        }
         return;
       }
       const [, itemId, badge] = e.id.split(":");
@@ -282,9 +294,22 @@ export default function MapView(props: Props) {
         paint: { "line-color": "#05CB63", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 16, 3],
           "line-opacity": 0.9 } }, "walks");
     }
-    if (map.getLayer("coverage")) map.setLayoutProperty("coverage", "visibility", props.newSurvey ? "visible" : "none");
+    if (map.getLayer("coverage")) map.setLayoutProperty("coverage", "visibility", props.showCoverage ? "visible" : "none");
     if (props.newSurvey && map.getZoom() > 15) map.easeTo({ zoom: 15, duration: 600 });
-  }, [props.coverage, props.newSurvey, loaded]);
+  }, [props.coverage, props.showCoverage, props.newSurvey, loaded]);
+
+  // The area box's name tag, at its top left corner.
+  const areaTag = useRef<maplibregl.Popup | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    areaTag.current?.remove();
+    areaTag.current = null;
+    if (props.areaLabel && props.bbox) {
+      areaTag.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, anchor: "bottom-left",
+        className: "map-label" }).setLngLat([props.bbox[0], props.bbox[3]]).setText(props.areaLabel).addTo(map);
+    }
+  }, [props.areaLabel, props.bbox, loaded]);
 
   // The markers: one image per item and badge, a source of the findings not hidden by the legend.
   useEffect(() => {
@@ -298,13 +323,14 @@ export default function MapView(props: Props) {
       const c = markerCanvas(colourOf(f.item, props.items), meta?.map_icon ?? "", meta?.target ?? f.item, f.badge);
       map.addImage(name, c.getContext("2d")!.getImageData(0, 0, c.width, c.height), { pixelRatio: RATIO });
     }
-    (map.getSource("findings") as maplibregl.GeoJSONSource).setData({
+    findingsData.current = {
       type: "FeatureCollection",
       features: shown.map((f) => point([f.lng, f.lat], {
         key: f.key, icon: markerName(f.item, f.badge), order: f.badge ? 1 : 0, // markers with a badge draw on top
         slot: slotOf(f.item, props.items),
       })),
-    });
+    };
+    (map.getSource("findings") as maplibregl.GeoJSONSource).setData(findingsData.current);
     streetsRef.current = Object.fromEntries(Object.entries(streetsRef.current)
       .filter(([k]) => props.findings.some((f) => f.key === k)));
     nameStreets(map);

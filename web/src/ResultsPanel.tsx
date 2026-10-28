@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { filesUrl, STATIC_DEMO } from "./api";
-import { BENCHMARKS } from "./benchmarks";
 import { dollars, isFinished, photoMonth, yearsSpan } from "./format";
 import { itemName, STATUS_SENTENCE, type Finding } from "./items";
 import { itemArt } from "./markerArt";
@@ -31,7 +30,6 @@ export default function ResultsPanel(props: Props) {
   const { scan, findings } = props;
   const items = scan.items;
   const art = useMemo(() => itemArt(items), [items]);
-  const benchmark = BENCHMARKS[scan.standard];
   const city = scan.city_check;
   const { counts } = scan;
   const present = items.filter((it) => findings.some((f) => f.item === it.id));
@@ -63,12 +61,6 @@ export default function ResultsPanel(props: Props) {
           <span>{dollars(scan.cost_usd)} in all</span>
         </div>
       </div>
-      {benchmark && (
-        <p className="benchmark">
-          <strong>On foot</strong> · {benchmark.short} ·{" "}
-          <a href={benchmark.source} target="_blank" rel="noreferrer" title={benchmark.scope}>Source</a>
-        </p>
-      )}
 
       <div className="found-head">
         <h3>What the survey found</h3>
