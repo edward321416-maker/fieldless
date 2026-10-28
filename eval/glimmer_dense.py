@@ -3,10 +3,12 @@ costs little, a scan can ask more often. Rebuild a finished scan's picks at shor
 areas it already measured (work/scan<N>/find_<id>.json, so no SAM calls), ask Muse Glimmer every pick once, and score
 each spacing against the city's inventory: found, repeats of one city point, and finds not in the record.
 
-The flow here is Glimmer alone: an unclear answer or a failed request keeps the pick for a person, as Spark's
-fallback would at worst; a "no" drops it.
+The flow here is one judge alone: an unclear answer or a failed request keeps the pick for a person, as Spark's
+fallback would at worst; a "no" drops it. `--judge spark` asks Muse Spark instead (Meta credit, within --cap), to see
+whether a gain comes from the spacing or from the judge.
 
     GLIMMER_URL=... python -m eval.glimmer_dense --run d5-seattle-rec --scan 4 --group-m 15 8 --out OUT.json
+    python -m eval.glimmer_dense --run d5-seattle-rec --scan 4 --judge spark --items utility_pole --cap 1 --out OUT.json
 """
 import argparse
 import json
@@ -18,8 +20,10 @@ from assist.tools import counted_inventory
 from eval.glimmer_replay import _found, judge_for
 from eval.store import load_scan, open_ro
 from pipeline import survey_checks
+from pipeline.meta_api import image_part, text_part
 
 ITEMS = ("utility_pole", "litter_can", "parking_pay_station")  # the checks with judge = "glimmer"
+MEASURABLE = (*ITEMS, "street_tree")  # inventory checks with a city layer (eval.glimmer_replay.LAYERS)
 
 
 def cached_areas(work: Path, check) -> dict[int, int]:
@@ -72,8 +76,19 @@ def scan_picks(data: dict, unavailable: dict, item: str) -> set[int]:
     return rows | set(gone.get("not_target", [])) | set(gone.get("ask", []))
 
 
+class SparkJudge:
+    """Muse Spark behind the judge interface (answer(check, photo)), asked exactly as a scan asks it."""
+
+    def __init__(self, api):
+        self.api = api
+
+    def answer(self, check, photo) -> dict:
+        return self.api.spark_json([image_part(photo), text_part(survey_checks.prompt(check))], "survey_check",
+                                   survey_checks.SCHEMA)
+
+
 def run(run_dir: Path, scan_id: int, judge, standard, seattle: Path, spacings: list[float | None],
-        workers: int = 16) -> dict:
+        workers: int = 16, items: tuple[str, ...] = ITEMS) -> dict:
     from pipeline import collect
     conn = open_ro(run_dir / "threshold.db")
     try:
@@ -86,7 +101,7 @@ def run(run_dir: Path, scan_id: int, judge, standard, seattle: Path, spacings: l
     if hasattr(judge, "wake"):
         judge.wake()
     report = {}
-    for item in ITEMS:
+    for item in items:
         check = standard.check(item)
         areas = cached_areas(work, check)
         by_m = {m: picks_at(data["frames"], areas, m) for m in spacings}
@@ -125,15 +140,26 @@ def main(argv=None) -> None:
     ap.add_argument("--group-m", type=float, nargs="+", default=[15.0, 8.0])
     ap.add_argument("--seattle", default=str(LEDGER.parent / "seattle"))
     ap.add_argument("--reasoning", choices=("low", "medium", "high"), default="medium")
+    ap.add_argument("--judge", choices=("glimmer", "spark"), default="glimmer")
+    ap.add_argument("--items", nargs="+", choices=MEASURABLE, default=list(ITEMS))
+    ap.add_argument("--cap", type=float, default=1.0, help="with --judge spark: Meta spend cap in dollars")
     args = ap.parse_args(argv)
     run_dir = config.run_dir(args.run)
-    judge = judge_for(run_dir, args.reasoning)
-    check_budget(LEDGER, planned_usd=1.0)
-    started = time.time()
-    report = run(run_dir, args.scan, judge, load("us"), Path(args.seattle), args.group_m)
-    report["_reasoning"] = args.reasoning
-    report["_ledger"] = append(LEDGER, f"dense {args.run} scan {args.scan} group_m {args.group_m}",
-                               busy_s=time.time() - started)
+    if args.judge == "spark":
+        from pipeline.cost import CostMeter
+        from pipeline.meta_api import MetaApi
+        api = MetaApi(run_dir / "calls_dense_spark.jsonl", CostMeter(cap_usd=args.cap))
+        report = run(run_dir, args.scan, SparkJudge(api), load("us"), Path(args.seattle), args.group_m, workers=8,
+                     items=tuple(args.items))
+        report["_meta_usd"] = round(api.meter.spent_usd, 4)
+    else:
+        judge = judge_for(run_dir, args.reasoning)
+        check_budget(LEDGER, planned_usd=1.0)
+        started = time.time()
+        report = run(run_dir, args.scan, judge, load("us"), Path(args.seattle), args.group_m, items=tuple(args.items))
+        report["_reasoning"] = args.reasoning
+        report["_ledger"] = append(LEDGER, f"dense {args.run} scan {args.scan} group_m {args.group_m}",
+                                   busy_s=time.time() - started)
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
     for item, r in report.items():
         if item.startswith("_"):

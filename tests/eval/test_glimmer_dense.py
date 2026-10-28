@@ -87,3 +87,17 @@ def test_saved_areas_for_another_phrase_are_refused(tmp_path):
 def test_scan_picks_are_rows_dropped_and_failed_photos():
     data = {"issues": [{"issue_type": "pole", "frame_idx": 3}, {"issue_type": "tree", "frame_idx": 9}]}
     assert dense.scan_picks(data, {"pole": {"not_target": [5], "ask": [7]}}, "pole") == {3, 5, 7}
+
+
+def test_the_spark_judge_asks_the_scans_question_with_the_scans_schema(monkeypatch):
+    sent = {}
+
+    class Api:
+        def spark_json(self, parts, name, schema):
+            sent.update(parts=parts, name=name, schema=schema)
+            return {"visible": True, "answer": "yes", "box": [], "confidence": 1.0, "note": ""}
+
+    monkeypatch.setattr(dense, "image_part", lambda path: {"image": str(path)})
+    assert dense.SparkJudge(Api()).answer(pole(), "p.jpg")["answer"] == "yes"
+    assert sent["name"] == "survey_check" and sent["schema"] is survey_checks.SCHEMA
+    assert sent["parts"][0] == {"image": "p.jpg"} and "Is it a pole?" in str(sent["parts"][1])
