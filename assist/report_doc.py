@@ -94,6 +94,11 @@ def _marker(s: dict, item: str, size: int = 18) -> str:
     return style.marker_svg(st, size=size) if st else ""
 
 
+def _name(title: str) -> str:
+    """An item's name as the app writes it (web/src/items.ts itemName): its target with a capital (U12)."""
+    return title[:1].upper() + title[1:]
+
+
 def _color(s: dict, item: str) -> str:
     return (s.get("styles", {}).get(item) or {}).get("color", "#4D4D4D")
 
@@ -107,9 +112,11 @@ def summary_text(s: dict) -> str:
     taken = f" taken {dates['from']} to {dates['to']}" if dates else ""
     found = [i["title"] for i in s["items"] if i["found"]]
     what = ", ".join(found) if found else "no survey item"
+    places = sum(c["not_in_city"] + c["not_seen"] for c in a["city"])
+    city = f" and {places} places where the city's records may need updating" if s.get("city_check") else ""
     return (f"This survey covered {s['km']} km of street from {s['photos']} public street photos{taken}. It recorded "
             f"{t['found']} findings ({what}). {len(a['repairs'])} possible repairs, {len(a['site_visits'])} findings "
-            f"for a site visit and {len(a['city'])} items with changes to the city's records are listed in section 4.")
+            f"for a site visit{city} are listed in section 4.")
 
 
 def item_text(i: dict) -> str:
@@ -194,7 +201,7 @@ def _summary(s: dict, notes: dict | None) -> str:
 def _scope(s: dict) -> str:
     dates = s["photo_dates"]
     taken = f", taken {dates['from']} to {dates['to']}" if dates else ""
-    questions = "".join(f"<li>{_marker(s, i['item'], 16)} <b>{_h(i['title'])}</b>"
+    questions = "".join(f"<li>{_marker(s, i['item'], 16)} <b>{_h(_name(i['title']))}</b>"
                         f"{': ' + _h(i['question']) if i['question'] else ''}</li>" for i in s["items"])
     body = (svg_map(s["walks"], s["ledger"], s.get("styles", {}))
             + '<p class="muted">Grey lines: the walks the photos were taken on. Dots: findings, at the position of '
@@ -209,7 +216,11 @@ def _scope(s: dict) -> str:
 
 
 def _status_cells(i: dict) -> str:
-    return ", ".join(f"{i['by_review'][k]} {STATUS_WORDS[k]}" for k in STATUS_ORDER if i["by_review"].get(k)) or "-"
+    """The found ones by status; rejections are not among them, so they come after, said apart."""
+    counted = ", ".join(f"{i['by_review'][k]} {STATUS_WORDS[k]}" for k in STATUS_ORDER
+                        if k != "rejected" and i["by_review"].get(k)) or "-"
+    rejected = i["by_review"].get("rejected", 0)
+    return f"{counted}; {rejected} more rejected by a person (not counted)" if rejected else counted
 
 
 def _findings(s: dict, notes: dict | None) -> str:
@@ -223,7 +234,7 @@ def _findings(s: dict, notes: dict | None) -> str:
         table = _table(["Found", "Results", "Status", "City record"],
                        [[str(i["found"]), _h(results), _h(_status_cells(i)), _h(city)]])
         blocks.append(f'<article class="item" id="item-{_h(i["item"])}"><h3>{_marker(s, i["item"])} '
-                      f"{_h(i['title'])}</h3>{para}{table}</article>")
+                      f"{_h(_name(i['title']))}</h3>{para}{table}</article>")
     cc = s.get("city_check")
     note = (f'<p class="muted">City record: {_h(cc["method"])} Measured {_h(cc["measured_at"])}. '
             f'<a href="{_h(cc["method_url"])}">Method</a></p>' if cc else
@@ -238,16 +249,18 @@ def _photo_link(e: dict) -> str:
 def _actions(s: dict, notes: dict | None) -> str:
     a = s["actions"]
     repairs = (_table(["Item", "Finding", "Status", "Photo"],
-                      [[_h(e["title"]), _h(e["label"]), _h(e["status"]), _photo_link(e)] for e in a["repairs"]],
+                      [[_h(_name(e["title"])), _h(e["label"]), _h(e["status"]), _photo_link(e)]
+                       for e in a["repairs"]],
                       row_class="repair") if a["repairs"] else "<p>None.</p>")
     visits = (_table(["Item", "Finding", "Status", "Photo"],
-                     [[_h(e["title"]), _h(e["label"]), _h(e["status"]), _photo_link(e)] for e in a["site_visits"]],
+                     [[_h(_name(e["title"])), _h(e["label"]), _h(e["status"]), _photo_link(e)]
+                      for e in a["site_visits"]],
                      row_class="visit") if a["site_visits"] else "<p>None.</p>")
     city = (_table(["Item", "In the photos, not in the city's list", "In the city's list, not found by this survey"],
-                   [[_h(c["title"]), str(c["not_in_city"]), str(c["not_seen"])] for c in a["city"]])
+                   [[_h(_name(c["title"])), str(c["not_in_city"]), str(c["not_seen"])] for c in a["city"]])
             if a["city"] else ("<p>None.</p>" if s.get("city_check") else
                                "<p>No city record was checked against this survey.</p>"))
-    titles = {i["item"]: i["title"] for i in s["items"]}
+    titles = {i["item"]: _name(i["title"]) for i in s["items"]}
     prio = (notes or {}).get("priorities") or []
     priorities = ("<ol>" + "".join(f"<li><b>{_h(titles.get(p['item'], p['item']))}</b>: {_h(p['reason'])}</li>"
                                    for p in prio) + '</ol><p class="muted">Ordered by Muse Spark from the counts.</p>'
@@ -265,7 +278,7 @@ def _entry(s: dict, e: dict, photo_base: str) -> str:
             box = (f'<span class="box" style="left:{x1:.1f}%;top:{y1:.1f}%;width:{x2 - x1:.1f}%;'
                    f'height:{y2 - y1:.1f}%;border-color:{_color(s, e["item"])}"></span>')
         photo = (f'<div class="ph"><img src="{_h(photo_base + e["evidence"])}" loading="lazy" '
-                 f'alt="{_h(e["title"])}: {_h(e["label"])}">{box}</div>')
+                 f'alt="{_h(_name(e["title"]))}: {_h(e["label"])}">{box}</div>')
     else:
         photo = "<p>no photo</p>"
     who = e["creator"] or "a Mapillary contributor"
@@ -275,7 +288,8 @@ def _entry(s: dict, e: dict, photo_base: str) -> str:
     note = f"<br>Model note: {_h(e['note'])}" if e["note"] else ""
     taken = (e["captured_at"] or "")[:10] or "unknown"
     return (f'<figure class="entry" id="f-{_h(e["row_id"])}">{photo}<figcaption>{_marker(s, e["item"], 14)} '
-            f"<b>{_h(e['title'])}</b>: {_h(e['label'])} · {_h(e['status'])}<br>Taken {_h(taken)} · photo position "
+            f"<b>{_h(_name(e['title']))}</b>: {_h(e['label'])} · {_h(e['status'])}<br>Taken {_h(taken)} · "
+            f"photo position "
             f"{_h(where)}{note}<br>{credit}</figcaption></figure>")
 
 

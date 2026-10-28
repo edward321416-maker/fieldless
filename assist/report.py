@@ -99,7 +99,7 @@ def _item_entry(item: str, check, rows: list[tuple[dict, dict]], dropped: int = 
     kind = ("entrance" if item == export.ENTRANCE else "inventory" if export.is_inventory(check)
             else "check" if check is not None else "other")
     question = ((getattr(check, "question", "") or getattr(check, "ask", "") or "").strip() or None
-                if check is not None else None)
+                if check is not None else views.STAGE_ITEMS.get(item, {}).get("question"))
     title = export.title(item, check) if check is not None else views.STAGE_ITEMS.get(item, {}).get("target", item)
     return {"item": item, "title": title, "kind": kind, "question": question,
             "found": len(live),

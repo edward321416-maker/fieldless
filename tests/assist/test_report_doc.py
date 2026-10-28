@@ -105,3 +105,13 @@ def test_report_document_builds_the_page_from_the_scan_data():
     page = report.document(data, STANDARD, area="Pike & Pine", notes=NOTES, now=NOW)
 
     assert NOTES["summary"] in page and "Pike &amp; Pine" in page
+
+
+def test_names_are_capitalised_every_item_has_a_question_and_rejections_are_said_apart():
+    _, s = made(city=True)
+
+    page = report_doc.document(s)
+
+    assert "Curb ramp</h3>" in page and "<b>Shop entrance</b>: How many steps are at the shop entrance?" in page
+    assert "1 found by the models, 1 awaiting review, 1 confirmed; 1 more rejected by a person (not counted)" in page
+    assert "3 places where the city&#x27;s records may need updating" in html.escape(report_doc.summary_text(s))

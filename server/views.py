@@ -14,12 +14,17 @@ SCAN_FIELDS = ("id", "status", "stage_status", "bbox", "image_count", "captured_
                "processing_seconds", "review_seconds", "error")
 # What the pipeline's stages find besides a standard's checks, described like a check for the map and its legend, so
 # the web app names no survey item itself (docs/ui-rules.md U2). KR tactile defects come first, as in the standard.
-STAGE_ITEMS = {
-    "missing_blocks": {"target": "missing tactile blocks", "map_icon": "tiles"},
-    "cover_cut": {"target": "tactile line cut by a cover", "map_icon": "cover"},
-    "fixed_obstruction": {"target": "fixed object on tactile paving", "map_icon": "block"},
-    "obstruction": {"target": "object in the walking path", "map_icon": "cone"},
-    "entrance": {"target": "shop entrance", "map_icon": "door"},
+STAGE_ITEMS = {  # the stages' own items; "question" says what each asks of a photo, as a check's question does
+    "missing_blocks": {"target": "missing tactile blocks", "map_icon": "tiles",
+                       "question": "Are blocks missing from the tactile paving line?"},
+    "cover_cut": {"target": "tactile line cut by a cover", "map_icon": "cover",
+                  "question": "Does a cover cut the tactile paving line?"},
+    "fixed_obstruction": {"target": "fixed object on tactile paving", "map_icon": "block",
+                          "question": "Does a fixed object stand on the tactile paving?"},
+    "obstruction": {"target": "object in the walking path", "map_icon": "cone",
+                    "question": "Is an object blocking the walking path?"},
+    "entrance": {"target": "shop entrance", "map_icon": "door",
+                 "question": "How many steps are at the shop entrance?"},
 }
 
 
