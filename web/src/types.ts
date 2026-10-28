@@ -25,6 +25,7 @@ export interface CheckInfo {
   label_yes: string;
   label_no: string;
   inventory: boolean; // a confirmed object is an asset point, not a defect
+  model: string; // who answered, e.g. "Muse Spark" or "Muse Glimmer (open weights, served on Modal)"
 }
 
 export interface CheckCount {
@@ -101,7 +102,8 @@ export interface Issue {
   durable: boolean; // missing blocks, covers and fixed objects stay; a movable obstruction is a fact at photo time
   defect: boolean;
   check: CheckInfo | null;
-  second_opinion: { answer: "yes" | "no" | "unclear"; agree: boolean } | null;
+  // the other model's answer: Muse Spark Open on a defect, or Muse Spark auditing Muse Glimmer
+  second_opinion: { answer: "yes" | "no" | "unclear"; agree: boolean; model: string } | null;
   label: Label;
   object_label: string | null;
   frame_start: number | null;

@@ -19,6 +19,7 @@ RESERVED = (*KR_DURABLE, "obstruction")  # issue types other stages write
 CHECK_ID = re.compile(r"[a-z][a-z0-9_]*")
 KOREA = (124.0, 33.0, 132.0, 39.0)  # min_lng, min_lat, max_lng, max_lat
 
+JUDGES = ("spark", "glimmer")  # glimmer: Muse Glimmer served on Modal (docs/specs/2026-10-28-glimmer-modal-design.md)
 
 @dataclass(frozen=True)
 class PathSpec:
@@ -43,6 +44,7 @@ class Check:
     icon_no: str = ""
     inventory: bool = False  # every confirmed object is an asset point; there is no defect answer
     group_m: float | None = None  # metres of street one row may cover; None: one row per run of photos
+    judge: str = "spark"  # who answers `ask`: "spark" (Muse Spark), or "glimmer" (Muse Glimmer, inventory checks only)
 
     def label(self, answer: str | None) -> tuple[str, str]:
         """(icon, text) for an answer; anything but yes or no is unclear."""
@@ -106,10 +108,15 @@ def _check(table: dict, where: str) -> Check:
         if isinstance(group_m, bool) or not isinstance(group_m, (int, float)) or group_m <= 0:
             raise ValueError(f"{where}: group_m must be a positive number of metres")
         group_m = float(group_m)
+    judge = table.get("judge", "spark")
+    if judge not in JUDGES:
+        raise ValueError(f"{where}: judge must be one of {', '.join(JUDGES)}, not {judge!r}")
+    if judge != "spark" and not inventory:
+        raise ValueError(f"{where}: judge {judge!r} is only for inventory checks; Muse Spark judges defects")
     unclear = table.get("label_unclear") or f"{target[:1].upper()}{target[1:]}: unclear from the photo"
     return Check(id=check_id, find=find, target=target, ask=_need(table, "ask", where), report_when=report,
                  label_yes=label_yes, label_no=label_no, label_unclear=unclear, icon_yes=icon_yes, icon_no=icon_no,
-                 inventory=inventory, group_m=group_m)
+                 inventory=inventory, group_m=group_m, judge=judge)
 
 
 def parse(text: str, where: str) -> Standard:

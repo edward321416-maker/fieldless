@@ -36,6 +36,8 @@ SETTINGS = {
     "PYTHONUNBUFFERED": "1",
     "PYTHONPATH": APP_DIR,
 }
+if os.environ.get("GLIMMER_URL"):  # deploy/modal_glimmer.py's address (not secret): checks with judge = "glimmer"
+    SETTINGS["GLIMMER_URL"] = os.environ["GLIMMER_URL"]
 
 
 def _env_file() -> Path | None:

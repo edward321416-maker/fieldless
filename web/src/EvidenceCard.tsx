@@ -49,8 +49,8 @@ export default function EvidenceCard({ picked, onClose, onReview }: Props) {
           {picked.kind === "issue" && picked.item.second_opinion && (
             <p className="hint">
               {picked.item.second_opinion.agree
-                ? "Muse Spark Open agrees."
-                : "Muse Spark Open answered differently; check the photo."}
+                ? `${picked.item.second_opinion.model} agrees.`
+                : `${picked.item.second_opinion.model} answered differently; check the photo.`}
             </p>
           )}
         </>
@@ -67,6 +67,7 @@ export default function EvidenceCard({ picked, onClose, onReview }: Props) {
         </dl>
       ) : (
         <p>
+          {picked.item.check && `Answered by ${picked.item.check.model}. `}
           {picked.item.check
             ? "Part of the street itself, so it is likely the same today unless it was rebuilt."
             : picked.item.durable

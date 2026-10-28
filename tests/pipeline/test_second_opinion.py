@@ -4,6 +4,8 @@ import json
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from pipeline import second_opinion, survey_items
 from tests.pipeline.fakes import synthetic_photo
 
@@ -166,3 +168,22 @@ def test_apply_records_the_open_models_own_name(tmp_path):
     model.model = "some-open-model"
     (out,) = second_opinion.apply(model, CHECK, [row("no")], photos, 1)
     assert out["model_outputs"]["second_opinion"]["model"] == "some-open-model"
+
+
+
+def test_gpu_spend_today_counts_each_session_from_first_wake_to_last_answer_plus_the_idle_window(tmp_path):
+    from datetime import datetime, timezone
+    day = datetime(2026, 10, 29, 12, 0, tzinfo=timezone.utc).timestamp()
+    log = tmp_path / "calls_glimmer.jsonl"
+    records = [
+        {"kind": "glimmer_wake", "ts": day, "seconds": 150},
+        {"kind": "glimmer", "ts": day + 160, "seconds": 20},
+        {"kind": "glimmer", "ts": day + 300, "seconds": 20},  # within 120 s of the last: same session, ends +320
+        {"kind": "glimmer", "ts": day + 3600, "seconds": 30},  # a new session, 30 s long
+        {"kind": "glimmer", "ts": day - 86_400, "seconds": 999},  # yesterday
+    ]
+    log.write_text("\n".join(json.dumps(r) for r in records) + "\nnot json\n", encoding="utf-8")
+    rate = second_opinion.GPU_USD_PER_HOUR / 3600
+    expected = ((320 + 120) + (30 + 120)) * rate
+    assert second_opinion.gpu_usd_today(log, now=day + 4000) == pytest.approx(expected)
+    assert second_opinion.gpu_usd_today(tmp_path / "missing.jsonl") == 0.0

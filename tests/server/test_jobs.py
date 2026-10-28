@@ -126,3 +126,19 @@ def test_the_after_scan_hook_runs_after_every_scan_even_a_crash(tmp_path):
     worker.join()
     worker.stop()
     assert done == [1, 2]
+
+
+
+def test_the_worker_uses_glimmer_only_while_todays_gpu_estimate_is_under_its_cap(tmp_path, monkeypatch):
+    import json as _json
+    import time as _time
+    from pipeline import second_opinion
+    worker = ScanWorker(tmp_path / "t.db", tmp_path, run=lambda scan_id: None)
+    assert worker.judge() is None  # no GLIMMER_URL
+    monkeypatch.setenv("GLIMMER_URL", "https://me--fieldless-glimmer-serve.modal.run")
+    assert worker.judge().model == second_opinion.GLIMMER_MODEL
+    hours = second_opinion.GLIMMER_DAILY_USD / second_opinion.GPU_USD_PER_HOUR + 0.1
+    (tmp_path / "calls_glimmer.jsonl").write_text(
+        _json.dumps({"kind": "glimmer", "ts": _time.time() - 60, "seconds": hours * 3600}) + "\n",
+        encoding="utf-8")
+    assert worker.judge() is None

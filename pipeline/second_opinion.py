@@ -16,6 +16,7 @@ import json
 import os
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pipeline import config
@@ -33,6 +34,9 @@ GLIMMER_MODEL = "meta-models/Muse-Glimmer-30B"
 GLIMMER_SYSTEM = "Reasoning strength: low"  # design 2.2: raised to medium if stage 1 finds too many "unclear"
 GLIMMER_MAX_TOKENS = 2000
 GLIMMER_TIMEOUT_S = 300  # a cold container takes a few minutes; a request that waits longer falls back to Spark
+GPU_USD_PER_HOUR = 3.95  # Modal H100, the one GPU deploy/modal_glimmer.py uses; the Modal dashboard is the real figure
+GLIMMER_IDLE_S = 120  # the GPU stays on this long after the last call (modal_glimmer.py scaledown_window)
+GLIMMER_DAILY_USD = 3.0  # design 4 risk 3: past this estimate the live server judges with Muse Spark for the day
 
 
 class OpenModel:
@@ -41,11 +45,11 @@ class OpenModel:
 
     def __init__(self, log_path: Path, *, base_url: str = BASE_URL, model: str = MODEL, api_key: str | None = None,
                  max_tokens: int = MAX_TOKENS, system: str | None = None, kind: str = "spark_open",
-                 timeout: float = 120, client=None):
+                 timeout: float = 120, retries: int = 2, client=None):
         self.log_path = Path(log_path)
         self.base_url, self.model, self.max_tokens, self.system, self.kind = base_url, model, max_tokens, system, kind
         self.api_key = api_key
-        self.timeout = timeout
+        self.timeout, self.retries = timeout, retries
         self._client = client
 
     @property
@@ -53,7 +57,7 @@ class OpenModel:
         if self._client is None:
             from openai import OpenAI
             self._client = OpenAI(base_url=self.base_url, api_key=self.api_key or os.environ["BASETEN_API_KEY"],
-                                  timeout=self.timeout, max_retries=2)
+                                  timeout=self.timeout, max_retries=self.retries)
         return self._client
 
     def answer(self, check: Check, photo: Path) -> dict:
@@ -68,7 +72,7 @@ class OpenModel:
             response_format={"type": "json_schema",
                              "json_schema": {"name": "survey_check", "schema": SCHEMA, "strict": True}})
         self._log({"kind": self.kind, "model": self.model, "check": check.id, "photo": Path(photo).name,
-                   "ts": round(time.time(), 1), "seconds": round(time.time() - started, 1),
+                   "ts": round(started, 1), "seconds": round(time.time() - started, 1),
                    "usage": resp.usage.model_dump() if resp.usage else {}})
         answer = json.loads(resp.choices[0].message.content)
         return {**answer, "model": self.model} if isinstance(answer, dict) else answer
@@ -115,7 +119,7 @@ def glimmer_from_env(run_dir: Path) -> OpenModel | None:
         return None
     return OpenModel(Path(run_dir) / "calls_glimmer.jsonl", base_url=url.rstrip("/") + "/v1", model=GLIMMER_MODEL,
                      api_key=glimmer_key(), max_tokens=GLIMMER_MAX_TOKENS, system=GLIMMER_SYSTEM, kind="glimmer",
-                     timeout=GLIMMER_TIMEOUT_S)
+                     timeout=GLIMMER_TIMEOUT_S, retries=0)  # a failure falls back to Spark at once
 
 
 def apply(model, check: Check, rows: list[dict], photos: dict[int, Path], workers: int) -> list[dict]:
@@ -147,3 +151,35 @@ def apply(model, check: Check, rows: list[dict], photos: dict[int, Path], worker
         if not agree:
             row["review_reasons"] = [*row["review_reasons"], "models_disagree"]
     return rows
+
+
+def gpu_usd_today(log_path: Path, now: float | None = None) -> float:
+    """Estimated GPU spend today (UTC) from an OpenModel log: calls within GLIMMER_IDLE_S of each other are one session
+    of the container, which costs from its first call (or wake) to its last answer plus GLIMMER_IDLE_S."""
+    now = time.time() if now is None else now
+    day = datetime.fromtimestamp(now, timezone.utc).date()
+    try:
+        lines = Path(log_path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return 0.0
+    spans = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+            start = float(record["ts"])
+            end = start + float(record.get("seconds") or 0)
+        except (ValueError, KeyError, TypeError):
+            continue
+        if datetime.fromtimestamp(start, timezone.utc).date() == day:
+            spans.append((start, end))
+    seconds, session = 0.0, None
+    for start, end in sorted(spans):
+        if session is not None and start <= session[1] + GLIMMER_IDLE_S:
+            session[1] = max(session[1], end)
+            continue
+        if session is not None:
+            seconds += session[1] - session[0] + GLIMMER_IDLE_S
+        session = [start, end]
+    if session is not None:
+        seconds += session[1] - session[0] + GLIMMER_IDLE_S
+    return seconds / 3600 * GPU_USD_PER_HOUR

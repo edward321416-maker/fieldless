@@ -144,7 +144,8 @@ def test_issue_json_carries_the_check_and_whether_it_is_a_defect():
     assert out["defect"] is True and out["durable"] is True
     assert out["check"] == {"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp",
                             "question": US.checks[0].ask, "answer": "no", "report_when": "no", "label_yes": "Curb ramp with detectable warning",
-                            "label_no": "Curb ramp without detectable warning", "inventory": False}
+                            "label_no": "Curb ramp without detectable warning", "inventory": False,
+                            "model": "Muse Spark"}
     assert views.issue_json(ramp("yes"), NOW, US)["defect"] is False
     assert views.issue_json(issue(), NOW)["check"] is None and views.issue_json(issue(), NOW)["defect"] is False
     assert views.issue_json(issue(), NOW)["second_opinion"] is None
@@ -152,7 +153,7 @@ def test_issue_json_carries_the_check_and_whether_it_is_a_defect():
 
 def test_issue_json_carries_the_second_opinion_only_when_it_answered():
     answered = ramp("no", model_outputs={"second_opinion": {"model": "m", "answer": "yes", "agree": False}})
-    assert views.issue_json(answered, NOW, US)["second_opinion"] == {"answer": "yes", "agree": False}
+    assert views.issue_json(answered, NOW, US)["second_opinion"] == {"answer": "yes", "agree": False, "model": "m"}
     failed = ramp("no", model_outputs={"second_opinion": {"model": "m", "error": "boom"}})
     assert views.issue_json(failed, NOW, US)["second_opinion"] is None
 
@@ -202,3 +203,19 @@ def test_a_scan_without_a_standard_is_korean():
             "captured_from": None, "captured_to": None, "cost_usd": 0.0, "processing_seconds": 0.0,
             "review_seconds": 0.0, "error": None}
     assert views.scan_json(scan, [], [])["standard"] == "KR" and views.scan_json(scan, [], [])["checks"] == []
+
+
+
+def test_a_check_row_names_the_model_that_answered_and_an_audit_reads_like_a_second_opinion():
+    std = survey_items.load("US")
+    pole = {"issue_type": "utility_pole", "object_label": "yes",
+            "model_outputs": {"check": {"answer": "yes", "model": "meta-models/Muse-Glimmer-30B"},
+                              "audit": {"model": "muse-spark-1.3", "answer": "no", "agree": False}}}
+    assert views.check_json(pole, std)["model"] == "Muse Glimmer (open weights, served on Modal)"
+    assert views.second_json(pole) == {"answer": "no", "agree": False, "model": "Muse Spark"}
+    ramp = {"issue_type": "curb_ramp_warning", "object_label": "no",
+            "model_outputs": {"check": {"answer": "no"},
+                              "second_opinion": {"model": "meta-models/muse-spark-open-1026", "answer": "no",
+                                                 "agree": True}}}
+    assert views.check_json(ramp, std)["model"] == "Muse Spark"  # rows from before the model was recorded
+    assert views.second_json(ramp) == {"answer": "no", "agree": True, "model": "Muse Spark Open"}

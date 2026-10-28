@@ -4,10 +4,16 @@ SAM 3.1 looks for a check's `find` on every second photo of each walk. Sampled p
 object, seen best where its mask is largest (a check with `group_m` cuts a long run into pieces of that many metres,
 one object each, for things that stand in rows); sightings from different walks within MERGE_M are the same object.
 Muse Spark answers the check's `ask` on that best photo. One sidewalk_issue row per object, in the format agreed
-with eval on 2026-10-28 (plan 4, Global Constraints)."""
+with eval on 2026-10-28 (plan 4, Global Constraints).
+
+A check with judge = "glimmer" is answered first by a judge model (Muse Glimmer, an OpenModel) when the caller passes
+one: Spark takes the picks it cannot decide, and audits a share of the rest (design 2.3,
+docs/specs/2026-10-28-glimmer-modal-design.md)."""
+import math
+import random
 from pathlib import Path
 
-from pipeline import geo
+from pipeline import config, geo
 from pipeline.cost import CostCapReached
 from pipeline.meta_api import error_text, image_part, text_part
 from pipeline.parallel import run_parallel
@@ -16,6 +22,8 @@ from pipeline.survey_items import Check
 
 SAMPLE_EVERY = 2
 MERGE_M = 8.0  # objects from different walks closer than this are the same object
+AUDIT_SHARE = 0.1  # of the judge's yes/no answers, Spark answers this share too (at least one)
+JUDGE_GIVE_UP = 3  # failures in a row after which the judge is not asked again in this check (a hung server)
 
 SCHEMA = {
     "type": "object",
@@ -130,13 +138,40 @@ def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
     return "auto", [], current
 
 
+def _valid(answer) -> bool:
+    return (isinstance(answer, dict) and isinstance(answer.get("visible"), bool)
+            and answer.get("answer") in ("yes", "no", "unclear"))
+
+
+def _current(answer: dict) -> str:
+    return answer["answer"] if answer["visible"] else "unclear"
+
+
+def _opinion(answer: dict, agree: bool) -> dict:
+    return {"model": answer.get("model"), "answer": _current(answer), "agree": agree,
+            "confidence": answer.get("confidence"), "note": answer.get("note"), "box": answer.get("box")}
+
+
+def _outcome(decided) -> str:
+    return "drop" if decided is None else decided[2]
+
+
 def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, Path], by_idx: dict[int, dict],
-              workers: int, every: int = SAMPLE_EVERY, known: dict[int, int] | None = None) -> tuple[list[dict], dict]:
+              workers: int, every: int = SAMPLE_EVERY, known: dict[int, int] | None = None, judge=None,
+              audit_seed: int | None = None, audit_share: float = AUDIT_SHARE) -> tuple[list[dict], dict]:
     """Rows for one check over every walk, and what could not be analysed: {"find": [photo idx], "ask": [photo idx]}.
     An inventory check also reports "not_target": the photos of picks Spark said are not the target (no row).
     `known` holds the areas already measured for this check's `find` (photo idx -> area). Those photos are not asked
     again, and every area measured now is added to it, clip by clip, so the caller can save it. A failed request is
-    not added; it is asked again next time."""
+    not added; it is asked again next time.
+
+    With a judge (an OpenModel: answer(check, photo), wake(), model), the judge answers every pick first and is woken
+    before SAM starts. Spark answers the picks the judge calls unclear or fails on, and audits audit_share of the
+    others, chosen with audit_seed (the scan id). An audit that disagrees keeps the judge's row and sends it to a
+    person ("models_disagree"); if the judge dropped what Spark keeps, a row is made from Spark's answer for a person
+    to settle. Every answer names its model, and "judge" in the result counts what happened."""
+    if judge is not None:
+        judge.wake()  # the container starts while SAM looks for this check's objects
     picks: list[dict] = []
     failed_find: list[int] = []
     for clip_idxs in clips.values():
@@ -150,35 +185,99 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
                 picks.append({"idx": idx, "area": areas[idx], "group": piece})
     picks = merge_near(picks, by_idx)
 
-    def one(p):
+    def spark(p):
         try:
             answer = api.spark_json([image_part(photos[p["idx"]]), text_part(prompt(check))], "survey_check", SCHEMA)
-            if (not isinstance(answer, dict) or not isinstance(answer.get("visible"), bool)
-                    or answer.get("answer") not in ("yes", "no", "unclear")):
+            if not _valid(answer):
                 raise ValueError(f"unexpected answer: {str(answer)[:200]}")
-            return answer
+            return {**answer, "model": config.SPARK_MODEL} if judge is not None else answer
         except CostCapReached:
             raise
         except Exception as exc:  # this object only: reported as unavailable
             return {"error": error_text(exc)}
 
+    def row(p, answer, decided, extra=None):
+        review_status, reasons, current = decided
+        frame = by_idx[p["idx"]]
+        return {"issue_type": check.id, "object_label": current, "frame_start": min(p["group"]),
+                "frame_end": max(p["group"]), "frame_idx": p["idx"], "lat": frame["lat"], "lng": frame["lng"],
+                "confidence": answer.get("confidence"), "review_status": review_status, "review_reasons": reasons,
+                "model_outputs": {"check": answer, "find": {"phrase": check.find, "mask_area": p["area"],
+                                                            "group_idxs": p["group"]}, **(extra or {})},
+                "captured_at": frame["captured_at"]}
+
     rows: list[dict] = []
     failed_ask: list[int] = []
     not_target: list[int] = []
-    for p, answer in zip(picks, run_parallel(one, picks, workers)):
-        if "error" in answer:
-            failed_ask.append(p["idx"])
+    if judge is None:
+        for p, answer in zip(picks, run_parallel(spark, picks, workers)):
+            if "error" in answer:
+                failed_ask.append(p["idx"])
+                continue
+            decided = status(check, answer)
+            if decided is None:
+                not_target.append(p["idx"])
+                continue
+            rows.append(row(p, answer, decided))
+        return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target}
+
+    failures_in_a_row = [0]
+
+    def ask_judge(p):
+        if failures_in_a_row[0] >= JUDGE_GIVE_UP:
+            return {"error": f"gave up on {judge.model} after {JUDGE_GIVE_UP} failures in a row"}
+        try:
+            answer = judge.answer(check, photos[p["idx"]])
+            if not _valid(answer):
+                raise ValueError(f"unexpected answer from {judge.model}: {str(answer)[:200]}")
+        except Exception as exc:  # Spark answers this pick instead
+            failures_in_a_row[0] += 1
+            return {"error": error_text(exc)}
+        failures_in_a_row[0] = 0
+        return answer
+
+    first = run_parallel(ask_judge, picks, workers)
+    decisive = {i for i, a in enumerate(first) if "error" not in a and not (a["visible"] and a["answer"] == "unclear")}
+    fallback = [i for i in range(len(picks)) if i not in decisive]
+    audited = set(random.Random(audit_seed).sample(sorted(decisive), math.ceil(audit_share * len(decisive))))
+    asked = sorted({*fallback, *audited})
+    second = dict(zip(asked, run_parallel(lambda i: spark(picks[i]), asked, workers)))
+    audit = {"asked": 0, "agree": 0}
+    for i, p in enumerate(picks):
+        if i not in decisive:
+            answer = second[i]
+            if "error" in answer:
+                failed_ask.append(p["idx"])
+                continue
+            decided = status(check, answer)
+            if decided is None:
+                not_target.append(p["idx"])
+                continue
+            said = first[i]
+            note = ({"model": judge.model, "error": said["error"]} if "error" in said
+                    else {"model": judge.model, "answer": _current(said)})
+            rows.append(row(p, answer, decided, {"judge": note}))
             continue
-        decided = status(check, answer)
+        said, decided, extra = first[i], status(check, first[i]), {}
+        if i in audited:
+            other = second[i]
+            if "error" in other:
+                extra["audit"] = {"model": config.SPARK_MODEL, "error": other["error"]}
+            else:
+                spark_decided = status(check, other)
+                agree = _outcome(decided) == _outcome(spark_decided)
+                audit["asked"] += 1
+                audit["agree"] += agree
+                if decided is None and _outcome(spark_decided) == "yes":
+                    rows.append(row(p, other, ("needs_review", ["models_disagree"], "yes"),
+                                    {"audit": _opinion(said, False)}))
+                    continue
+                extra["audit"] = _opinion(other, agree)
+                if decided is not None and not agree:
+                    decided = ("needs_review", [*decided[1], "models_disagree"], decided[2])
         if decided is None:
             not_target.append(p["idx"])
             continue
-        review_status, reasons, current = decided
-        frame = by_idx[p["idx"]]
-        rows.append({"issue_type": check.id, "object_label": current, "frame_start": min(p["group"]),
-                     "frame_end": max(p["group"]), "frame_idx": p["idx"], "lat": frame["lat"], "lng": frame["lng"],
-                     "confidence": answer.get("confidence"), "review_status": review_status, "review_reasons": reasons,
-                     "model_outputs": {"check": answer, "find": {"phrase": check.find, "mask_area": p["area"],
-                                                                 "group_idxs": p["group"]}},
-                     "captured_at": frame["captured_at"]})
-    return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target}
+        rows.append(row(p, said, decided, extra))
+    summary = {"model": judge.model, "answered": len(decisive), "fallback": len(fallback), "audit": audit}
+    return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target, "judge": summary}

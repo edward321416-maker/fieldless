@@ -21,7 +21,7 @@ describe("format", () => {
     expect(issueQuestion({ ...base, issue_type: "obstruction", label: { icon: "⛔", text: "" } })).toBe("Is the tactile paving blocked here?");
     const check = { id: "curb_ramp_warning", find: "curb cut", target: "curb ramp", question: "Does it have domes?",
       answer: "no" as const, report_when: "no" as const, label_yes: "Curb ramp with detectable warning", label_no: "Curb ramp without detectable warning",
-      inventory: false };
+      inventory: false, model: "Muse Spark" };
     const ramp = { ...base, issue_type: "curb_ramp_warning", label: { icon: "✖", text: "Curb ramp without detectable warning" }, check };
     expect(issueQuestion(ramp)).toBe("Does it have domes?");
     expect(issueQuestion({ ...ramp, check: { ...check, answer: "yes" } })).toBe("Does it have domes?");
@@ -29,7 +29,7 @@ describe("format", () => {
   });
   it("colours a check row by whether it is a defect, not by its answer", () => {
     const check = { id: "ramp", find: "curb cut", target: "curb ramp", question: "?", answer: "no" as const,
-      report_when: "no" as const, label_yes: "Y", label_no: "N", inventory: false };
+      report_when: "no" as const, label_yes: "Y", label_no: "N", inventory: false, model: "Muse Spark" };
     const row = { id: 1, lat: 0, lng: 0, durable: true, defect: true, object_label: "no", frame_start: 1, frame_end: 1,
       review_status: "needs_review", review_reasons: [], evidence: null, captured_at: null, old_photo: false,
       second_opinion: null, issue_type: "ramp", label: { icon: "✖", text: "N" }, check };

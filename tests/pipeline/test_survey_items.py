@@ -150,3 +150,17 @@ def test_is_defect_follows_the_standard():
     assert not us.is_defect({"issue_type": "curb_ramp_warning", "object_label": "yes"})
     assert not us.is_defect({"issue_type": "curb_ramp_warning", "object_label": "unclear"})
     assert not us.is_defect({"issue_type": "obstruction", "object_label": "traffic cone"})
+
+
+def test_judge_defaults_to_spark_and_glimmer_is_only_for_inventory_checks():
+    assert survey_items.parse(INVENTORY, "us.toml").checks[0].judge == "spark"
+    glimmer = survey_items.parse(INVENTORY.replace('inventory = true', 'inventory = true\njudge = "glimmer"'), "us.toml")
+    assert glimmer.checks[0].judge == "glimmer"
+    with pytest.raises(ValueError, match="judge"):
+        survey_items.parse(INVENTORY.replace('inventory = true', 'inventory = true\njudge = "gpt"'), "us.toml")
+    defect = survey_items.load("US").check("curb_ramp_warning")
+    assert defect.judge == "spark"
+    us = (survey_items.FOLDER / "us.toml").read_text(encoding="utf-8")
+    ramp = us.replace('id = "curb_ramp_warning"', 'id = "curb_ramp_warning"\njudge = "glimmer"', 1)
+    with pytest.raises(ValueError, match="inventory"):
+        survey_items.parse(ramp, "us.toml")

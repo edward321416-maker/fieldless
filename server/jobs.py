@@ -116,6 +116,16 @@ class ScanWorker:
         except Exception:
             log.exception("could not mark scan %s as failed", scan_id)
 
+    def judge(self):
+        """Muse Glimmer for checks that name it (GLIMMER_URL set), unless today's GPU estimate has reached
+        GLIMMER_DAILY_USD: then Muse Spark judges every check until tomorrow (UTC)."""
+        model = second_opinion.glimmer_from_env(self.run_dir)
+        if model is not None and second_opinion.gpu_usd_today(model.log_path) >= second_opinion.GLIMMER_DAILY_USD:
+            log.info("today's Glimmer GPU estimate is over $%.2f; Muse Spark judges every check",
+                     second_opinion.GLIMMER_DAILY_USD)
+            return None
+        return model
+
     def _run_pipeline(self, scan_id: int) -> None:
         conn = db.connect(self.db_path)
         try:
@@ -124,6 +134,6 @@ class ScanWorker:
             meter.on_spend = spend_saver(self.db_path, scan_id, scan["cost_usd"])
             api = MetaApi(self.run_dir / "calls.jsonl", meter)
             run_scan(Scan(conn, scan_id, api, self.run_dir, scan["bbox"],
-                          second_opinion=second_opinion.from_env(self.run_dir)))
+                          second_opinion=second_opinion.from_env(self.run_dir), judge=self.judge()))
         finally:
             conn.close()

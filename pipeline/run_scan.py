@@ -105,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan, args.cap_usd))
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,
                            tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir),
+                           judge=second_opinion.glimmer_from_env(run_dir),
                            only_checks=tuple(args.check or ())))
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0 if result["status"] == "done" else 1

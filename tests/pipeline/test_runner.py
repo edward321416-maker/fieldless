@@ -559,3 +559,25 @@ def test_collecting_again_drops_the_saved_sam_areas(setup):
     scan.state("find_curb_ramp_warning").write_text("{}", encoding="utf-8")
     runner.stage_collect(scan)
     assert not scan.state("find_curb_ramp_warning").exists()
+
+
+
+def test_the_judge_answers_only_the_checks_that_name_it_and_the_audit_is_seeded_by_the_scan(setup, monkeypatch):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    seen = []
+
+    def run_check(api, check, clips, photos, by_idx, workers, known=None, judge=None, audit_seed=None, **kw):
+        seen.append((check.id, judge, audit_seed))
+        return [], {"find": [], "ask": []}
+
+    monkeypatch.setattr(runner.survey_checks, "run_check", run_check)
+    std = survey_items.load("US")
+    std = dataclasses.replace(std, checks=tuple(dataclasses.replace(c, judge="glimmer") if c.id == "utility_pole"
+                                                else c for c in std.checks))
+    judge = object()
+    scan = make(FakeApi(spark=spark, sam=us_sam), us_scan)
+    scan.standard, scan.judge = std, judge
+    assert runner.run_scan(scan)["status"] == "done"
+    assert ("utility_pole", judge, us_scan) in seen
+    assert all(j is None for cid, j, _ in seen if cid != "utility_pole")

@@ -3,7 +3,7 @@ step 8). Every label is an icon plus text, so colour is never the only signal (s
 never "violation", "illegal" or "accessible" (spec 9.4)."""
 from datetime import datetime, timezone
 
-from pipeline import geo, survey_items
+from pipeline import config, geo, second_opinion, survey_items
 
 OLD_PHOTO_YEARS = 3  # spec 9.3: photos older than this get an "old photo" badge
 ISSUE_ICONS = {"missing_blocks": "✖", "cover_cut": "◼", "fixed_obstruction": "▮", "obstruction": "⛔"}
@@ -89,19 +89,33 @@ def issue_order(row: dict, std: survey_items.Standard | None = None) -> tuple:
     return (not std.is_defect(row), not is_durable(row, std), row["id"])
 
 
+MODEL_NAMES = {config.SPARK_MODEL: "Muse Spark", second_opinion.MODEL: "Muse Spark Open",
+               second_opinion.GLIMMER_MODEL: "Muse Glimmer (open weights, served on Modal)"}
+
+
+def model_name(model_id: str) -> str:
+    return MODEL_NAMES.get(model_id, model_id)
+
+
 def check_json(row: dict, std: survey_items.Standard) -> dict | None:
     check = std.check(row["issue_type"])
     if check is None:
         return None
+    answered_by = ((row.get("model_outputs") or {}).get("check") or {}).get("model") or config.SPARK_MODEL
     return {"id": check.id, "find": check.find, "target": check.target, "question": check.ask,
             "answer": row.get("object_label") or "unclear", "report_when": check.report_when,
-            "label_yes": check.label_yes, "label_no": check.label_no, "inventory": check.inventory}
+            "label_yes": check.label_yes, "label_no": check.label_no, "inventory": check.inventory,
+            "model": model_name(answered_by)}
 
 
 def second_json(row: dict) -> dict | None:
-    """Spark Open's second opinion, when it answered (a failed call stores an error instead)."""
-    so = (row.get("model_outputs") or {}).get("second_opinion") or {}
-    return {"answer": so["answer"], "agree": so["agree"]} if "answer" in so else None
+    """The other model's answer, when it gave one: Spark Open's second opinion on a defect, or Spark's audit of a
+    judge's answer (a failed call stores an error instead)."""
+    outputs = row.get("model_outputs") or {}
+    so = outputs.get("second_opinion") or outputs.get("audit") or {}
+    if "answer" not in so:
+        return None
+    return {"answer": so["answer"], "agree": so["agree"], "model": model_name(so.get("model") or second_opinion.MODEL)}
 
 
 def entrance_json(row: dict, now: datetime | None = None) -> dict:

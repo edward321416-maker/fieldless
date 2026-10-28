@@ -231,3 +231,102 @@ def test_known_areas_are_not_asked_again_and_the_new_ones_are_added(tmp_path):
     assert missing["find"] == [6] and [r["frame_idx"] for r in rows] == [2]  # photos 2 and 4 make one run, 2 is earlier
     assert survey_checks.run_check(FakeApi(spark=lambda s, p: YES, sam=sam), LIGHT, {0: list(range(9))}, photos,
                                    by_idx, 1)[1]["find"] == [6]  # without `known`: everything is asked as before
+
+
+
+GLIMMER = "meta-models/Muse-Glimmer-30B"
+
+
+class FakeJudge:
+    """An OpenModel stand-in: answers by photo name; an Exception value is raised."""
+
+    def __init__(self, answers):
+        self.answers = answers
+        self.model = GLIMMER
+        self.asked: list[str] = []
+        self.woken = 0
+
+    def wake(self):
+        self.woken += 1
+
+    def answer(self, check, photo):
+        self.asked.append(photo.name)
+        result = self.answers[photo.name]
+        if isinstance(result, Exception):
+            raise result
+        return {**result, "model": self.model}
+
+
+def judged(tmp_path, judge, spark_answers, share, seed=7):
+    """Five picks (photos 0, 4, 8, 12, 16) of one run of poles with group_m 15; Spark answers by photo."""
+    by_idx = frames(17, step_m=5.0)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+    by_image = {survey_checks.image_part(photos[i])["image_url"]: f"{i}.jpg" for i in photos}
+    spark_asked: list[str] = []
+
+    def spark(schema_name, parts):
+        name = by_image[parts[0]["image_url"]]
+        spark_asked.append(name)
+        result = spark_answers[name]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    api = FakeApi(spark=spark, sam=lambda p, m: found)
+    rows, missing = survey_checks.run_check(api, dataclasses.replace(LIGHT, group_m=15.0), {0: list(range(17))},
+                                            photos, by_idx, workers=1, judge=judge, audit_seed=seed,
+                                            audit_share=share)
+    return {r["frame_idx"]: r for r in rows}, missing, spark_asked
+
+
+def test_the_judge_answers_first_and_spark_takes_what_it_cannot(tmp_path):
+    judge = FakeJudge({"0.jpg": YES, "4.jpg": YES, "8.jpg": NO, "12.jpg": {**YES, "answer": "unclear"},
+                       "16.jpg": TimeoutError("cold start")})
+    rows, missing, spark_asked = judged(tmp_path, judge, {"12.jpg": YES, "16.jpg": YES}, share=0.0)
+    assert judge.woken == 1 and judge.asked == ["0.jpg", "4.jpg", "8.jpg", "12.jpg", "16.jpg"]
+    assert sorted(spark_asked) == ["12.jpg", "16.jpg"]  # only what the judge could not decide
+    assert sorted(rows) == [0, 4, 12, 16] and missing["not_target"] == [8]
+    assert rows[0]["model_outputs"]["check"]["model"] == GLIMMER and rows[0]["review_status"] == "auto"
+    assert rows[12]["model_outputs"]["check"]["model"] == survey_checks.config.SPARK_MODEL
+    assert rows[12]["model_outputs"]["judge"] == {"model": GLIMMER, "answer": "unclear"}
+    assert "cold start" in rows[16]["model_outputs"]["judge"]["error"]
+    assert missing["judge"] == {"model": GLIMMER, "answered": 3, "fallback": 2, "audit": {"asked": 0, "agree": 0}}
+
+
+def test_an_audit_keeps_the_judges_row_and_flags_a_disagreement_either_way(tmp_path):
+    judge = FakeJudge({"0.jpg": YES, "4.jpg": YES, "8.jpg": NO, "12.jpg": NO, "16.jpg": YES})
+    spark = {"0.jpg": YES, "4.jpg": NO, "8.jpg": YES, "12.jpg": NO, "16.jpg": RuntimeError("503")}
+    rows, missing, spark_asked = judged(tmp_path, judge, spark, share=1.0)
+    assert sorted(spark_asked) == ["0.jpg", "12.jpg", "16.jpg", "4.jpg", "8.jpg"]
+    assert (rows[0]["review_status"], rows[0]["model_outputs"]["audit"]["agree"]) == ("auto", True)
+    # the judge kept 4, Spark says no: the judge's row stays, first in line for a person
+    assert rows[4]["model_outputs"]["check"]["model"] == GLIMMER and rows[4]["object_label"] == "yes"
+    assert (rows[4]["review_status"], rows[4]["review_reasons"]) == ("needs_review", ["models_disagree"])
+    assert rows[4]["model_outputs"]["audit"] == {"model": survey_checks.config.SPARK_MODEL, "answer": "no",
+                                                 "agree": False, "confidence": 0.8, "note": "no domes",
+                                                 "box": NO["box"]}
+    # the judge dropped 8, Spark says yes: a row is made from Spark's answer, for a person to settle
+    assert rows[8]["model_outputs"]["check"]["model"] == survey_checks.config.SPARK_MODEL
+    assert (rows[8]["review_status"], rows[8]["review_reasons"]) == ("needs_review", ["models_disagree"])
+    assert rows[8]["model_outputs"]["audit"]["model"] == GLIMMER and rows[8]["model_outputs"]["audit"]["agree"] is False
+    assert 12 not in rows and missing["not_target"] == [12]  # both said no
+    assert rows[16]["review_status"] == "auto" and "503" in rows[16]["model_outputs"]["audit"]["error"]
+    assert missing["judge"]["audit"] == {"asked": 4, "agree": 2}
+
+
+def test_the_audit_picks_a_tenth_of_the_judges_answers_the_same_way_for_the_same_scan(tmp_path):
+    answers = {f"{i}.jpg": YES for i in (0, 4, 8, 12, 16)}
+    first = judged(tmp_path / "a", FakeJudge(answers), answers, share=0.1, seed=4)[2]
+    again = judged(tmp_path / "b", FakeJudge(answers), answers, share=0.1, seed=4)[2]
+    assert len(first) == 1 and first == again  # ceil(10% of 5) = 1, chosen by the scan id
+
+
+
+def test_after_three_failures_in_a_row_spark_answers_the_rest_without_waiting_on_the_judge(tmp_path):
+    judge = FakeJudge({f"{i}.jpg": TimeoutError("hung") for i in (0, 4, 8, 12, 16)})
+    rows, missing, spark_asked = judged(tmp_path, judge, {f"{i}.jpg": YES for i in (0, 4, 8, 12, 16)}, share=0.1)
+    assert judge.asked == ["0.jpg", "4.jpg", "8.jpg"]  # workers=1: the fourth pick no longer asks the judge
+    assert len(spark_asked) == 5 and len(rows) == 5
+    assert "gave up" in rows[16]["model_outputs"]["judge"]["error"]
+    assert missing["judge"]["fallback"] == 5

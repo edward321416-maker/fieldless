@@ -53,6 +53,7 @@ class Scan:
     workers: int = config.PARALLEL_REQUESTS
     standard: "survey_items.Standard | None" = None  # run_scan fills it from scan.jurisdiction
     second_opinion: object = None  # an OpenModel when BASETEN_API_KEY is set (CLI, server)
+    judge: object = None  # Muse Glimmer (an OpenModel) for checks with judge = "glimmer", when GLIMMER_URL is set
     only_checks: tuple[str, ...] = ()  # with --rerun defects --check ID: run and clear only these checks
     frames: list[dict] = field(default_factory=list)
     chunks: list[scene.Chunk] = field(default_factory=list)
@@ -218,7 +219,7 @@ def stage_sidewalk(s: Scan) -> None:
     s.state("tactile").write_text(json.dumps(flags), encoding="utf-8")
 
 
-def _run_check(s: Scan, check, clips, photos, by_idx) -> tuple[list[dict], dict]:
+def _run_check(s: Scan, check, clips, photos, by_idx, judge=None) -> tuple[list[dict], dict]:
     """survey_checks.run_check, reusing the SAM areas a rerun already paid for: state find_<id>.json keeps the areas
     measured for the check's `find` phrase, and is ignored when the phrase has changed. Saved even when the run stops
     part way (cost cap), so the next run only asks for the photos not yet measured."""
@@ -232,7 +233,8 @@ def _run_check(s: Scan, check, clips, photos, by_idx) -> tuple[list[dict], dict]
         except (ValueError, KeyError, AttributeError):
             known = {}  # a half-written file: measure again
     try:
-        return survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers, known=known)
+        return survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers, known=known, judge=judge,
+                                       audit_seed=s.scan_id)
     finally:
         kept.write_text(json.dumps({"phrase": check.find, "areas": {str(i): a for i, a in known.items()}}),
                         encoding="utf-8")
@@ -263,7 +265,8 @@ def stage_defects(s: Scan) -> None:
     kept = s.state("checks_unavailable")
     unavailable: dict[str, dict] = json.loads(kept.read_text(encoding="utf-8")) if only and kept.exists() else {}
     for check in to_run:
-        rows, missing = _run_check(s, check, clips, photos, by_idx)
+        judge = s.judge if s.judge is not None and check.judge == "glimmer" else None
+        rows, missing = _run_check(s, check, clips, photos, by_idx, judge)
         if s.second_opinion is not None:
             rows = second_opinion.apply(s.second_opinion, check, rows, photos, s.workers)
         unavailable[check.id] = missing
