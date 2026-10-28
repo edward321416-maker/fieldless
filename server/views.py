@@ -169,7 +169,7 @@ def issue_json(row: dict, now: datetime | None = None, std: survey_items.Standar
 
 
 def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float | None = None,
-              city_check: dict | None = None) -> dict:
+              city_check: dict | None = None, dropped: int = 0) -> dict:
     """city_check: the offline comparison with the city's own records (eval, city_check_scan<N>.json), if one was
     made for this scan; left out otherwise."""
     std = standard_of(scan)
@@ -178,6 +178,8 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
     obstructions = sum(i["issue_type"] == "obstruction" for i in live)
     needs_review = sum(r["review_status"] == "needs_review" for r in [*entrances, *live])
     field_check = sum(r["review_status"] == "field_check" for r in [*entrances, *live])  # a person could not tell
+    verified = sum(r["review_status"] == "verified" for r in [*entrances, *live])
+    rejected = sum(i["review_status"] == "rejected" for i in issues)
     with_steps = sum(entrance_label(e)["icon"] == "▲" for e in entrances)  # a possible sill is not counted
     checks = [{"id": c.id, "find": c.find, "target": c.target, "report_when": c.report_when,
                "label_yes": c.label_yes, "label_no": c.label_no, "inventory": c.inventory,
@@ -191,4 +193,5 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
             "usd_per_km": round(scan["cost_usd"] / km, 2) if km else None,
             "counts": {"defects": defects, "obstructions": obstructions, "entrances": len(entrances),
                        "entrances_with_steps": with_steps, "needs_review": needs_review,
-                       "field_check": field_check}}
+                       "field_check": field_check, "verified": verified, "rejected": rejected,
+                       "dropped": dropped}}  # dropped: picks the models set aside as not the target

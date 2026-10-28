@@ -1,5 +1,6 @@
 import { fallbackLetter, hasIcon, ICONS } from "./icons";
-import { DEFECT_RED, isLight, SITE_ORANGE, type Badge } from "./items";
+import { colourOf, DEFECT_RED, isLight, SITE_ORANGE, type Badge } from "./items";
+import type { ItemMeta } from "./types";
 
 // One marker = the item's colour circle with its icon (what it is) and at most one badge at the top right (whether
 // a person has something to do): docs/ui-rules.md U3. The legend draws the same canvases, so the two always match.
@@ -81,3 +82,9 @@ export function badgeCanvas(badge: Badge): HTMLCanvasElement {
 }
 
 export const markerName = (item: string, badge: Badge | null) => `m:${item}:${badge ?? "none"}`;
+
+// Each item's marker without a badge, as image URLs for the legend and the panel (the same drawing as the map).
+export function itemArt(items: ItemMeta[]): Record<string, string> {
+  return Object.fromEntries(items.map((it) => [it.id,
+    markerCanvas(colourOf(it.id, items), it.map_icon, it.target, null).toDataURL()]));
+}

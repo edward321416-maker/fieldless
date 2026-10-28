@@ -32,6 +32,7 @@ export default function App() {
   const [streets, setStreets] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<Picked | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [newSurvey, setNewSurvey] = useState(false);
   const [fitTo, setFitTo] = useState<Bbox | null>(null);
   const [error, setError] = useState<string | null>(null);
   const getView = useRef<(() => Bbox) | null>(null);
@@ -152,12 +153,30 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        {/* every map marker is a button, so a keyboard user would tab through all of them first */}
         <button type="button" className="skip-link" onClick={() => panelRef.current?.focus()}>
           Skip to the survey panel
         </button>
         <h1>Fieldless</h1>
-        <p>Street surveys without the fieldwork</p>
+        <p className="tagline">Street surveys without the fieldwork</p>
+        {demos.length > 0 && (
+          <nav className="area-tabs" aria-label="Surveyed areas">
+            {demos.map((d) => (
+              <button key={d.scan_id} type="button" aria-current={d.scan_id === scanId && !newSurvey ? "page" : undefined}
+                onClick={() => {
+                  setNewSurvey(false);
+                  openScan(d.scan_id);
+                }}>
+                {d.name}
+              </button>
+            ))}
+          </nav>
+        )}
+        {!STATIC_DEMO && (
+          <button type="button" className="primary new-survey" aria-expanded={newSurvey}
+            onClick={() => setNewSurvey((v) => !v)}>
+            + New survey
+          </button>
+        )}
       </header>
       <MapView
         selecting={selecting}
@@ -177,16 +196,6 @@ export default function App() {
       />
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
         {error && <p className="error" role="alert">{error}</p>}
-        {demos.length > 0 && (
-          <section className="panel-section" aria-labelledby="demo-title">
-            <h2 id="demo-title">Surveyed areas</h2>
-            <div className="row">
-              {demos.map((d) => (
-                <button key={d.scan_id} type="button" onClick={() => openScan(d.scan_id)}>{d.name}</button>
-              ))}
-            </div>
-          </section>
-        )}
         <div ref={detailRef}>
           {reviewing ? (
             <ReviewPanel entrances={entrances} issues={issues} first={picked} onUpdated={updated}
@@ -195,33 +204,37 @@ export default function App() {
             <EvidenceCard picked={picked} onClose={() => setPicked(null)} onReview={() => setReviewing(true)} />
           ) : null}
         </div>
-        {STATIC_DEMO ? (
-          <DemoNotice />
-        ) : (
+        {/* What is being looked at comes first; a new survey is one button away (docs/ui-rules.md U6). */}
+        {!STATIC_DEMO && (newSurvey || !scan || !finished) && (
           <AreaPanel
             bbox={bbox}
             selecting={selecting}
             maxDeg2={config?.max_bbox_deg2 ?? 0.0001}
             inviteRequired={config?.invite_required ?? false}
-            scan={scan}
+            scan={newSurvey ? null : scan}
             onToggleSelect={() => setSelecting((s) => !s)}
             onUseView={() => getView.current && setBbox(getView.current())}
-            onStarted={openScan}
+            onStarted={(id) => {
+              setNewSurvey(false);
+              openScan(id);
+            }}
           />
         )}
-        {scan && finished && (
+        {scan && finished && !newSurvey && (
           <ResultsPanel
             scan={scan}
-            entrances={entrances}
-            issues={issues}
+            name={demos.find((d) => d.scan_id === scan.id)?.name ?? null}
+            findings={findings}
             streets={streets}
-            onPick={pick}
+            selectedKey={selected?.key ?? null}
+            onPick={(f) => pick(f.picked)}
             onReview={() => {
               setPicked(null);
               setReviewing(true);
             }}
           />
         )}
+        {STATIC_DEMO && <DemoNotice />}
         <Attribution />
       </aside>
     </div>

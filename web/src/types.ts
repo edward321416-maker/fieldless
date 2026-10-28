@@ -90,6 +90,9 @@ export interface Scan {
   counts: {
     defects: number; obstructions: number; entrances: number; entrances_with_steps: number; needs_review: number;
     field_check: number; // a surveyor looked and could not tell from the photo: a site visit decides
+    verified: number; // confirmed by a person
+    rejected: number; // rejected by a person: off the map
+    dropped: number; // set aside by the models as not the item (a sample still goes to a person)
   };
 }
 

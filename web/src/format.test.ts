@@ -7,7 +7,7 @@ import type { Scan } from "./types";
 const scan = (stage_status: Record<string, string>, status = "running", standard: "KR" | "US" = "KR"): Scan => ({
   id: 1, status, stage_status, bbox: [0, 0, 1, 1], image_count: 0, captured_from: null, captured_to: null,
   cost_usd: 0, processing_seconds: 0, review_seconds: 0, km: null, usd_per_km: null, standard, checks: [], items: [], error: null,
-  counts: { defects: 0, obstructions: 0, entrances: 0, entrances_with_steps: 0, needs_review: 0, field_check: 0 },
+  counts: { defects: 0, obstructions: 0, entrances: 0, entrances_with_steps: 0, needs_review: 0, field_check: 0, verified: 0, rejected: 0, dropped: 0 },
 });
 
 describe("format", () => {

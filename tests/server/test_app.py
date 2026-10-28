@@ -156,7 +156,8 @@ def test_scan_json(make):
     body = client.get(f"/api/scans/{scan_id}").json()
     assert body["status"] == "done"
     assert body["counts"] == {"defects": 1, "obstructions": 1, "entrances": 2, "entrances_with_steps": 1,
-                              "needs_review": 2, "field_check": 0}
+                              "needs_review": 2, "field_check": 0, "verified": 0, "rejected": 0,
+                              "dropped": 0}
     assert client.get("/api/scans/999").status_code == 404
 
 

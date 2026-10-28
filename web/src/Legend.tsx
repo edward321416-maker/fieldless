@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { BADGE_TEXT, colourOf, itemName, type Badge } from "./items";
-import { badgeCanvas, markerCanvas } from "./markerArt";
+import { BADGE_TEXT, itemName, type Badge } from "./items";
+import { badgeCanvas, itemArt } from "./markerArt";
 import type { ItemMeta } from "./types";
 
 interface Props {
@@ -16,8 +16,7 @@ const BADGES: Badge[] = ["review", "site", "defect"];
 // The legend is the filter (docs/ui-rules.md U4): each item's marker exactly as the map draws it, its count, and a
 // switch. Only what is on the map is listed.
 export default function Legend({ items, counts, badges, hidden, onToggle }: Props) {
-  const art = useMemo(() => Object.fromEntries(items.map((it) => [it.id,
-    markerCanvas(colourOf(it.id, items), it.map_icon, it.target, null).toDataURL()])), [items]);
+  const art = useMemo(() => itemArt(items), [items]);
   const badgeArt = useMemo(() => Object.fromEntries(BADGES.map((b) => [b, badgeCanvas(b).toDataURL()])), []);
   const present = items.filter((it) => (counts.get(it.id) ?? 0) > 0);
   return (
