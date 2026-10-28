@@ -337,6 +337,7 @@ export default function App() {
             selectedKey={selected?.key ?? null}
             onPick={(f) => pick(f.picked)}
             onReview={startReview}
+            onIntro={goIntro}
           />
         )}
         {STATIC_DEMO && <DemoNotice />}

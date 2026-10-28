@@ -3,7 +3,7 @@ import { filesUrl, STATIC_DEMO } from "./api";
 import { dollars, isFinished, photoMonth, yearsSpan } from "./format";
 import { itemName, STATUS_SENTENCE, type Finding } from "./items";
 import { itemArt } from "./markerArt";
-import { cityLine, reviewChips } from "./summary";
+import { cityLine, reviewChips, unsureCount } from "./summary";
 import type { Scan } from "./types";
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
   selectedKey: string | null;
   onPick: (f: Finding) => void;
   onReview: () => void;
+  onIntro: () => void; // back to what Fieldless does
 }
 
 const STATUS_SHORT: Record<string, string> = {
@@ -23,9 +24,9 @@ const STATUS_SHORT: Record<string, string> = {
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const SHORT_LIST = 5; // an item's list shows this many until "Show all" (a phone would scroll for metres)
 
-// The results, top to bottom (docs/specs/2026-10-28-ui-redesign-design.md 3.1, docs/ui-rules.md U1, U2, U8): the
-// survey, its three main numbers, a published walking survey for scale, one equal row per item, a person's review,
-// the files, then each item's findings.
+// A finished survey in the introduction's four steps (docs/specs/2026-10-29-first-screen-design.md 2, docs/ui-rules.md
+// U1, U2, U8): the photos with the three main numbers, what the models found (one equal row per item, with the
+// city's list), what a person checked, the files for the city; each item's findings are folded away below.
 export default function ResultsPanel(props: Props) {
   const { scan, findings } = props;
   const items = scan.items;
@@ -35,6 +36,13 @@ export default function ResultsPanel(props: Props) {
   const present = items.filter((it) => findings.some((f) => f.item === it.id));
   const selectedRow = useRef<HTMLButtonElement>(null);
   const [opened, setOpened] = useState<Set<string>>(new Set());
+  const [browse, setBrowse] = useState(false);
+  const unsure = unsureCount(counts);
+  const looked = unsure - counts.needs_review;
+  const reviewMin = Math.max(1, Math.round(scan.review_seconds / 60));
+  const reviewText = unsure === 0 ? "The models were sure of every finding; a person can still open any of them."
+    : looked === 0 ? `The models were unsure of ${unsure}; they are waiting for a person.`
+      : `The models were unsure of ${unsure}. A person looked at ${looked === unsure ? "them" : looked} in about ${reviewMin} min:`;
 
   useEffect(() => {
     selectedRow.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -42,11 +50,16 @@ export default function ResultsPanel(props: Props) {
 
   return (
     <section className="panel-section results" aria-labelledby="results-title">
+      <button type="button" className="link-button back-intro" onClick={props.onIntro}>← What Fieldless does</button>
+      {props.name && <p className="eyebrow">Example survey</p>}
       <h2 id="results-title">{props.name ?? `Survey ${scan.id}`}</h2>
-      <p className="sub">
-        Survey {scan.id} · {scan.image_count} street photos · taken {yearsSpan(scan.captured_from, scan.captured_to)}
-      </p>
 
+      <section className="step-section" aria-labelledby="step-photos">
+      <h3 id="step-photos"><span className="step-n" aria-hidden="true">1</span>The photos</h3>
+      <p className="step-text">
+        {scan.image_count} public street photos{scan.km !== null ? ` along ${scan.km.toFixed(2)} km` : ""}, taken{" "}
+        {yearsSpan(scan.captured_from, scan.captured_to)}
+      </p>
       <div className="headline">
         <div>
           <strong>{scan.km !== null ? scan.km.toFixed(2) : "–"}<small> km</small></strong>
@@ -61,14 +74,17 @@ export default function ResultsPanel(props: Props) {
           <span>{dollars(scan.cost_usd)} in all</span>
         </div>
       </div>
+      </section>
 
+      <section className="step-section" aria-labelledby="step-found">
       <div className="found-head">
-        <h3>What the survey found</h3>
+        <h3 id="step-found"><span className="step-n" aria-hidden="true">2</span>What the models found</h3>
         {city && (
           <a className="small" href={city.method_url} target="_blank" rel="noreferrer"
             title={`Measured offline on ${city.measured_at} (${city.city})`}>How the city list check works</a>
         )}
       </div>
+      <p className="step-text">{findings.length} findings, each with its photo and the model's reason</p>
       <ul className="found">
         {present.map((it) => {
           const mine = findings.filter((f) => f.item === it.id);
@@ -79,7 +95,10 @@ export default function ResultsPanel(props: Props) {
           return (
             <li key={it.id}>
               <button type="button" className="found-row"
-                onClick={() => document.getElementById(`list-${it.id}`)?.scrollIntoView({ behavior: "smooth" })}>
+                onClick={() => {
+                  setBrowse(true);
+                  window.setTimeout(() => document.getElementById(`list-${it.id}`)?.scrollIntoView({ behavior: "smooth" }), 0);
+                }}>
                 <img src={art[it.id]} alt="" width={36} height={36} />
                 <span className="found-name">{itemName(it.id, items)}</span>
                 <span className="found-count">{mine.length}</span>
@@ -101,8 +120,12 @@ export default function ResultsPanel(props: Props) {
           );
         })}
       </ul>
+      </section>
+
+      <section className="step-section" aria-labelledby="step-person">
+      <h3 id="step-person"><span className="step-n" aria-hidden="true">3</span>What a person checked</h3>
+      <p className="step-text">{reviewText}</p>
       <p className="review-chips">
-        <strong>A person's review</strong>
         {reviewChips(counts).map((c) => (
           <span key={c.text} className={`chip${c.kind === "site" ? " chip-site" : ""}`}>{c.text}</span>
         ))}
@@ -112,14 +135,22 @@ export default function ResultsPanel(props: Props) {
           Review {plural(counts.needs_review, "finding")}
         </button>
       )}
+      </section>
+
       {isFinished(scan) && (
-        <p className="download">
-          <a className="button-link" href={filesUrl(scan.id)} download>Download survey files</a>
-          <span className="hint small"> A one-page report, GeoJSON and a CSV per item for a GIS, and the evidence photos.</span>
-        </p>
+        <section className="step-section" aria-labelledby="step-city">
+          <h3 id="step-city"><span className="step-n" aria-hidden="true">4</span>For the city</h3>
+          <p className="download">
+            <a className="button-link" href={filesUrl(scan.id)} download>Download survey files</a>
+            <span className="hint small"> GeoJSON and a CSV per item for a GIS, and a one-page report with every photo credited.</span>
+          </p>
+        </section>
       )}
 
-      {present.map((it) => {
+      <button type="button" className="browse" aria-expanded={browse} onClick={() => setBrowse((b) => !b)}>
+        {browse ? "Hide the findings" : `Browse all ${findings.length} findings`}
+      </button>
+      {browse && present.map((it) => {
         const all = findings.filter((f) => f.item === it.id);
         const at = all.findIndex((f) => f.key === props.selectedKey);
         const full = opened.has(it.id) || at >= SHORT_LIST;
