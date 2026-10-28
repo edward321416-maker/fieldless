@@ -17,10 +17,11 @@ from typing import Literal
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from assist import report
 from pipeline import collect, config, db, mapillary, survey_items
 from pipeline.runner import RESUME_MIN_USD
 from server import files, limits, review, views
@@ -139,7 +140,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     @app.get("/api/config")
     def get_config():
         return {"invite_required": settings.invite_code is not None, "max_bbox_deg2": settings.max_bbox_deg2,
-                "coverage_tiles": settings.coverage_tiles}
+                "coverage_tiles": settings.coverage_tiles, "report": True}  # report: the survey report page
 
     tiles: dict[tuple[int, int, int], tuple[float, bytes | None]] = {}  # (z, x, y) -> (fetched at, gzipped body)
     tiles_lock = threading.Lock()
@@ -266,19 +267,36 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             return [views.issue_json(row, std=std, heading=heading.get(row["frame_idx"]))
                     for row in sorted(rows, key=lambda r: views.issue_order(r, std))]
 
+    def survey_data(conn, scan_id: int) -> tuple[dict, dict]:
+        """(scan, scan_data) for a finished survey's report and files; 404 if there is no such scan, 409 while it
+        runs."""
+        scan = found(db.get_scan, conn, scan_id, "scan")
+        if scan["status"] in ("queued", "running"):
+            raise HTTPException(409, "The survey is still running; its files are ready when it finishes.")
+        return scan, {"scan": scan, "frames": db.frames(conn, scan_id), "issues": db.issues(conn, scan_id),
+                      "entrances": db.entrances(conn, scan_id), "dropped": db.dropped(conn, scan_id),
+                      "city_check": city_check(scan_id)}
+
     @app.get("/api/scans/{scan_id}/files.zip")
     def get_files(scan_id: int):
         with connect() as conn:
-            scan = found(db.get_scan, conn, scan_id, "scan")
-            if scan["status"] in ("queued", "running"):
-                raise HTTPException(409, "The survey is still running; its files are ready when it finishes.")
-            data = {"scan": scan, "frames": db.frames(conn, scan_id), "issues": db.issues(conn, scan_id),
-                    "entrances": db.entrances(conn, scan_id), "dropped": db.dropped(conn, scan_id),
-                    "city_check": city_check(scan_id)}
+            scan, data = survey_data(conn, scan_id)
+            notes = db.report_text(conn, scan_id)
         body = files.survey_zip(data, views.standard_of(scan), run_dir / "evidence",
-                                area=dict(settings.demo_scans).get(scan_id))
+                                area=dict(settings.demo_scans).get(scan_id), notes=notes)
         return Response(body, media_type="application/zip",
                         headers={"Content-Disposition": f'attachment; filename="fieldless-survey-{scan_id}.zip"'})
+
+    @app.get("/api/scans/{scan_id}/report")
+    def get_report(scan_id: int):
+        """The survey report document (assist.report_doc); its photos are the app's evidence photos, two folders up
+        from this path, as on the static site."""
+        with connect() as conn:
+            scan, data = survey_data(conn, scan_id)
+            notes = db.report_text(conn, scan_id)
+        page = report.document(data, views.standard_of(scan), area=dict(settings.demo_scans).get(scan_id),
+                               notes=notes, photo_base="../../evidence/")
+        return HTMLResponse(page)
 
     @app.get("/api/evidence/{name}")
     def get_evidence(name: str):

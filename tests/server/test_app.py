@@ -71,7 +71,7 @@ def test_health_and_config(make):
     assert client.get("/api/health").json() == {"ok": True, "forwarded_for_entries": 0}
     assert client.get("/api/health", headers={"x-forwarded-for": "1.2.3.4, 5.6.7.8"}).json()["forwarded_for_entries"] == 2
     assert client.get("/api/config").json() == {"invite_required": False, "max_bbox_deg2": 0.0001,
-                                                "coverage_tiles": True}
+                                                "coverage_tiles": True, "report": True}
     client, _ = make(invite_code="abc")
     assert client.get("/api/config").json()["invite_required"] is True
 
@@ -495,3 +495,49 @@ def test_coverage_tiles_are_passed_through_gzipped_kept_for_an_hour_and_refused_
                                 preview=lambda *a, **k: PREVIEW, tile=tile))
     assert off.get("/api/config").json()["coverage_tiles"] is False
     assert off.get("/api/mapillary/tiles/13/1312/2860").status_code == 404
+
+
+def finished_scan(status="done"):
+    conn = store()
+    scan_id = db.create_scan(conn, "mapillary", [-122.32, 47.61, -122.31, 47.62], jurisdiction="US")
+    db.add_frames(conn, scan_id, [{"idx": 0, "clip": 0, "image_id": "900", "sequence_id": "s", "lat": 47.615,
+                                   "lng": -122.315, "compass": 0.0, "captured_at": "2025-06-01T10:00:00Z",
+                                   "creator": "alice", "width": 2048, "height": 1152}])
+    db.add_issue(conn, scan_id, {"issue_type": "utility_pole", "object_label": "yes", "frame_start": 0,
+                                 "frame_end": 0, "frame_idx": 0, "lat": 47.615, "lng": -122.315,
+                                 "review_status": "auto", "captured_at": "2025-06-01T10:00:00Z",
+                                 "evidence": {"image": f"scan{scan_id}_issue1_900.jpg", "image_id": "900",
+                                              "creator": "alice", "captured_at": "2025-06-01T10:00:00Z",
+                                              "link": "https://www.mapillary.com/app/?pKey=900",
+                                              "license": "CC BY-SA 4.0", "blurred_regions": 0}})
+    db.update_scan(conn, scan_id, status=status, image_count=1)
+    return conn, scan_id
+
+
+def test_the_survey_report_page_is_the_document_with_the_saved_sentences(make):
+    client, _ = make()
+    conn, scan_id = finished_scan()
+    db.set_report_text(conn, scan_id, {"summary": "Most poles were found.", "items": {}, "priorities": []}, "m")
+
+    page = client.get(f"/api/scans/{scan_id}/report")
+
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    assert "Street Survey Report" in page.text and "Most poles were found." in page.text
+    assert f'src="../../evidence/scan{scan_id}_issue1_900.jpg"' in page.text
+    assert client.get("/api/scans/9999/report").status_code == 404
+    _, running = finished_scan(status="running")
+    assert client.get(f"/api/scans/{running}/report").status_code == 409
+    assert client.get("/api/config").json()["report"] is True  # the web shows its report link
+
+
+def test_the_files_zip_report_carries_the_saved_sentences(make):
+    import io
+    import zipfile
+    client, _ = make()
+    conn, scan_id = finished_scan()
+    db.set_report_text(conn, scan_id, {"summary": "Most poles were found.", "items": {}, "priorities": []}, "m")
+
+    z = zipfile.ZipFile(io.BytesIO(client.get(f"/api/scans/{scan_id}/files.zip").content))
+
+    page = z.read("report.html").decode("utf-8")
+    assert "Most poles were found." in page and f'src="evidence/scan{scan_id}_issue1_900.jpg"' in page

@@ -66,7 +66,7 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
     paths = ["/api/config", "/api/demo"]
     for scan_id, _ in scans:
         paths += [f"/api/scans/{scan_id}", f"/api/scans/{scan_id}/entrances", f"/api/scans/{scan_id}/issues",
-                  f"/api/scans/{scan_id}/walks", f"/api/scans/{scan_id}/files.zip"]
+                  f"/api/scans/{scan_id}/walks", f"/api/scans/{scan_id}/files.zip", f"/api/scans/{scan_id}/report"]
     evidence = config.run_dir(run) / "evidence"
     written = []
     for path in paths:
@@ -76,6 +76,12 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
             target = out / path.lstrip("/")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(response.content)
+            written.append(path)
+            continue
+        if path.endswith("/report"):  # the report page, opened as report.html (the static demo's link)
+            target = out / f"{path.lstrip('/')}.html"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(response.text, encoding="utf-8")
             written.append(path)
             continue
         body = response.json()

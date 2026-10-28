@@ -244,8 +244,7 @@ def _overview(s: dict) -> str:
     taken = f", taken {dates['from']} to {dates['to']}" if dates else ""
     per_km = f" (${s['usd_per_km']:.2f} per km)" if s["usd_per_km"] is not None else ""
     return (f"Scan {s['scan_id']}, standard {s['standard']}: {s['photos']} photos{taken}, {s['km']} km of street. "
-            f"Model cost ${s['cost_usd']:.2f}{per_km}; {_duration(s['processing_seconds'])} processing and "
-            f"{_duration(s['review_seconds'])} of a person's review.")
+            f"Model cost ${s['cost_usd']:.2f}{per_km}; {_duration(s['processing_seconds'])} processing.")
 
 
 def _item_name(i: dict) -> str:
