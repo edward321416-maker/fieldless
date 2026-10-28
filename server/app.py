@@ -231,7 +231,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             if scan["status"] in ("queued", "running"):
                 raise HTTPException(409, "The survey is still running; its files are ready when it finishes.")
             data = {"scan": scan, "frames": db.frames(conn, scan_id), "issues": db.issues(conn, scan_id),
-                    "entrances": db.entrances(conn, scan_id), "dropped": db.dropped(conn, scan_id)}
+                    "entrances": db.entrances(conn, scan_id), "dropped": db.dropped(conn, scan_id),
+                    "city_check": city_check(scan_id)}
         body = files.survey_zip(data, views.standard_of(scan), run_dir / "evidence",
                                 area=dict(settings.demo_scans).get(scan_id))
         return Response(body, media_type="application/zip",

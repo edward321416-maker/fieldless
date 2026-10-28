@@ -107,6 +107,8 @@ def seed(run_dir: Path) -> None:
             src.close()
         with volume.batch_upload(force=True) as batch:
             batch.put_file(snapshot, "/threshold.db")
+            for check in run_dir.glob("city_check_scan*.json"):  # the offline city-record comparisons (eval)
+                batch.put_file(check, f"/{check.name}")
             if (run_dir / "evidence").is_dir():
                 batch.put_directory(run_dir / "evidence", "/evidence")
     print(f"seeded the Volume from {run_dir}")

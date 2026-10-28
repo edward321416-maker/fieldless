@@ -64,15 +64,17 @@ def test_a_backup_folder_round_trip_keeps_the_database_and_evidence(tmp_path):
     (run / "evidence" / "scan1_issue1.jpg").write_bytes(b"jpg")
     (run / "calls.jsonl").write_text("{}", encoding="utf-8")
     (run / GPU_LOG).write_text('{"kind": "glimmer"}\n', encoding="utf-8")  # the GPU total's log is kept
+    (run / "city_check_scan1.json").write_text('{"scan_id": 1}', encoding="utf-8")  # and the city comparison
     folder_store(backup, run).save_now()
     assert sorted(p.relative_to(backup).as_posix() for p in backup.rglob("*") if p.is_file()) == [
-        GPU_LOG, "evidence/scan1_issue1.jpg", DB_NAME]
+        GPU_LOG, "city_check_scan1.json", "evidence/scan1_issue1.jpg", DB_NAME]
     fresh = tmp_path / "fresh"  # a new container: empty local disk, the same volume
     assert folder_store(backup, fresh).restore() is True
     with closing(db.connect(fresh / DB_NAME)) as conn:
         assert len(db.list_scans(conn)) == 1
     assert (fresh / "evidence" / "scan1_issue1.jpg").read_bytes() == b"jpg"
     assert (fresh / GPU_LOG).read_text(encoding="utf-8") == '{"kind": "glimmer"}\n'
+    assert (fresh / "city_check_scan1.json").read_text(encoding="utf-8") == '{"scan_id": 1}'
 
 
 def test_an_empty_backup_folder_restores_nothing(tmp_path):
