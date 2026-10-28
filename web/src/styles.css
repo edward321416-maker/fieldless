@@ -77,6 +77,9 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .marker-entrance { background: var(--entrance); width: 26px; height: 26px; }
 .marker-durable { width: 36px; height: 36px; font-size: 1.1rem; border-width: 3px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip-link { position: absolute; left: 8px; top: -48px; z-index: 10; }
+.skip-link:focus { top: 8px; }
+.panel:focus { outline: none; }
 
 @media (max-width: 800px) {
   .app { grid-template-columns: 1fr; grid-template-rows: auto 55vh auto; height: auto; }

@@ -35,6 +35,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const getView = useRef<(() => Bbox) | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     api.config().then(setConfig).catch((e: Error) => setError(e.message));
@@ -132,6 +133,10 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
+        {/* every map marker is a button, so a keyboard user would tab through all of them first */}
+        <button type="button" className="skip-link" onClick={() => panelRef.current?.focus()}>
+          Skip to the survey panel
+        </button>
         <h1>Fieldless</h1>
         <p>Street surveys without the fieldwork</p>
       </header>
@@ -148,7 +153,7 @@ export default function App() {
         onPick={pick}
         onReady={(fn) => (getView.current = fn)}
       />
-      <aside className="panel">
+      <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
         {error && <p className="error" role="alert">{error}</p>}
         {demos.length > 0 && (
           <section className="panel-section" aria-labelledby="demo-title">
