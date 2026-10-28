@@ -77,11 +77,18 @@ def _report(rule, ts, drafted: dict, final: list[dict], problems: list[str], res
 
 
 def author(api, respond, rule, ts, out_dir: Path, photo=collect.photo_path, workers: int = 4,
-           stamp: str | None = None) -> dict:
+           stamp: str | None = None, say=None) -> dict:
+    """say(line), if given, hears what happens as it happens: the draft, then every tool call the agent makes."""
     drafted = draft(api, rule)
     valid, problems = items_mod.validate(drafted, rule.read_text())
+    if say:
+        hard = len(drafted.get("not_checkable", []))
+        say(f"Muse Spark drafted {len(drafted.get('checkable', []))} survey items from {rule.title}; code kept "
+            f"{len(valid)}. {hard} requirement{'' if hard == 1 else 's'} need{'s' if hard == 1 else ''} measuring, "
+            f"not a photo.")
+        say(f"The agent tests them on {ts.name}: {len(ts.photos)} labelled photos about {ts.target}")
     bench = Bench(api, ts, items=valid, photo=photo, workers=workers)
-    result = agent.run(respond, bench, valid)
+    result = agent.run(respond, bench, valid, on_step=(lambda *step: say(agent.describe(*step))) if say else None)
     final = _final(valid, result, bench)
     stamp = stamp or datetime.now().strftime("%Y%m%d-%H%M")
     out_dir = Path(out_dir)
@@ -113,7 +120,8 @@ def main(argv: list[str] | None = None) -> dict:
     for p in ts.photos:  # the photos are Mapillary images; fetch any not cached yet
         if collect.fetch_photo({"id": p.id, "thumb_2048_url": None}) is None:
             raise SystemExit(f"could not fetch photo {p.id}")
-    paths = author(api, make_responder(api, agent.TOOLS), rule, ts, config.data_dir() / "items" / "drafts")
+    paths = author(api, make_responder(api, agent.TOOLS), rule, ts, config.data_dir() / "items" / "drafts",
+                   say=lambda line: print(line, flush=True))
     for kind, path in paths.items():
         print(f"{kind}: {path}")
     print(f"model spend: ${api.meter.spent_usd:.2f}")

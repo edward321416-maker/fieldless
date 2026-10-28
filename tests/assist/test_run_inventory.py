@@ -56,10 +56,10 @@ def setup(tmp_path, draft=DRAFT):
     return FakeApi(spark=spark, sam=sam), ts, paths, prompts
 
 
-def run(tmp_path, api, ts, paths, turns):
+def run(tmp_path, api, ts, paths, turns, say=None):
     respond, seen = scripted(turns)
     out = inventory(api, respond, "streetlight pole", ts, tmp_path / "out", describe="poles that carry a street lamp",
-                    photo=lambda i: paths[i], workers=1, stamp="test")
+                    photo=lambda i: paths[i], workers=1, stamp="test", say=say)
     return out, seen
 
 
@@ -69,7 +69,15 @@ def test_inventory_drafts_tests_and_writes_the_toml_the_report_and_the_history(t
              [call("score_confirm", {"find": "utility pole", "ask": REWORDED}, "c3")],
              [call("finish", {"item": {"find": "utility pole", "ask": REWORDED,
                                        "note": "utility pole finds both lamps; Spark drops the plain pole"}}, "c4")]]
-    paths_out, _ = run(tmp_path, api, ts, paths, turns)
+    said = []
+    paths_out, _ = run(tmp_path, api, ts, paths, turns, say=said.append)
+    assert said == ['Muse Spark drafted an item for "streetlight pole": find "pole"',
+                    "The agent tests it on poles: 2 photos that show a streetlight pole, 1 that does not",
+                    '[1] SAM 3.1 finds "pole": 1 of 2 photos that show it, 0 of 1 that do not',
+                    '[2] SAM 3.1 finds "utility pole": 2 of 2 photos that show it, 1 of 1 that do not',
+                    '[3] Muse Spark checks "utility pole" with "A streetlight pole is a pole with a lamp head or arm '
+                    'at the top; plain...": kept 2 of 2 real ones, dropped 0 wrongly, kept 0 that were not',
+                    'Muse Spark finished after 3 tool calls: find "utility pole"']
     assert {k: p.name for k, p in paths_out.items()} == {"toml": "inventory-streetlight-pole-test.toml",
                                                          "md": "inventory-streetlight-pole-test.md",
                                                          "json": "inventory-streetlight-pole-test.json"}
@@ -107,7 +115,9 @@ def test_an_item_whose_final_ask_was_never_tested_stays_out_of_the_toml(tmp_path
 
 def test_a_draft_code_drops_writes_a_report_without_running_the_agent(tmp_path):
     api, ts, paths, _ = setup(tmp_path, draft={**DRAFT, "id": "Streetlight Pole"})
-    paths_out, seen = run(tmp_path, api, ts, paths, [])
+    said = []
+    paths_out, seen = run(tmp_path, api, ts, paths, [], say=said.append)
+    assert said == ["Code dropped the draft: Streetlight Pole: id must be lower case letters, digits and _"]
     assert seen == [] and [c for c in api.calls if c[0] != "spark"] == []
     md = paths_out["md"].read_text(encoding="utf-8")
     assert "No item" in md and "Streetlight Pole: id must be lower case" in md and "stopped: no valid draft" in md
@@ -120,8 +130,8 @@ def test_main_fetches_the_photos_and_passes_the_options(tmp_path, monkeypatch):
     monkeypatch.setattr(run_inventory.testset, "load", lambda name: ts)
     monkeypatch.setattr(run_inventory.collect, "fetch_photo", lambda rec: fetched.append(rec["id"]) or (160, 120))
 
-    def fake_inventory(api, respond, target, ts_, out_dir, describe=""):
-        seen.update(cap=api.meter.cap_usd, target=target, describe=describe, out_dir=out_dir)
+    def fake_inventory(api, respond, target, ts_, out_dir, describe="", say=None):
+        seen.update(cap=api.meter.cap_usd, target=target, describe=describe, out_dir=out_dir, say=say)
         return {}
 
     monkeypatch.setattr(run_inventory, "inventory", fake_inventory)
@@ -129,4 +139,4 @@ def test_main_fetches_the_photos_and_passes_the_options(tmp_path, monkeypatch):
                         "--describe", "lamp poles", "--cap", "0.5"])
     assert fetched == ["a", "b", "n"]
     assert seen["cap"] == 0.5 and seen["target"] == "streetlight pole" and seen["describe"] == "lamp poles"
-    assert seen["out_dir"].parts[-2:] == ("items", "drafts")
+    assert seen["out_dir"].parts[-2:] == ("items", "drafts") and callable(seen["say"])

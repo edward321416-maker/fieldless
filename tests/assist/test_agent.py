@@ -147,6 +147,50 @@ def test_inventory_agent_stops_at_the_tool_call_limit_and_the_cost_cap():
     assert not r["finished"] and r["calls"] == 1 and r["stopped"].startswith("cost cap")
 
 
+def test_on_step_reports_every_tool_call_with_its_result_then_the_finish():
+    steps = []
+    final = {"id": "warning_present", "find": "curb cut", "ask": "Domes?", "polarity": "same", "tested": True,
+             "note": "n"}
+    respond, _ = scripted([
+        [call("score_find", {"phrase": "curb ramp"}, "c1"), call("score_find", {"phrase": "curb cut"}, "c2")],
+        [call("score_ask", {"item_id": "warning_present", "find": "curb cut", "ask": "Domes?", "polarity": "same"},
+              "c3")],
+        [call("finish", {"items": [final]}, "c4")]])
+    agent.run(respond, FakeBench(), DRAFT, on_step=lambda *s: steps.append(s))
+    assert [(n, name) for n, name, _, _ in steps] == [(1, "score_find"), (2, "score_find"), (3, "score_ask"),
+                                                     (3, "finish")]
+    assert steps[1][2] == {"phrase": "curb cut"} and steps[1][3]["found_visible"] == 2
+    assert steps[3][2] == {"items": [final]} and steps[3][3] is None
+
+    steps.clear()
+    respond, _ = scripted([[call("score_find", {"phrase": "p"}, "c1")], [call("score_find", {"phrase": "q"}, "c2")],
+                           []])
+    agent.run_inventory(respond, FakeInventoryBench(), POLE, max_calls=1, on_step=lambda *s: steps.append(s))
+    assert [(n, name, r.get("error", "")[:21]) for n, name, _, r in steps] == [
+        (1, "score_find", ""), (2, "score_find", "tool call limit reach")]
+
+
+def test_describe_says_what_each_call_tried_and_what_code_measured():
+    assert agent.describe(1, "score_find", {"phrase": "curb cut"},
+                          {"found_visible": 10, "total_visible": 12, "false_on_negatives": 0, "total_negatives": 4}) \
+        == '[1] SAM 3.1 finds "curb cut": 10 of 12 photos that show it, 0 of 4 that do not'
+    ask = "Does the tactile surface blend with the adjacent walk with no light-on-dark or dark-on-light difference?"
+    line = agent.describe(7, "score_ask", {"item_id": "warning_no_contrast", "find": "curb cut", "ask": ask},
+                          {"right": 8, "decidable": 12, "unclear": 2, "wrong": []})
+    assert line.startswith('[7] Muse Spark asks "Does the tactile surface blend with the adjacent walk with no')
+    assert line.endswith('..." on "curb cut": right on 8 of 12, wrong 0, unclear 2') and len(line) < 160
+    assert agent.describe(5, "score_confirm", {"find": "grey parking kiosk", "ask": "Pay station?"},
+                          {"found_visible": 8, "kept_true": 6, "rejected_wrongly": 2, "kept_false": 0}) == \
+        '[5] Muse Spark checks "grey parking kiosk" with "Pay station?": kept 6 of 8 real ones, dropped 2 wrongly, ' \
+        'kept 0 that were not'
+    assert agent.describe(3, "score_ask", {"find": "x", "ask": "y"}, {"error": "no labelled question"}) == \
+        "[3] score_ask: no labelled question"
+    assert agent.describe(7, "finish", {"items": [{"id": "a", "tested": True}, {"id": "b", "tested": False}]},
+                          None) == "Muse Spark finished after 7 tool calls: 2 items, 1 tested (a)"
+    assert agent.describe(6, "finish", {"item": {"find": "grey parking kiosk", "ask": "?", "note": "n"}}, None) == \
+        'Muse Spark finished after 6 tool calls: find "grey parking kiosk"'
+
+
 def test_responder_reserves_logs_cost_and_returns_plain_output():
     logged = []
 

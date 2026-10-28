@@ -63,8 +63,15 @@ def test_author_tests_only_covered_items_and_derives_the_defect_answer_from_the_
         return {"output": turns[len(seen) - 1], "text": ""}
 
     api = FakeApi(spark=spark, sam=sam)
+    said = []
     paths = author(api, respond, rule, ts, tmp_path / "out", photo=lambda i: tmp_path / f"{i}.jpg", workers=1,
-                   stamp="test")
+                   stamp="test", say=said.append)
+    assert said[:2] == ["Muse Spark drafted 3 survey items from a test rule; code kept 2. "
+                        "1 requirement needs measuring, not a photo.",
+                        "The agent tests them on t: 2 labelled photos about curb ramp"]
+    assert said[2] == '[1] SAM 3.1 finds "curb cut": 1 of 1 photos that show it, 0 of 1 that do not'
+    assert said[3].startswith('[2] Muse Spark asks "Does the warning blend into the sidewalk')
+    assert said[4:] == ["Muse Spark finished after 2 tool calls: 2 items, 1 tested (warning_contrast)"]
     check = tomllib.loads(paths["toml"].read_text(encoding="utf-8"))["check"]
     assert [c["id"] for c in check] == ["warning_contrast"]  # only tested items go to the TOML
     assert check[0]["find"] == "curb cut" and check[0]["ask"] == BLEND

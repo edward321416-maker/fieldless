@@ -45,6 +45,8 @@ A survey item is two sentences: what SAM 3.1 should find, and the yes/no questio
 .venv/Scripts/python -m assist.run_author --rule ada2010 --testset seattle_ramps --run author-ada
 ```
 
+While it runs, it prints each tool call the agent makes and what code measured, for example
+`[5] SAM 3.1 finds "curb cut": 10 of 12 photos that show it, 0 of 4 that do not`.
 The result is a TOML file of `[[check]]` items with their source and measured scores, and a report. A person adds the
 items they accept to `pipeline/standards/us.toml`. The excerpt in `assist/rules/` is from the 2010 ADA Standards for
 Accessible Design (U.S. Department of Justice, public domain). The test set `assist/testsets/seattle_ramps.json` lists

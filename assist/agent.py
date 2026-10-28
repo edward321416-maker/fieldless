@@ -59,9 +59,42 @@ def _dispatch(bench, name: str, args: dict) -> dict:
     return {"error": f"unknown tool {name}"}
 
 
-def _loop(respond, text: str, dispatch, max_calls: int) -> dict:
+def _short(text: str, width: int = 70) -> str:
+    return text if len(text) <= width else text[:width].rstrip() + "..."
+
+
+def describe(step: int, name: str, args: dict, result: dict | None) -> str:
+    """One line for a person watching the agent work: what a tool call tried and what code measured. It never raises,
+    so showing a step cannot stop a paid run."""
+    r = result or {}
+    if name == "finish":
+        if "item" in args:
+            return f'Muse Spark finished after {step} tool calls: find "{(args["item"] or {}).get("find", "")}"'
+        items = args.get("items") or []
+        tested = [str(i.get("id")) for i in items if i.get("tested")]
+        return (f"Muse Spark finished after {step} tool calls: {len(items)} items, {len(tested)} tested"
+                + (f" ({', '.join(tested)})" if tested else ""))
+    if "error" in r:
+        return f"[{step}] {name}: {r['error']}"
+    find, ask = args.get("find", ""), _short(str(args.get("ask", "")))
+    if name == "score_find":
+        return (f'[{step}] SAM 3.1 finds "{args.get("phrase", "")}": {r.get("found_visible", "?")} of '
+                f'{r.get("total_visible", "?")} photos that show it, {r.get("false_on_negatives", "?")} of '
+                f'{r.get("total_negatives", "?")} that do not')
+    if name == "score_ask":
+        return (f'[{step}] Muse Spark asks "{ask}" on "{find}": right on {r.get("right", "?")} of '
+                f'{r.get("decidable", "?")}, wrong {len(r.get("wrong") or [])}, unclear {r.get("unclear", "?")}')
+    if name == "score_confirm":
+        return (f'[{step}] Muse Spark checks "{find}" with "{ask}": kept {r.get("kept_true", "?")} of '
+                f'{r.get("found_visible", "?")} real ones, dropped {r.get("rejected_wrongly", "?")} wrongly, '
+                f'kept {r.get("kept_false", "?")} that were not')
+    return f"[{step}] {name}"
+
+
+def _loop(respond, text: str, dispatch, max_calls: int, on_step=None) -> dict:
     """Turns until the agent calls finish: {"finished": bool, "args": finish's arguments ({} if it never finished),
-    "calls": tool calls made, "stopped": why it stopped without finishing, or ""}. dispatch(name, args) runs a tool."""
+    "calls": tool calls made, "stopped": why it stopped without finishing, or ""}. dispatch(name, args) runs a tool.
+    on_step(step, name, args, result), if given, hears every tool call as it returns, then the finish (result None)."""
     history = [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}]
     calls = 0
     for _ in range(max_calls + 5):  # turns; a turn may call several tools
@@ -76,6 +109,8 @@ def _loop(respond, text: str, dispatch, max_calls: int) -> dict:
         for c in fcalls:
             args = json.loads(c.get("arguments") or "{}")
             if c["name"] == "finish":
+                if on_step:
+                    on_step(calls, "finish", args, None)
                 return {"finished": True, "args": args, "calls": calls, "stopped": ""}
             calls += 1
             if calls > max_calls:
@@ -87,11 +122,13 @@ def _loop(respond, text: str, dispatch, max_calls: int) -> dict:
                     return {"finished": False, "args": {}, "calls": calls, "stopped": f"cost cap: {exc}"}
                 except (KeyError, ValueError) as exc:
                     result = {"error": str(exc)}
+            if on_step:
+                on_step(calls, c["name"], args, result)
             history.append({"type": "function_call_output", "call_id": c["call_id"], "output": json.dumps(result)})
     return {"finished": False, "args": {}, "calls": calls, "stopped": "turn limit"}
 
 
-def run(respond, bench, drafts: list[dict], max_calls: int = MAX_TOOL_CALLS) -> dict:
+def run(respond, bench, drafts: list[dict], max_calls: int = MAX_TOOL_CALLS, on_step=None) -> dict:
     """{"finished": bool, "items": finish's items ([] if it never finished), "calls": tool calls made,
     "stopped": why it stopped without finishing, or ""}."""
     ts = bench.ts
@@ -100,7 +137,7 @@ def run(respond, bench, drafts: list[dict], max_calls: int = MAX_TOOL_CALLS) -> 
     shown = [{k: d[k] for k in ("id", "section", "target", "find", "ask", "report_when")} for d in drafts]
     text = PROMPT.format(name=ts.name, count=len(ts.photos), target=ts.target, questions=questions,
                          items=json.dumps(shown, ensure_ascii=False, indent=1), max_calls=max_calls)
-    r = _loop(respond, text, lambda name, args: _dispatch(bench, name, args), max_calls)
+    r = _loop(respond, text, lambda name, args: _dispatch(bench, name, args), max_calls, on_step)
     return {"finished": r["finished"], "items": r["args"].get("items", []), "calls": r["calls"],
             "stopped": r["stopped"]}
 
@@ -163,7 +200,7 @@ def _inventory_dispatch(bench, item: dict, max_rewords: int):
 
 
 def run_inventory(respond, bench, item: dict, max_calls: int = MAX_INVENTORY_CALLS,
-                  max_rewords: int = MAX_REWORDS) -> dict:
+                  max_rewords: int = MAX_REWORDS, on_step=None) -> dict:
     """{"finished": bool, "item": finish's item ({} if it never finished), "calls", "stopped"} for one drafted
     inventory item (assist.items.validate_inventory)."""
     ts = bench.ts
@@ -172,6 +209,6 @@ def run_inventory(respond, bench, item: dict, max_calls: int = MAX_INVENTORY_CAL
                                    negatives=len(ts.negatives()), item=json.dumps(shown, ensure_ascii=False, indent=1),
                                    alternatives=", ".join(f'"{a}"' for a in item.get("alternatives", [])) or "none",
                                    unclear=UNCLEAR, rewords=max_rewords, max_calls=max_calls)
-    r = _loop(respond, text, _inventory_dispatch(bench, item, max_rewords), max_calls)
+    r = _loop(respond, text, _inventory_dispatch(bench, item, max_rewords), max_calls, on_step)
     return {"finished": r["finished"], "item": r["args"].get("item", {}), "calls": r["calls"],
             "stopped": r["stopped"]}

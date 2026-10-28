@@ -119,14 +119,23 @@ def _report(target: str, describe: str, ts, drafted: dict, final: dict | None, p
 
 
 def inventory(api, respond, target: str, ts, out_dir: Path, describe: str = "", photo=collect.photo_path,
-              workers: int = 4, stamp: str | None = None) -> dict:
+              workers: int = 4, stamp: str | None = None, say=None) -> dict:
+    """say(line), if given, hears what happens as it happens: the draft, then every tool call the agent makes."""
     drafted = draft(api, target, describe)
     valid, problems = items_mod.validate_inventory(drafted)
+    if say and valid:
+        negatives = len(ts.negatives())
+        say(f'Muse Spark drafted an item for "{target}": find "{valid[0]["find"]}"')
+        say(f"The agent tests it on {ts.name}: {len(ts.visible())} photos that show a {target}, {negatives} "
+            f"that do{'es' if negatives == 1 else ''} not")
+    elif say:
+        say("Code dropped the draft: " + "; ".join(problems))
     bench = Bench(api, ts, items=valid, photo=photo, workers=workers)
     final = None
     result = {"finished": False, "item": {}, "calls": 0, "stopped": "no valid draft"}
     if valid:
-        result = agent.run_inventory(respond, bench, valid[0])
+        result = agent.run_inventory(respond, bench, valid[0],
+                                     on_step=(lambda *step: say(agent.describe(*step))) if say else None)
         final = _final(valid[0], result, bench)
     stamp = stamp or datetime.now().strftime("%Y%m%d-%H%M")
     out_dir = Path(out_dir)
@@ -164,7 +173,8 @@ def main(argv: list[str] | None = None) -> dict:
         if collect.fetch_photo({"id": p.id, "thumb_2048_url": None}) is None:
             raise SystemExit(f"could not fetch photo {p.id}")
     paths = inventory(api, make_responder(api, agent.INVENTORY_TOOLS), args.target, ts,
-                      config.data_dir() / "items" / "drafts", describe=args.describe)
+                      config.data_dir() / "items" / "drafts", describe=args.describe,
+                      say=lambda line: print(line, flush=True))
     for kind, path in paths.items():
         print(f"{kind}: {path}")
     print(f"model spend: ${api.meter.spent_usd:.2f}")
