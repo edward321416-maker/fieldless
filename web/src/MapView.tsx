@@ -5,9 +5,10 @@ import type { Feature, FeatureCollection } from "geojson";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { bboxFromCorners, bboxPolygon, viewToBbox } from "./bbox";
 import { destination, distanceToLineM, targetBearing, viewWedge, type LngLat } from "./geo";
-import { colourOf, itemName, STATUS_SENTENCE, type Badge, type Finding } from "./items";
+import { colourOf, itemName, slotOf, STATUS_SENTENCE, type Badge, type Finding } from "./items";
 import Legend from "./Legend";
-import { markerCanvas, markerName, RATIO } from "./markerArt";
+import { markerCanvas, markerName, RATIO, ringCanvas } from "./markerArt";
+import { RING_SLOTS, ringCounts } from "./ring";
 import { namedRoads, streetText } from "./streets";
 import type { Bbox, ItemMeta, Walk } from "./types";
 
@@ -25,6 +26,10 @@ const START: [number, number] = [127.0571, 37.5484]; // Seongsu street_b, where 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 const TARGET_M = 10; // the object is drawn this far along its bearing: the distance is not measured (approximate)
 const ACCENT = "#1d4ed8";
+// A cluster's ring image, named by its count per palette slot: "ring:2,0,1,0,0,0,1,0" (ring.ts ringName).
+const RING_IMAGE = ["concat", "ring:", ...Array.from({ length: RING_SLOTS }, (_, i) =>
+  i === 0 ? ["to-string", ["get", "s0"]] : ["concat", ",", ["to-string", ["get", `s${i}`]]])] as unknown as
+  maplibregl.ExpressionSpecification;
 
 interface Props {
   selecting: boolean;
@@ -110,9 +115,12 @@ export default function MapView(props: Props) {
       map.addSource("walks", { type: "geojson", data: EMPTY });
       map.addSource("area", { type: "geojson", data: areaData(latest.current.bbox) });
       map.addSource("selection", { type: "geojson", data: EMPTY });
-      map.addSource("findings", { type: "geojson", data: EMPTY, cluster: true, clusterRadius: 12, clusterMaxZoom: 16 });
+      // Each cluster counts its findings per palette slot, so its ring shows the items inside (design pass 2).
+      map.addSource("findings", { type: "geojson", data: EMPTY, cluster: true, clusterRadius: 12, clusterMaxZoom: 16,
+        clusterProperties: Object.fromEntries(Array.from({ length: RING_SLOTS }, (_, i) =>
+          [`s${i}`, ["+", ["case", ["==", ["get", "slot"], i], 1, 0]]])) });
       map.addLayer({ id: "walks", type: "line", source: "walks", layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#6b7280", "line-width": 3, "line-opacity": 0.55 } });
+        paint: { "line-color": "#475569", "line-width": 4, "line-opacity": 0.7 } });
       map.addLayer({ id: "walk-picked", type: "line", source: "walks", filter: ["==", ["get", "clip"], -1],
         layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ACCENT, "line-width": 4 } });
       map.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": ACCENT, "fill-opacity": 0.08 } });
@@ -121,11 +129,13 @@ export default function MapView(props: Props) {
         paint: { "fill-color": ACCENT, "fill-opacity": 0.18 } });
       map.addLayer({ id: "sel-ray", type: "line", source: "selection", filter: ["==", ["get", "part"], "ray"],
         paint: { "line-color": "#111827", "line-width": 2, "line-dasharray": [2, 2] } });
-      map.addLayer({ id: "clusters", type: "circle", source: "findings", filter: ["has", "point_count"],
-        paint: { "circle-color": "#ffffff", "circle-stroke-color": "#374151", "circle-stroke-width": 2,
-          "circle-radius": ["step", ["get", "point_count"], 16, 10, 20, 30, 24] } });
-      map.addLayer({ id: "cluster-count", type: "symbol", source: "findings", filter: ["has", "point_count"],
-        layout: { "text-field": ["get", "point_count_abbreviated"], "text-font": ["Noto Sans Bold"], "text-size": 13 },
+      map.addLayer({ id: "clusters", type: "symbol", source: "findings", filter: ["has", "point_count"],
+        layout: {
+          "icon-image": RING_IMAGE,
+          "icon-allow-overlap": true, "icon-ignore-placement": true,
+          "text-field": ["get", "point_count_abbreviated"], "text-font": ["Noto Sans Bold"], "text-size": 13,
+          "text-allow-overlap": true, "text-ignore-placement": true,
+        },
         paint: { "text-color": "#111827" } });
       map.addLayer({ id: "findings", type: "symbol", source: "findings", filter: ["!", ["has", "point_count"]],
         layout: { "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true,
@@ -139,6 +149,13 @@ export default function MapView(props: Props) {
     });
     // An image the map asks for but nobody added yet (a style reload): draw it from its name.
     map.on("styleimagemissing", (e: { id: string }) => {
+      const ring = ringCounts(e.id);
+      if (ring) {
+        if (map.hasImage(e.id)) return;
+        const c = ringCanvas(ring);
+        map.addImage(e.id, c.getContext("2d")!.getImageData(0, 0, c.width, c.height), { pixelRatio: RATIO });
+        return;
+      }
       const [, itemId, badge] = e.id.split(":");
       if (!itemId || map.hasImage(e.id)) return;
       const { items } = latest.current;
@@ -255,6 +272,7 @@ export default function MapView(props: Props) {
       type: "FeatureCollection",
       features: shown.map((f) => point([f.lng, f.lat], {
         key: f.key, icon: markerName(f.item, f.badge), order: f.badge ? 1 : 0, // markers with a badge draw on top
+        slot: slotOf(f.item, props.items),
       })),
     });
     streetsRef.current = Object.fromEntries(Object.entries(streetsRef.current)

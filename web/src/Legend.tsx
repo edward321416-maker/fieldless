@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { BADGE_TEXT, itemName, type Badge } from "./items";
-import { badgeCanvas, itemArt } from "./markerArt";
+import { badgeCanvas, itemArt, ringCanvas } from "./markerArt";
 import type { ItemMeta } from "./types";
 
 interface Props {
@@ -21,6 +21,7 @@ export default function Legend({ items, counts, badges, hidden, onToggle, onShow
   const [open, setOpen] = useState(() => typeof window === "undefined" || window.innerWidth > 800);
   const art = useMemo(() => itemArt(items), [items]);
   const badgeArt = useMemo(() => Object.fromEntries(BADGES.map((b) => [b, badgeCanvas(b).toDataURL()])), []);
+  const ringArt = useMemo(() => ringCanvas([1, 1, 0, 0, 0, 0, 0, 0]).toDataURL(), []);
   const present = items.filter((it) => (counts.get(it.id) ?? 0) > 0);
   return (
     <section className={`legend${open ? "" : " legend-folded"}`} aria-label="Map legend and filter">
@@ -55,6 +56,10 @@ export default function Legend({ items, counts, badges, hidden, onToggle, onShow
           ))}
         </ul>
       )}
+      <ul className="legend-badges">
+        <li><img src={ringArt} alt="" width={18} height={18} /> Findings close together; the ring shows their items</li>
+        <li><span className="legend-walk" aria-hidden="true" /> Walk the photos were taken on</li>
+      </ul>
       </>)}
     </section>
   );

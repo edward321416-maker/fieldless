@@ -7,9 +7,14 @@ export const PALETTE = ["#0072B2", "#009E73", "#CC79A7", "#56B4E9", "#E6C800", "
 export const DEFECT_RED = "#B91C1C";
 export const SITE_ORANGE = "#C2410C";
 
-export function colourOf(itemId: string, items: ItemMeta[]): string {
+// The palette slot of an item: its place in the scan's item order (an unknown item takes the next one).
+export function slotOf(itemId: string, items: ItemMeta[]): number {
   const i = items.findIndex((it) => it.id === itemId);
-  return PALETTE[(i < 0 ? items.length : i) % PALETTE.length];
+  return (i < 0 ? items.length : i) % PALETTE.length;
+}
+
+export function colourOf(itemId: string, items: ItemMeta[]): string {
+  return PALETTE[slotOf(itemId, items)];
 }
 
 // A light fill takes a dark icon, so the icon keeps its contrast.

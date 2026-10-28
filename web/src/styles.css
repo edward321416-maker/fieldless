@@ -44,6 +44,7 @@ button, input, select { font: inherit; }
 .legend-off .legend-name, .legend-off .legend-count { color: var(--muted); text-decoration: line-through; }
 .legend-badges { border-top: 1px solid var(--line); margin-top: 4px !important; padding: 4px 0 !important; }
 .legend-badges li { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; }
+.legend-walk { display: inline-block; flex: none; width: 18px; height: 4px; border-radius: 2px; background: #475569; opacity: 0.7; }
 .map-tip .maplibregl-popup-content { padding: 6px 8px; font-size: 13px; }
 .map-label .maplibregl-popup-content { padding: 4px 8px; font-size: 13px; font-weight: 600; }
 .panel { overflow-y: auto; border-left: 1px solid var(--line); padding: 0 16px 16px; }
