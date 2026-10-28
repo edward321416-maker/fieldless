@@ -31,8 +31,8 @@ MODEL = "meta-models/muse-spark-open-1026"
 MAX_TOKENS = 4000  # Spark Open reasons before it answers (probe: 700-2000 completion tokens)
 
 GLIMMER_MODEL = "meta-models/Muse-Glimmer-30B"
-GLIMMER_SYSTEM = "Reasoning strength: low"  # design 2.2: raised to medium if stage 1 finds too many "unclear"
-GLIMMER_MAX_TOKENS = 2000
+GLIMMER_SYSTEM = "Reasoning strength: medium"  # design 2.2; stage 1 passed two checks at medium, one at low
+GLIMMER_MAX_TOKENS = 4000  # medium reasons longer before the JSON than low, which had 2000
 GLIMMER_TIMEOUT_S = 300  # a cold container takes a few minutes; a request that waits longer falls back to Spark
 GPU_USD_PER_HOUR = 3.95  # Modal H100, the one GPU deploy/modal_glimmer.py uses; the Modal dashboard is the real figure
 GLIMMER_IDLE_S = 120  # the GPU stays on this long after the last call (modal_glimmer.py scaledown_window)

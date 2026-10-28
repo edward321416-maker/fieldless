@@ -49,6 +49,7 @@ target = "public litter can"
 ask = "Is this a public litter or recycling can on the sidewalk (a fixed city bin)? Answer no for a private wheeled bin put out for collection. If you cannot tell, answer unclear."
 label_yes = "Public litter can"
 group_m = 15
+judge = "glimmer"  # Muse Glimmer answers first; passed stage 1 at medium (agreement 0.86, no extra false keeps)
 
 # Written by the Muse Spark item agent (assist.run_inventory) from the city's pay-station list and tested on
 # assist/testsets/seattle_paystations.json: SAM 8/12 (0/6 on negatives), Spark confirmed 8/8 (2026-10-28).
@@ -60,3 +61,4 @@ target = "parking pay station"
 ask = "A parking pay station is a free-standing grey metal kiosk on the sidewalk, waist to chest high with a screen and blue P sign on top, not a single-post parking meter, transit ticket machine, or green utility cabinet. Does this photo show a parking pay station? Answer yes if that kiosk is visible even if partly obscured, no only if it clearly shows only look-alikes. If it is too far away or too small to see, answer unclear."
 label_yes = "Parking pay station"
 group_m = 15
+judge = "glimmer"  # passed stage 1 at low and medium (agreement 0.95, no extra false keeps)

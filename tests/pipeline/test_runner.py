@@ -573,8 +573,8 @@ def test_the_judge_answers_only_the_checks_that_name_it_and_the_audit_is_seeded_
 
     monkeypatch.setattr(runner.survey_checks, "run_check", run_check)
     std = survey_items.load("US")
-    std = dataclasses.replace(std, checks=tuple(dataclasses.replace(c, judge="glimmer") if c.id == "utility_pole"
-                                                else c for c in std.checks))
+    std = dataclasses.replace(std, checks=tuple(
+        dataclasses.replace(c, judge="glimmer" if c.id == "utility_pole" else "spark") for c in std.checks))
     judge = object()
     scan = make(FakeApi(spark=spark, sam=us_sam), us_scan)
     scan.standard, scan.judge = std, judge

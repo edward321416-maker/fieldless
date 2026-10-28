@@ -92,14 +92,14 @@ def gate(spark_found: int, flow_found: int, spark_false: int, flow_false: int, a
 
 def judge_for(run_dir: Path, reasoning: str = "low"):
     """Glimmer as the scan would call it (pipeline.second_opinion.glimmer_from_env), at a reasoning strength the
-    model card allows. Above low, the model reasons longer before the JSON, so the output budget is raised."""
+    model card allows. Low keeps the 2000-token output budget stage 1 measured it with; above low, the model reasons
+    longer before the JSON, so the budget is at least 4000."""
     from pipeline.second_opinion import glimmer_from_env
     judge = glimmer_from_env(run_dir)
     if judge is None:
         raise SystemExit("set GLIMMER_URL to the deployed fieldless-glimmer address")
-    if reasoning != "low":
-        judge.system = f"Reasoning strength: {reasoning}"
-        judge.max_tokens = max(judge.max_tokens, 4000)
+    judge.system = f"Reasoning strength: {reasoning}"
+    judge.max_tokens = 2000 if reasoning == "low" else max(judge.max_tokens, 4000)
     return judge
 
 

@@ -154,7 +154,8 @@ def test_glimmer_from_env_needs_its_url_and_derives_its_key(tmp_path, monkeypatc
     monkeypatch.setenv("GLIMMER_URL", "https://me--fieldless-glimmer-serve.modal.run/")
     model = second_opinion.glimmer_from_env(tmp_path)
     assert model.base_url == "https://me--fieldless-glimmer-serve.modal.run/v1"
-    assert model.model == "meta-models/Muse-Glimmer-30B" and model.system == "Reasoning strength: low"
+    assert model.model == "meta-models/Muse-Glimmer-30B" and model.system == "Reasoning strength: medium"
+    assert model.max_tokens == 4000
     assert model.kind == "glimmer" and model.log_path == tmp_path / "calls_glimmer.jsonl"
     from pipeline import config
     expected = hmac.new(config.api_key().encode(), b"fieldless-glimmer-key", hashlib.sha256).hexdigest()
