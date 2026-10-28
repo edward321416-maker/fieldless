@@ -29,7 +29,7 @@ def main(argv=None) -> None:
     from assist import testset
     from assist.tools import Bench
     from eval.glimmer_ledger import LEDGER, append, check_budget
-    from pipeline import config
+    from pipeline import collect, config
     from pipeline.cost import CostMeter
     from pipeline.meta_api import MetaApi
     from pipeline.second_opinion import glimmer_from_env
@@ -49,6 +49,9 @@ def main(argv=None) -> None:
     standard, report, started = load("us"), {}, time.time()
     for item, name in SETS.items():
         check, ts = standard.check(item), testset.load(name)
+        for p in ts.photos:  # Mapillary images; fetch any not cached yet (assist/run_inventory.py does the same)
+            if collect.fetch_photo({"id": p.id, "thumb_2048_url": None}) is None:
+                raise SystemExit(f"could not fetch photo {p.id}")
         items = [{"id": item, "target": check.target}]
         spark_bench = Bench(api, ts, items=items)
         s = spark_bench.confirm(item, check.find, check.ask)
