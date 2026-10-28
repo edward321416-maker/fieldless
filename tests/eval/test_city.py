@@ -126,10 +126,22 @@ def test_a_photo_without_a_compass_covers_nothing():
     assert r["missed_covered"] == [] and r["not_photographed"] == 1 and r["found_share"] is None
 
 
-def test_a_found_point_counts_as_photographed_so_the_share_stays_at_most_one():
-    # 28 m away and 45 degrees right of the compass: outside the coverage cone, but the row's box shows it.
-    r = run([row(1, box=box_at(1000))], layer(point(10, 45, 28)))
-    assert pairs(r) == {1: 10} and r["covered"] == 1 and r["found_share"] == 1.0 and r["not_photographed"] == 0
+def test_a_point_found_outside_the_photos_view_is_listed_apart_so_the_share_has_a_fixed_base():
+    # 28 m away and 45 degrees right of the compass: outside the coverage cone, but the row's box shows it. The base
+    # of the share is what the photos cover, the same for every way of finding, so this pairing is listed apart.
+    r = run([row(1, box=box_at(1000))], layer(point(10, 45, 28), point(11, 0, 10)))
+    assert pairs(r) == {1: 10} and r["matched"][0]["in_view"] is False
+    assert r["found"] == 0 and r["covered"] == 1 and r["found_share"] == 0.0 and r["missed_covered"] == [11]
+    assert r["matched_outside_view"] == [10] and r["not_photographed"] == 0
+    assert r["points_in_layer"] == (r["covered"] + len(r["installed_after_photo"]) + r["not_photographed"]
+                                    + len(r["matched_outside_view"]))
+    assert "| Found outside the photos' view (not in the share) | 1 |" in city.to_markdown(r)
+
+
+def test_a_point_found_inside_the_view_counts_in_the_share():
+    r = run([row(1, box=box_at(500))], layer(point(10, 0, 10)))
+    assert r["matched"][0]["in_view"] is True and r["found"] == 1 and r["covered"] == 1 and r["found_share"] == 1.0
+    assert r["matched_outside_view"] == []
 
 
 def test_points_installed_after_the_photo_are_neither_found_nor_missed():

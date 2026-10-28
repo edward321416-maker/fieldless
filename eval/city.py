@@ -7,7 +7,9 @@ same code scores poles, trees, litter cans, bike racks, signs or curb ramps.
 
 A row is paired with the city point it looks at, not only the nearest one: two poles on the corners of a crossing are
 metres apart but tens of degrees apart seen from the photo, so the row's direction (photo compass plus where the box
-sits across the image) decides between them. Only points a photo could have shown can be missed. The city record is
+sits across the image) decides between them. Only points a photo could have shown can be missed, and the share found
+is counted over those same points, whatever way the rows were made, so two ways of finding compare on one base; a
+row that pairs with a point outside every photo's view is listed apart. The city record is
 not ground truth either: a row with no city point is "not in the city record" (new, moved, or a false find), a row
 that could only pair with a point another row already found is a repeat (two photos of one thing), and a point
 installed after the photo is its own class. A row a person rejected whose photo looked straight at a city point
@@ -208,9 +210,11 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
              truth_field: str | None = None, truth_yes: str | None = None, id_field: str | None = None,
              where: dict | None = None) -> dict:
     """Pair the item's rows with the layer's points and sort every point into found, missed, installed after the
-    photo or not photographed. A found point was photographed by definition, so covered = found + missed and
-    found_share is at most 1; a point installed after its photo leaves both. `where` keeps only points whose
-    properties equal the given values, compared as text (Seattle's pole layer: IS_STREETLIGHT=YES)."""
+    photo, found outside the photos' view, or not photographed. covered counts the points some photo could show
+    (covering_frames), found the ones among them a row paired with, so found_share = found / covered on a base that
+    does not depend on the rows; a pairing with a point no photo covers is in matched (in_view false) and in
+    matched_outside_view, not in the share. A point installed after its photo leaves both. `where` keeps only points
+    whose properties equal the given values, compared as text (Seattle's pole layer: IS_STREETLIGHT=YES)."""
     layer = [p for p in load_points(points, id_field)
              if all(str(p["props"].get(k)) == str(v) for k, v in (where or {}).items())]
     kept = [r for r in rows if r["issue_type"] == item_id and r.get("review_status") != "rejected"
@@ -230,7 +234,8 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
             continue
         matched.append({"issue_id": row["id"], "point_id": point["id"], "dist_m": round(dist, 1),
                         "offset_deg": None if offset is None else round(offset, 1), "row_answer": row_answer(row),
-                        "city_value": city_answer(point["props"], truth_field, truth_yes)})
+                        "city_value": city_answer(point["props"], truth_field, truth_yes),
+                        "in_view": bool(covering_frames(point, located, fov, cover_m))})
     paired_rows, paired_points = {ri for ri, *_ in pairs}, {pi for _, pi, *_ in pairs}
     # An unpaired row that could have paired with a point another row took photographed that same thing again (two
     # pieces of one walk past a pole, or two walks): a repeat. Only a row that reaches no city point is outside it.
@@ -258,10 +263,13 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
                     [c for c in candidates(rejected, by_idx, near, fov=fov, max_m=max_m, max_deg=max_deg,
                                            max_m_no_dir=max_m_no_dir) if c[4] is not None and c[2] not in paired_points])]
 
-    covered = len(matched) + len(missed)
+    found = [m for m in matched if m["in_view"]]
+    covered = len(found) + len(missed)
     out = {"item": item_id, "rows": len(kept), "points_in_layer": len(layer), "covered": covered,
-           "matched": sorted(matched, key=lambda m: m["issue_id"]),
-           "found_share": round(len(matched) / covered, 3) if covered else None,
+           "found": len(found), "matched": sorted(matched, key=lambda m: m["issue_id"]),
+           "matched_outside_view": [m["point_id"] for m in sorted(matched, key=lambda m: m["issue_id"])
+                                    if not m["in_view"]],
+           "found_share": round(len(found) / covered, 3) if covered else None,
            "rows_unmatched": sorted(r["id"] for ri, r in enumerate(kept) if ri not in paired_rows | repeats),
            "rows_repeat": sorted(kept[ri]["id"] for ri in repeats),
            "missed_covered": missed, "not_photographed": not_photographed, "installed_after_photo": after,
@@ -282,7 +290,8 @@ def to_markdown(r: dict) -> str:
              f"| Survey rows | {r['rows']} |",
              f"| City points in the layer | {r['points_in_layer']} |",
              f"| Photographed | {r['covered']} |",
-             f"| Found | {len(r['matched'])}{share} |",
+             f"| Found | {r['found']}{share} |",
+             f"| Found outside the photos' view (not in the share) | {len(r.get('matched_outside_view', []))} |",
              f"| Photographed, not found | {len(r['missed_covered'])} |",
              f"| Installed after the photo | {len(r['installed_after_photo'])} |",
              f"| Not photographed | {r['not_photographed']} |",

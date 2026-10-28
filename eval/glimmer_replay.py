@@ -108,7 +108,7 @@ def _found(rows: list[dict], data: dict, item: str, seattle: Path) -> dict:
     layer = json.loads((seattle / layer_file).read_text(encoding="utf-8"))
     r = city.evaluate(rows, data["frames"], layer, item, inventory=True, id_field="OBJECTID",
                       installed_field=installed)
-    return {"found": len(r["matched"]), "covered": r["covered"], "repeat": len(r.get("rows_repeat", [])),
+    return {"found": r["found"], "covered": r["covered"], "repeat": len(r.get("rows_repeat", [])),
             "not_in_record": len(r["rows_unmatched"])}
 
 

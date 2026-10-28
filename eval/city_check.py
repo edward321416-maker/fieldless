@@ -35,7 +35,7 @@ def build(data: dict, layers: dict[str, dict], root: Path, measured_at: str, cit
         r = city.evaluate(data["issues"], data["frames"], layer, item, inventory=cfg["inventory"],
                           installed_field=cfg.get("installed_field"), truth_field=cfg.get("truth_field"),
                           truth_yes=cfg.get("truth_yes"), id_field="OBJECTID")
-        items[item] = {"layer": cfg["name"], "found": len(r["matched"]), "covered": r["covered"],
+        items[item] = {"layer": cfg["name"], "found": r["found"], "covered": r["covered"],
                        "matched_ids": sorted(m["issue_id"] for m in r["matched"]),
                        "rejected_at_city_point": sorted(d["issue_id"] for d in r["rejected_at_city_point"])}
     waiting = any(r.get("review_status") == "needs_review" for r in [*data["issues"], *data["entrances"]])
