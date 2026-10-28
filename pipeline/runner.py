@@ -219,7 +219,8 @@ def stage_sidewalk(s: Scan) -> None:
     s.state("tactile").write_text(json.dumps(flags), encoding="utf-8")
 
 
-def _run_check(s: Scan, check, clips, photos, by_idx, judge=None) -> tuple[list[dict], dict]:
+def _run_check(s: Scan, check, clips, photos, by_idx, judge=None,
+               dropped: list[dict] | None = None) -> tuple[list[dict], dict]:
     """survey_checks.run_check, reusing the SAM areas a rerun already paid for: state find_<id>.json keeps the areas
     measured for the check's `find` phrase, and is ignored when the phrase has changed. Saved even when the run stops
     part way (cost cap), so the next run only asks for the photos not yet measured."""
@@ -234,7 +235,7 @@ def _run_check(s: Scan, check, clips, photos, by_idx, judge=None) -> tuple[list[
             known = {}  # a half-written file: measure again
     try:
         return survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers, known=known, judge=judge,
-                                       audit_seed=s.scan_id)
+                                       audit_seed=s.scan_id, dropped=dropped)
     finally:
         kept.write_text(json.dumps({"phrase": check.find, "areas": {str(i): a for i, a in known.items()}}),
                         encoding="utf-8")
@@ -269,12 +270,15 @@ def stage_defects(s: Scan) -> None:
     unavailable: dict[str, dict] = json.loads(kept.read_text(encoding="utf-8")) if only and kept.exists() else {}
     for check in to_run:
         judge = s.judge if s.judge is not None and check.judge == "glimmer" else None
-        rows, missing = _run_check(s, check, clips, photos, by_idx, judge)
+        gone: list[dict] = []
+        rows, missing = _run_check(s, check, clips, photos, by_idx, judge, dropped=gone)
         if s.second_opinion is not None:
             rows = second_opinion.apply(s.second_opinion, check, rows, photos, s.workers)
         unavailable[check.id] = missing
         for row in rows:
             db.add_issue(s.conn, s.scan_id, row)
+        for pick in gone:
+            db.add_dropped(s.conn, s.scan_id, pick)
     if not only:
         s.state("defects_unavailable").write_text(json.dumps(failed), encoding="utf-8")
         s.state("defects_checks").write_text(json.dumps(checks, ensure_ascii=False), encoding="utf-8")

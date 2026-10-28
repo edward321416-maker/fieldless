@@ -148,3 +148,24 @@ def test_list_scans_newest_first_and_scans_since(conn):
     assert db.scans_since(conn, "h1", "2000-01-01T00:00:00Z") == 2
     assert db.scans_since(conn, "h1", "2999-01-01T00:00:00Z") == 0
     assert db.scans_since(conn, "other", "2000-01-01T00:00:00Z") == 0
+
+
+def test_dropped_picks_are_kept_per_scan_and_cleared_with_their_check(conn, tmp_path):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    other = db.create_scan(conn, "mapillary", [0, 0, 0.01, 0.01])
+    pick = {"issue_type": "curb_ramp_warning", "frame_idx": 4, "frame_start": 2, "frame_end": 4, "lat": 47.61,
+            "lng": -122.32, "captured_at": "2022-08-30T10:00:00Z", "audited": True,
+            "model_outputs": {"check": {"visible": False, "answer": "unclear"}}}
+    db.add_dropped(conn, scan_id, pick)
+    db.add_dropped(conn, scan_id, {**pick, "issue_type": "litter_can", "audited": False})
+    db.add_dropped(conn, other, pick)
+    (first, second) = db.dropped(conn, scan_id)
+    assert first["audited"] is True and first["model_outputs"]["check"]["visible"] is False
+    db.clear_issues(conn, scan_id, ("curb_ramp_warning",))
+    assert [d["issue_type"] for d in db.dropped(conn, scan_id)] == ["litter_can"]
+    assert len(db.dropped(conn, other)) == 1
+    old = tmp_path / "old.db"  # a database made before the table existed gets it on connect
+    plain = sqlite3.connect(old)
+    plain.execute("CREATE TABLE scan (id INTEGER PRIMARY KEY)")
+    plain.close()
+    assert db.dropped(db.connect(old), 1) == []

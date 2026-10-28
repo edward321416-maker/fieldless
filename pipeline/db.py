@@ -25,6 +25,20 @@ CREATE TABLE IF NOT EXISTS scan (
     client_ip_hash TEXT,
     error TEXT
 );
+CREATE TABLE IF NOT EXISTS dropped_pick (
+    id INTEGER PRIMARY KEY,
+    scan_id INTEGER NOT NULL REFERENCES scan(id) ON DELETE CASCADE,
+    issue_type TEXT NOT NULL,
+    frame_idx INTEGER NOT NULL,
+    frame_start INTEGER,
+    frame_end INTEGER,
+    lat REAL,
+    lng REAL,
+    captured_at TEXT,
+    audited INTEGER NOT NULL DEFAULT 0,
+    model_outputs TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS frame (
     scan_id INTEGER NOT NULL REFERENCES scan(id) ON DELETE CASCADE,
     idx INTEGER NOT NULL,
@@ -95,7 +109,7 @@ CREATE INDEX IF NOT EXISTS issue_scan ON sidewalk_issue(scan_id);
 """
 
 JSON_COLUMNS = {"bbox", "sequence_ids", "stage_status", "review_reasons", "evidence", "model_outputs", "corrections"}
-BOOL_COLUMNS = {"stairs_detected", "sill_possible", "has_ramp", "has_handrail"}
+BOOL_COLUMNS = {"stairs_detected", "sill_possible", "has_ramp", "has_handrail", "audited"}
 ROW_TABLES = {"frame", "entrance", "sidewalk_issue"}
 
 
@@ -257,12 +271,24 @@ def clear_rows(conn, scan_id: int, table: str) -> None:
 
 
 def clear_issues(conn, scan_id: int, issue_types: tuple[str, ...]) -> None:
-    """Delete one scan's sidewalk issues of the given types, so the stage that makes them can run again without
-    touching the other stage's rows (S4/S5 obstructions and S7 defects come from different stages)."""
+    """Delete one scan's sidewalk issues of the given types, and the picks of those types the model dropped, so the
+    stage that makes them can run again without touching the other stage's rows (S4/S5 obstructions and S7 defects
+    come from different stages)."""
     marks = ",".join("?" * len(issue_types))
-    conn.execute(f"DELETE FROM sidewalk_issue WHERE scan_id = ? AND issue_type IN ({marks})",
-                 (scan_id, *issue_types))
+    for table in ("sidewalk_issue", "dropped_pick"):
+        conn.execute(f"DELETE FROM {table} WHERE scan_id = ? AND issue_type IN ({marks})", (scan_id, *issue_types))
     conn.commit()
+
+
+def add_dropped(conn, scan_id: int, fields: dict) -> int:
+    """A pick of a survey check the model said is not the target (survey_checks.run_check): no row on the map, but
+    kept, so a report can say how many were dropped and a sample can be checked by a person (audited)."""
+    return _insert(conn, "dropped_pick", {"scan_id": scan_id, "created_at": now(), **fields})
+
+
+def dropped(conn, scan_id: int) -> list[dict]:
+    rows = conn.execute("SELECT * FROM dropped_pick WHERE scan_id = ? ORDER BY id", (scan_id,)).fetchall()
+    return [_decode(r) for r in rows]
 
 
 def get_entrance(conn, entrance_id: int) -> dict:

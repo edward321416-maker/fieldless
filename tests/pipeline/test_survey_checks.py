@@ -39,7 +39,7 @@ def test_merge_near_keeps_the_larger_of_two_close_sightings():
     (NO, ("needs_review", ["possible_defect"], "no")),
     (YES, ("auto", [], "yes")),
     ({**NO, "answer": "unclear"}, ("needs_review", ["unclear"], "unclear")),
-    ({**YES, "visible": False}, ("needs_review", ["unclear"], "unclear")),
+    ({**YES, "visible": False}, None),  # no curb ramp in the photo (a driveway, a plain curb): dropped, see run_check
 ])
 def test_status_follows_report_when(answer, expected):
     assert survey_checks.status(CHECK, answer) == expected
@@ -156,6 +156,47 @@ def test_run_check_drops_inventory_picks_that_are_not_the_target(tmp_path):
     assert [(r["frame_idx"], r["object_label"], r["review_status"]) for r in rows] == [(2, "yes", "auto")]
     assert missing == {"find": [], "ask": [], "not_target": [8]}
     assert rows[0]["issue_type"] == "streetlight" and set(rows[0]["model_outputs"]) == {"check", "find"}
+
+
+def test_a_defect_check_drops_what_is_not_there_keeps_a_record_and_sends_a_seeded_tenth_to_a_person(tmp_path):
+    by_idx = frames(48)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+    shown = {f"{i}.jpg" for i in range(0, 48, 4)}  # 12 separate sightings, 20 m apart
+
+    def sam(prompt, media):
+        return found if media.name in shown else ""
+
+    def spark(schema_name, parts):
+        return {**YES, "visible": False}  # a driveway every time
+
+    def run(seed):
+        dropped = []
+        rows, missing = survey_checks.run_check(FakeApi(spark=spark, sam=sam), CHECK, {0: list(range(48))}, photos,
+                                                by_idx, 1, audit_seed=seed, dropped=dropped)
+        return rows, missing, dropped
+
+    rows, missing, dropped = run(4)
+    assert len(missing["not_target"]) == 12 and len(dropped) == 12
+    assert [d["issue_type"] for d in dropped] == ["curb_ramp_warning"] * 12
+    assert dropped[0]["model_outputs"]["check"]["visible"] is False and "mask_area" in dropped[0]["model_outputs"]["find"]
+    audited = [d["frame_idx"] for d in dropped if d["audited"]]
+    assert len(audited) == 2  # ceil(10% of 12)
+    assert [(r["frame_idx"], r["review_status"], r["review_reasons"], r["object_label"]) for r in rows] == [
+        (i, "needs_review", ["dropped_audit"], "unclear") for i in audited]
+    assert [d["frame_idx"] for d in run(4)[2] if d["audited"]] == audited  # the scan id fixes the sample
+    assert run(None)[0] and len(run(None)[0]) == 2
+
+
+def test_an_inventory_check_drops_without_an_audit(tmp_path):
+    by_idx = frames(9)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+    dropped = []
+    rows, missing = survey_checks.run_check(
+        FakeApi(spark=lambda schema_name, parts: NO, sam=lambda p, m: found if m.name in ("2.jpg", "8.jpg") else ""),
+        LIGHT, {0: list(range(9))}, photos, by_idx, 1, audit_seed=3, dropped=dropped)
+    assert rows == [] and [(d["frame_idx"], d["audited"]) for d in dropped] == [(2, False), (8, False)]
 
 
 def walk_m(piece, by_idx):

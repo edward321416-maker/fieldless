@@ -26,6 +26,7 @@ export const REASONS: Record<string, string> = {
   possible_defect: "Found by the model from one photo; confirm it on the photo",
   unclear: "The model could not tell from the photo",
   models_disagree: "Muse Spark and Muse Spark Open answered differently; check this first",
+  dropped_audit: "The model saw no such thing in this photo and dropped it; a sample of what it drops is checked by a person",
 };
 
 // A US scan's stages survey the walking path and the standard's checks (pipeline/standards/us.toml).

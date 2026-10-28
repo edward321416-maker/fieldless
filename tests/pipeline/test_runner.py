@@ -343,6 +343,27 @@ def test_a_us_scan_checks_curb_ramps_one_row_per_ramp_with_evidence(setup):
     assert result["defects"] == 1 and result["unavailable"]["check_requests"] == 0
 
 
+def test_a_curb_ramp_the_model_cannot_see_is_dropped_kept_and_audited_by_a_person(setup):
+    conn, _, make, _ = setup
+    us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+
+    def sam_ramp(prompt, media):
+        return found if prompt == "curb cut" and media.name == "img2.jpg" else us_sam(prompt, media)
+
+    def spark_ramp(schema_name, parts):
+        return {**RAMP_NO, "visible": False} if schema_name == "survey_check" else spark(schema_name, parts)
+
+    assert runner.run_scan(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan))["status"] == "done"
+    (pick,) = db.dropped(conn, us_scan)
+    assert (pick["issue_type"], pick["frame_idx"], pick["audited"]) == ("curb_ramp_warning", 2, True)  # 1 of 1
+    (row,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
+    assert (row["review_status"], row["review_reasons"]) == ("needs_review", ["dropped_audit"])
+    db.set_stage(conn, us_scan, "defects", "pending")
+    runner.run_scan(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan))
+    assert len(db.dropped(conn, us_scan)) == 1  # a rerun replaces them, like the rows
+
+
 def test_rerunning_the_defects_stage_replaces_the_check_rows(setup):
     conn, _, make, _ = setup
     us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")

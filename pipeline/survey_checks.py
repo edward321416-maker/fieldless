@@ -23,6 +23,7 @@ from pipeline.survey_items import Check
 SAMPLE_EVERY = 2
 MERGE_M = 8.0  # objects from different walks closer than this are the same object
 AUDIT_SHARE = 0.1  # of the judge's yes/no answers, Spark answers this share too (at least one)
+DROP_AUDIT_SHARE = 0.1  # of a defect check's dropped picks, this share goes to a person anyway (at least one)
 JUDGE_GIVE_UP = 3  # failures in a row after which the judge is not asked again in this check (a hung server)
 
 SCHEMA = {
@@ -121,16 +122,20 @@ def merge_near(picks: list[dict], by_idx: dict[int, dict], meters: float = MERGE
 
 
 def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
-    """(review_status, reasons, current answer) for Spark's answer; None drops the pick. For an inventory check a
-    "no", or the target not being visible, means SAM found something that is not the target (a plain utility pole,
-    a private bin), so the pick is dropped instead of being sent to review."""
+    """(review_status, reasons, current answer) for Spark's answer; None drops the pick. The target not being
+    visible means SAM found something that is not the target (a driveway, a plain curb, a private bin): the ask
+    sentence defines it so, and on the recording survey a person agreed on all 12 such curb ramps (2026-10-28). So the
+    pick is dropped instead of being sent to review; run_check keeps a record of it and sends a sample to a person.
+    For an inventory check a "no" is dropped too."""
+    if not answer["visible"]:
+        return None
     if check.inventory:
-        if not answer["visible"] or answer["answer"] == "no":
+        if answer["answer"] == "no":
             return None
         if answer["answer"] == "unclear":
             return "needs_review", ["unclear"], "unclear"
         return "auto", [], "yes"
-    current = answer["answer"] if answer["visible"] else "unclear"
+    current = answer["answer"]
     if current == "unclear":
         return "needs_review", ["unclear"], current
     if current == check.report_when:
@@ -158,9 +163,13 @@ def _outcome(decided) -> str:
 
 def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, Path], by_idx: dict[int, dict],
               workers: int, every: int = SAMPLE_EVERY, known: dict[int, int] | None = None, judge=None,
-              audit_seed: int | None = None, audit_share: float = AUDIT_SHARE) -> tuple[list[dict], dict]:
+              audit_seed: int | None = None, audit_share: float = AUDIT_SHARE,
+              dropped: list[dict] | None = None) -> tuple[list[dict], dict]:
     """Rows for one check over every walk, and what could not be analysed: {"find": [photo idx], "ask": [photo idx]}.
-    An inventory check also reports "not_target": the photos of picks Spark said are not the target (no row).
+    "not_target" lists the photos of picks the model said are not the target (no row), and `dropped`, when given,
+    receives a record of each (db.add_dropped). Of a defect check's dropped picks, DROP_AUDIT_SHARE (at least one),
+    chosen with audit_seed, still become rows for a person ("dropped_audit"): a person who finds the target there
+    keeps the row, against the model.
     `known` holds the areas already measured for this check's `find` (photo idx -> area). Those photos are not asked
     again, and every area measured now is added to it, clip by clip, so the caller can save it. A failed request is
     not added; it is asked again next time.
@@ -196,6 +205,16 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
         except Exception as exc:  # this object only: reported as unavailable
             return {"error": error_text(exc)}
 
+    def drop(p, answer, audited=False):
+        not_target.append(p["idx"])
+        frame = by_idx[p["idx"]]
+        if dropped is not None:
+            dropped.append({"issue_type": check.id, "frame_idx": p["idx"], "frame_start": min(p["group"]),
+                            "frame_end": max(p["group"]), "lat": frame["lat"], "lng": frame["lng"],
+                            "captured_at": frame["captured_at"], "audited": audited,
+                            "model_outputs": {"check": answer, "find": {"phrase": check.find, "mask_area": p["area"],
+                                                                        "group_idxs": p["group"]}}})
+
     def row(p, answer, decided, extra=None):
         review_status, reasons, current = decided
         frame = by_idx[p["idx"]]
@@ -210,15 +229,22 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
     failed_ask: list[int] = []
     not_target: list[int] = []
     if judge is None:
+        gone: list[tuple[dict, dict]] = []
         for p, answer in zip(picks, run_parallel(spark, picks, workers)):
             if "error" in answer:
                 failed_ask.append(p["idx"])
                 continue
             decided = status(check, answer)
             if decided is None:
-                not_target.append(p["idx"])
+                gone.append((p, answer))
                 continue
             rows.append(row(p, answer, decided))
+        sampled = set() if check.inventory or not gone else set(
+            random.Random(audit_seed).sample(range(len(gone)), math.ceil(DROP_AUDIT_SHARE * len(gone))))
+        for i, (p, answer) in enumerate(gone):
+            drop(p, answer, audited=i in sampled)
+            if i in sampled:
+                rows.append(row(p, answer, ("needs_review", ["dropped_audit"], "unclear")))
         return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target}
 
     failures_in_a_row = [0]
@@ -251,7 +277,7 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
                 continue
             decided = status(check, answer)
             if decided is None:
-                not_target.append(p["idx"])
+                drop(p, answer)
                 continue
             said = first[i]
             note = ({"model": judge.model, "error": said["error"]} if "error" in said
@@ -276,7 +302,7 @@ def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, 
                 if decided is not None and not agree:
                     decided = ("needs_review", [*decided[1], "models_disagree"], decided[2])
         if decided is None:
-            not_target.append(p["idx"])
+            drop(p, said)
             continue
         rows.append(row(p, said, decided, extra))
     summary = {"model": judge.model, "answered": len(decisive), "fallback": len(fallback), "audit": audit}
