@@ -17,6 +17,8 @@ interface Props {
   items: ItemMeta[];
   checks: CheckCount[]; // the scan's checks, for their short questions
   photoOnMap: boolean; // the photo window shows the big photo: the card keeps a thumbnail
+  backLabel: string; // where the back button goes: "← Street tree (31)", "← Stop reviewing"
+  progress?: { done: number; total: number }; // a review's place (Project Sidewalk's Validate progress bar)
   street: string | undefined;
   city: CityCheck | undefined;
   onNavigate: (f: Finding) => void;
@@ -152,14 +154,45 @@ export default function EvidenceCard(props: Props) {
   const evidence = p.item.evidence;
   const title = p.kind === "entrance" ? `${p.item.name || "Unnamed entrance"}: ${p.item.label.text}` : p.item.label.text;
 
+  // The person's answer: in a review it comes first, right under what the finding is (docs/specs/2026-10-29-cleanup-design.md 4).
+  const answers = reviewable && (
+    <div className={`answers${props.queue ? " answers-first" : ""}`}>
+      <h3>{question}{f.status === "auto" && <span className="hint small"> (optional: the models were sure)</span>}</h3>
+      {choices.map((c) => (
+        <button key={c.key} type="button" className={c.main ? "answer primary" : "answer"} disabled={busy}
+          onClick={() => answer(c)}>
+          <kbd>{c.key}</kbd> {c.label}
+        </button>
+      ))}
+      {p.kind === "entrance" && !p.item.review_reasons.includes("possible_sill") && (
+        <div className="row">
+          <label className="field inline">
+            Steps
+            <input type="number" min={0} max={50} value={steps}
+              onChange={(e) => setSteps(Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))))} />
+          </label>
+          <button type="button" disabled={busy}
+            onClick={() => answer({ send: { kind: "entrance", body: { action: "correct", step_count: steps } } })}>
+            Save the step count
+          </button>
+        </div>
+      )}
+    </div>
+  );
+  const progress = props.progress;
+
   return (
     <section className="card evidence-card" aria-labelledby="card-title">
+      {progress && progress.total > 0 && (
+        <div className="review-progress">
+          <p><strong>Review what the models were unsure of</strong>
+            <span>{Math.min(progress.done + 1, progress.total)} of {progress.total}</span></p>
+          <span className="bar" aria-hidden="true"><span style={{ width: `${(progress.done / progress.total) * 100}%` }} /></span>
+        </div>
+      )}
       <div className="card-nav">
-        <button type="button" onClick={props.onClose}>← Back to the list</button>
-        <span className="hint">
-          {props.queue ? `${props.list.filter((x) => x.status === "needs_review").length} left to review`
-            : index >= 0 ? `${index + 1} of ${props.list.length}` : ""}
-        </span>
+        <button type="button" onClick={props.onClose}>{props.backLabel}</button>
+        <span className="hint">{!props.queue && index >= 0 ? `${index + 1} of ${props.list.length}` : ""}</span>
         <span className="card-arrows">
           <button type="button" onClick={() => step(-1)} disabled={index <= 0} aria-label="Previous (left arrow)">‹</button>
           <button type="button" onClick={() => step(1)} disabled={index < 0 || index >= props.list.length - 1}
@@ -175,6 +208,8 @@ export default function EvidenceCard(props: Props) {
         <img src={art[f.item]} alt="" width={36} height={36} /> {title}
       </h2>
       <p className="status-line">{STATUS_SENTENCE[f.status] ?? f.status}</p>
+      {props.queue && error && <p className="error" role="alert">{error}</p>}
+      {props.queue && answers}
 
       {evidence && props.photoOnMap ? (
         <p className="card-thumb">
@@ -235,31 +270,8 @@ export default function EvidenceCard(props: Props) {
         </p>
       )}
 
-      {error && <p className="error" role="alert">{error}</p>}
-      {reviewable && (
-        <div className="answers">
-          <h3>{question}{f.status === "auto" && <span className="hint small"> (optional: the models were sure)</span>}</h3>
-          {choices.map((c) => (
-            <button key={c.key} type="button" className={c.main ? "answer primary" : "answer"} disabled={busy}
-              onClick={() => answer(c)}>
-              <kbd>{c.key}</kbd> {c.label}
-            </button>
-          ))}
-          {p.kind === "entrance" && !p.item.review_reasons.includes("possible_sill") && (
-            <div className="row">
-              <label className="field inline">
-                Steps
-                <input type="number" min={0} max={50} value={steps}
-                  onChange={(e) => setSteps(Math.max(0, Math.min(50, Math.round(Number(e.target.value) || 0))))} />
-              </label>
-              <button type="button" disabled={busy}
-                onClick={() => answer({ send: { kind: "entrance", body: { action: "correct", step_count: steps } } })}>
-                Save the step count
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      {!props.queue && error && <p className="error" role="alert">{error}</p>}
+      {!props.queue && answers}
     </section>
   );
 }

@@ -1,6 +1,5 @@
 import { fallbackLetter, hasIcon, ICONS } from "./icons";
 import { colourOf, DEFECT_RED, isLight, SITE_ORANGE, type Badge } from "./items";
-import { ringSegments } from "./ring";
 import type { ItemMeta } from "./types";
 
 // One marker = the item's colour circle with its icon (what it is) and at most one badge at the top right (whether
@@ -72,44 +71,7 @@ export function markerCanvas(colour: string, icon: string, target: string, badge
   return c;
 }
 
-export function badgeCanvas(badge: Badge): HTMLCanvasElement {
-  const size = BADGE_R * 2 + 2;
-  const c = document.createElement("canvas");
-  c.width = c.height = size * RATIO;
-  const g = c.getContext("2d")!;
-  g.scale(RATIO, RATIO);
-  drawBadge(g, size / 2, size / 2, badge);
-  return c;
-}
-
 export const markerName = (item: string, badge: Badge | null) => `m:${item}:${badge ?? "none"}`;
-
-export const RING_PX = 40;
-
-// A cluster: a white disc whose border is split by the items inside; the count is the map's text, drawn over it.
-export function ringCanvas(counts: number[]): HTMLCanvasElement {
-  const c = document.createElement("canvas");
-  c.width = c.height = RING_PX * RATIO;
-  const g = c.getContext("2d")!;
-  g.scale(RATIO, RATIO);
-  const mid = RING_PX / 2;
-  g.shadowColor = "rgba(0, 0, 0, 0.3)";
-  g.shadowBlur = 3;
-  g.shadowOffsetY = 1;
-  g.beginPath();
-  g.arc(mid, mid, mid - 2, 0, 2 * Math.PI);
-  g.fillStyle = "#ffffff";
-  g.fill();
-  g.shadowColor = "transparent";
-  g.lineWidth = 6;
-  for (const s of ringSegments(counts)) {
-    g.beginPath();
-    g.arc(mid, mid, mid - 6, s.start, s.end);
-    g.strokeStyle = s.colour;
-    g.stroke();
-  }
-  return c;
-}
 
 // Each item's marker without a badge, as image URLs for the legend and the panel (the same drawing as the map).
 export function itemArt(items: ItemMeta[]): Record<string, string> {

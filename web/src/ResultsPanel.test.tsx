@@ -1,0 +1,69 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import FindingList from "./FindingList";
+import type { Finding } from "./items";
+import ResultsPanel from "./ResultsPanel";
+import type { Scan } from "./types";
+
+const counts = { defects: 2, obstructions: 0, entrances: 0, entrances_with_steps: 0, needs_review: 21,
+  field_check: 0, verified: 0, rejected: 0, dropped: null };
+const scan = {
+  id: 4, standard: "US", km: 0.94, usd_per_km: 4.11, cost_usd: 3.87, processing_seconds: 1152, review_seconds: 0,
+  image_count: 181, captured_from: "2022-08-30", captured_to: "2022-08-30", status: "done", counts,
+  items: [{ id: "curb_ramp", target: "curb ramp", map_icon: "ramp", kind: "check", inventory: false },
+    { id: "street_tree", target: "street tree", map_icon: "tree", kind: "check", inventory: true }],
+  city_check: { city: "Seattle", measured_at: "2026-10-28", method_url: "https://example.org/method",
+    items: { street_tree: { found: 19, covered: 39, matched_ids: [] } } },
+} as unknown as Scan;
+
+const finding = (id: number, item: string, status = "auto", badge: Finding["badge"] = null): Finding => ({
+  key: `issue:${id}`, item, lat: 47.61, lng: -122.32, heading: 0, box: [873, 0, 1000, 567], status, badge,
+  title: item === "street_tree" ? "Street tree" : "Curb ramp without detectable warning",
+  picked: { kind: "issue", item: { id, durable: false, captured_at: "2022-08-30T23:02:56Z",
+    evidence: { url: `/api/evidence/scan4_issue${id}.jpg` } } } as unknown as Finding["picked"],
+});
+const findings = [finding(1, "curb_ramp", "needs_review", "defect"), finding(2, "curb_ramp", "needs_review", "defect"),
+  ...Array.from({ length: 12 }, (_, i) => finding(10 + i, "street_tree", i === 0 ? "field_check" : "auto", i === 0 ? "site" : null))];
+
+describe("the finished survey", () => {
+  const html = renderToStaticMarkup(
+    <ResultsPanel scan={scan} name="Capitol Hill" findings={findings} hidden={new Set(["curb_ramp"])}
+      onToggle={() => undefined} onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined} />);
+  it("leads with the cost per km, then one row per item with its city share, then a person's part and the files", () => {
+    expect(html).toContain("$4.11");
+    expect(html).toContain("per km");
+    expect(html).toContain("0.94 km in 19.2 min · $3.87 in all");
+    expect(html).toContain("On foot: $106 per km, Seattle&#x27;s 2017 sidewalk survey");
+    expect(html).toContain("14 findings");
+    expect(html).toContain("Curb ramp");
+    expect(html).toContain("No city list to compare · 2 possible defects");
+    expect(html).toContain("19 of 39 in the city&#x27;s list · 1 to check on site");
+    expect(html).toContain("21 the models were unsure of are waiting for a person.");
+    expect(html).toContain("Download for a GIS");
+  });
+  it("lets an item be hidden from its row, and drops the numbered steps and chips", () => {
+    expect(html).toContain('aria-label="Show Curb ramp on the map"');
+    expect(html).toContain('aria-label="Hide Street tree on the map"');
+    expect(html).not.toContain("step-n");
+    expect(html).not.toContain("Browse all");
+  });
+});
+
+describe("one item's findings", () => {
+  const trees = findings.filter((f) => f.item === "street_tree");
+  const html = renderToStaticMarkup(
+    <FindingList scan={scan} item="street_tree" findings={trees} streets={{ "issue:10": "E Pike St, near 11th Ave" }}
+      selectedKey={null} onPick={() => undefined} onBack={() => undefined} />);
+  it("lists each finding with its street, photo month, status and a thumbnail centred on the box", () => {
+    expect(html).toContain("← All findings");
+    expect(html).toContain("Street tree");
+    expect(html).toContain("E Pike St, near 11th Ave");
+    expect(html).toContain("Photo 2022-08");
+    expect(html).toContain("Check on site");
+    expect(html).toContain("object-position:93.7% 28.4%");
+  });
+  it("shows ten at first, then the rest on request, with the photos credited", () => {
+    expect(html).toContain("Show 2 more");
+    expect(html).toContain("Photos: Mapillary contributors, CC BY-SA 4.0");
+  });
+});

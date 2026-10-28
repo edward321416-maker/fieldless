@@ -5,10 +5,8 @@ import type { Feature, FeatureCollection } from "geojson";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { bboxFromCorners, bboxPolygon, viewToBbox } from "./bbox";
 import { destination, distanceToLineM, targetBearing, viewWedge, type LngLat } from "./geo";
-import { colourOf, itemName, slotOf, STATUS_SENTENCE, type Badge, type Finding } from "./items";
-import Legend from "./Legend";
-import { markerCanvas, markerName, RATIO, ringCanvas } from "./markerArt";
-import { RING_SLOTS, ringCounts } from "./ring";
+import { colourOf, DEFECT_RED, itemName, SITE_ORANGE, STATUS_SENTENCE, type Finding } from "./items";
+import { markerCanvas, markerName, RATIO } from "./markerArt";
 import { namedRoads, streetText } from "./streets";
 import type { Bbox, ItemMeta, Walk } from "./types";
 
@@ -26,10 +24,12 @@ const START: [number, number] = [127.0571, 37.5484]; // Seongsu street_b, where 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 const TARGET_M = 10; // the object is drawn this far along its bearing: the distance is not measured (approximate)
 const ACCENT = "#1d4ed8";
-// A cluster's ring image, named by its count per palette slot: "ring:2,0,1,0,0,0,1,0" (ring.ts ringName).
-const RING_IMAGE = ["concat", "ring:", ...Array.from({ length: RING_SLOTS }, (_, i) =>
-  i === 0 ? ["to-string", ["get", "s0"]] : ["concat", ",", ["to-string", ["get", `s${i}`]]])] as unknown as
-  maplibregl.ExpressionSpecification;
+// Below this zoom each finding is a dot of its item's colour; from it on, the icon marker (docs/ui-rules.md U3).
+const ICON_ZOOM = 18;
+const DIMMED = "#CBD5E1"; // the dots of the items not opened
+// A dot's border says whether a person has something to do, in the badge's colours (U3).
+const DOT_STROKE = ["match", ["get", "badge"], "defect", DEFECT_RED, "site", SITE_ORANGE, "review", "#374151", "#ffffff"] as
+  unknown as maplibregl.ExpressionSpecification;
 
 interface Props {
   selecting: boolean;
@@ -42,8 +42,8 @@ interface Props {
   findings: Finding[];
   items: ItemMeta[];
   hidden: Set<string>;
-  onToggleItem: (item: string) => void;
-  onShowAll: () => void;
+  focusItem: string | null; // an item opened in the panel: its findings in colour, the others grey
+  padLeft: number; // what covers the map's left on a wide screen when fitting (the introduction's photo)
   walks: Walk[];
   selected: Finding | null;
   selectedLabel: string;
@@ -106,7 +106,6 @@ export default function MapView(props: Props) {
   const label = useRef<maplibregl.Popup | null>(null);
   const [loaded, setLoaded] = useState(false);
   const latest = useRef(props);
-  const findingsData = useRef<FeatureCollection>(EMPTY); // what the findings source holds, to lay it out again
   latest.current = props;
 
   useEffect(() => {
@@ -120,10 +119,7 @@ export default function MapView(props: Props) {
       map.addSource("walks", { type: "geojson", data: EMPTY });
       map.addSource("area", { type: "geojson", data: areaData(latest.current.bbox) });
       map.addSource("selection", { type: "geojson", data: EMPTY });
-      // Each cluster counts its findings per palette slot, so its ring shows the items inside (design pass 2).
-      map.addSource("findings", { type: "geojson", data: EMPTY, cluster: true, clusterRadius: 12, clusterMaxZoom: 17,
-        clusterProperties: Object.fromEntries(Array.from({ length: RING_SLOTS }, (_, i) =>
-          [`s${i}`, ["+", ["case", ["==", ["get", "slot"], i], 1, 0]]])) });
+      map.addSource("findings", { type: "geojson", data: EMPTY });
       map.addLayer({ id: "walks", type: "line", source: "walks", layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": "#475569", "line-width": 4, "line-opacity": 0.7 } });
       map.addLayer({ id: "walk-picked", type: "line", source: "walks", filter: ["==", ["get", "clip"], -1],
@@ -134,15 +130,12 @@ export default function MapView(props: Props) {
         paint: { "fill-color": ACCENT, "fill-opacity": 0.18 } });
       map.addLayer({ id: "sel-ray", type: "line", source: "selection", filter: ["==", ["get", "part"], "ray"],
         paint: { "line-color": "#111827", "line-width": 2, "line-dasharray": [2, 2] } });
-      map.addLayer({ id: "clusters", type: "symbol", source: "findings", filter: ["has", "point_count"],
-        layout: {
-          "icon-image": RING_IMAGE,
-          "icon-allow-overlap": true, "icon-ignore-placement": true,
-          "text-field": ["get", "point_count_abbreviated"], "text-font": ["Noto Sans Bold"], "text-size": 13,
-          "text-allow-overlap": true, "text-ignore-placement": true,
-        },
-        paint: { "text-color": "#111827" } });
-      map.addLayer({ id: "findings", type: "symbol", source: "findings", filter: ["!", ["has", "point_count"]],
+      // Far out, dots (Project Sidewalk's label map); near, the icon markers (docs/ui-rules.md U3).
+      map.addLayer({ id: "findings-dot", type: "circle", source: "findings", maxzoom: ICON_ZOOM,
+        layout: { "circle-sort-key": ["get", "order"] },
+        paint: { "circle-radius": 5, "circle-color": ["get", "colour"], "circle-stroke-color": DOT_STROKE,
+          "circle-stroke-width": ["case", ["==", ["get", "badge"], "none"], 1.5, 2] } });
+      map.addLayer({ id: "findings", type: "symbol", source: "findings", minzoom: ICON_ZOOM,
         layout: { "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true,
           "symbol-sort-key": ["get", "order"] } });
       map.addLayer({ id: "sel-camera", type: "circle", source: "selection", filter: ["==", ["get", "part"], "camera"],
@@ -152,24 +145,8 @@ export default function MapView(props: Props) {
           "icon-ignore-placement": true } });
       setLoaded(true);
     });
-    let relayout = 0;
-    // An image the map asks for but nobody added yet (a cluster's ring, a style reload): draw it from its name.
+    // An image the map asks for but nobody added yet (a style reload): draw it from its name.
     map.on("styleimagemissing", (e: { id: string }) => {
-      const ring = ringCounts(e.id);
-      if (ring) {
-        if (map.hasImage(e.id)) return;
-        const c = ringCanvas(ring);
-        map.addImage(e.id, c.getContext("2d")!.getImageData(0, 0, c.width, c.height), { pixelRatio: RATIO });
-        // A cluster's mix is known only once the tile is laid out, after the image was asked for: lay the findings
-        // out once more so the new rings are drawn (otherwise only the count shows).
-        if (!relayout) {
-          relayout = window.setTimeout(() => {
-            relayout = 0;
-            (map.getSource("findings") as maplibregl.GeoJSONSource | undefined)?.setData(findingsData.current);
-          }, 50);
-        }
-        return;
-      }
       const [, itemId, badge] = e.id.split(":");
       if (!itemId || map.hasImage(e.id)) return;
       const { items } = latest.current;
@@ -178,19 +155,13 @@ export default function MapView(props: Props) {
         badge === "none" ? null : (badge as Finding["badge"]));
       map.addImage(e.id, c.getContext("2d")!.getImageData(0, 0, c.width, c.height), { pixelRatio: RATIO });
     });
-    map.on("click", "findings", (e) => {
+    const FINDING_LAYERS = ["findings-dot", "findings"];
+    map.on("click", FINDING_LAYERS, (e) => {
       const key = e.features?.[0]?.properties?.key as string | undefined;
       const f = latest.current.findings.find((x) => x.key === key);
       if (f) latest.current.onPick(f);
     });
-    map.on("click", "clusters", async (e) => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      const source = map.getSource("findings") as maplibregl.GeoJSONSource;
-      const zoom = await source.getClusterExpansionZoom(feature.properties?.cluster_id);
-      map.easeTo({ center: (feature.geometry as GeoJSON.Point).coordinates as [number, number], zoom });
-    });
-    map.on("mousemove", "findings", (e) => {
+    map.on("mousemove", FINDING_LAYERS, (e) => {
       map.getCanvas().style.cursor = "pointer";
       const key = e.features?.[0]?.properties?.key as string | undefined;
       const f = latest.current.findings.find((x) => x.key === key);
@@ -202,12 +173,10 @@ export default function MapView(props: Props) {
       const el = hover.getElement();
       el.querySelector("strong")!.textContent = text; // text, never HTML: names come from the data
     });
-    map.on("mouseleave", "findings", () => {
+    map.on("mouseleave", FINDING_LAYERS, () => {
       map.getCanvas().style.cursor = "";
       hover.remove();
     });
-    map.on("mouseenter", "clusters", () => (map.getCanvas().style.cursor = "pointer"));
-    map.on("mouseleave", "clusters", () => (map.getCanvas().style.cursor = ""));
     // Street names come from the road-name tiles once the survey area is on screen.
     map.on("idle", () => nameStreets(map));
 
@@ -311,7 +280,7 @@ export default function MapView(props: Props) {
     }
   }, [props.areaLabel, props.bbox, loaded]);
 
-  // The markers: one image per item and badge, a source of the findings not hidden by the legend.
+  // The markers: one image per item and badge, a source of the findings not hidden in the panel.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
@@ -323,14 +292,13 @@ export default function MapView(props: Props) {
       const c = markerCanvas(colourOf(f.item, props.items), meta?.map_icon ?? "", meta?.target ?? f.item, f.badge);
       map.addImage(name, c.getContext("2d")!.getImageData(0, 0, c.width, c.height), { pixelRatio: RATIO });
     }
-    findingsData.current = {
+    (map.getSource("findings") as maplibregl.GeoJSONSource).setData({
       type: "FeatureCollection",
       features: shown.map((f) => point([f.lng, f.lat], {
-        key: f.key, icon: markerName(f.item, f.badge), order: f.badge ? 1 : 0, // markers with a badge draw on top
-        slot: slotOf(f.item, props.items),
+        key: f.key, item: f.item, icon: markerName(f.item, f.badge), order: f.badge ? 1 : 0, // badges draw on top
+        colour: colourOf(f.item, props.items), badge: f.badge ?? "none",
       })),
-    };
-    (map.getSource("findings") as maplibregl.GeoJSONSource).setData(findingsData.current);
+    });
     streetsRef.current = Object.fromEntries(Object.entries(streetsRef.current)
       .filter(([k]) => props.findings.some((f) => f.key === k)));
     nameStreets(map);
@@ -346,6 +314,29 @@ export default function MapView(props: Props) {
     });
   }, [props.walks, loaded]);
 
+  // An item opened in the panel: its dots keep their colour, the others go grey (docs/ui-rules.md U4).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    const focus = props.focusItem;
+    map.setPaintProperty("findings-dot", "circle-color",
+      focus ? ["case", ["==", ["get", "item"], focus], ["get", "colour"], DIMMED] : ["get", "colour"]);
+    map.setPaintProperty("findings-dot", "circle-stroke-color",
+      focus ? ["case", ["==", ["get", "item"], focus], DOT_STROKE, "#ffffff"] : DOT_STROKE);
+  }, [props.focusItem, loaded]);
+
+  // Opacity: a selected finding dims all the others; an opened item dims the other items' icons.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    const key = props.selected?.key ?? "";
+    const focus = props.focusItem;
+    map.setPaintProperty("findings-dot", "circle-opacity", key ? 0.35 : 1);
+    map.setPaintProperty("findings-dot", "circle-stroke-opacity", key ? 0.35 : 1);
+    map.setPaintProperty("findings", "icon-opacity",
+      key ? 0.35 : focus ? ["case", ["==", ["get", "item"], focus], 1, 0.3] : 1);
+  }, [props.selected?.key, props.focusItem, loaded]);
+
   // The selected finding: bigger, the others dimmed, its photo's place, view and direction, and a name tag.
   useEffect(() => {
     const map = mapRef.current;
@@ -353,8 +344,7 @@ export default function MapView(props: Props) {
     const f = props.selected;
     const key = f?.key ?? "";
     // the selected marker moves to the selection layer; the others dim
-    map.setFilter("findings", ["all", ["!", ["has", "point_count"]], ["!=", ["get", "key"], key]]);
-    map.setPaintProperty("findings", "icon-opacity", key ? 0.35 : 1);
+    for (const layer of ["findings-dot", "findings"]) map.setFilter(layer, ["!=", ["get", "key"], key]);
     const { data, at, bearing } = selectionData(f);
     (map.getSource("selection") as maplibregl.GeoJSONSource).setData(data);
     map.setFilter("walk-picked", ["==", ["get", "clip"], nearestWalk(f, props.walks) ?? -1]);
@@ -374,25 +364,15 @@ export default function MapView(props: Props) {
     const b = props.fitTo;
     const map = mapRef.current;
     if (!b || !map) return;
-    // On a wide screen the legend (or the new survey guide) covers the map's left 360 px: keep the streets clear of it.
+    // On a wide screen what sits over the map's left (the introduction's photo) is kept clear of the streets.
     const wide = map.getContainer().clientWidth > 800;
     map.fitBounds([[b[0], b[1]], [b[2], b[3]]],
-      { padding: wide ? { top: 48, bottom: 48, left: 370, right: 48 } : 48, duration: 0 });
+      { padding: wide ? { top: 48, bottom: 48, left: Math.max(48, latest.current.padLeft), right: 48 } : 48, duration: 0 });
   }, [props.fitTo]);
 
-  const counts = new Map<string, number>();
-  const badges = new Set<Badge>();
-  for (const f of props.findings) {
-    counts.set(f.item, (counts.get(f.item) ?? 0) + 1);
-    if (f.badge && !props.hidden.has(f.item)) badges.add(f.badge);
-  }
   return (
     <div className="map-wrap">
       <div ref={container} className="map" role="region" aria-label="Survey map" />
-      {props.findings.length > 0 && (
-        <Legend items={props.items} counts={counts} badges={badges} hidden={props.hidden} onToggle={props.onToggleItem}
-          onShowAll={props.onShowAll} />
-      )}
       {props.children}
     </div>
   );

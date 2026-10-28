@@ -8,12 +8,14 @@ import DemoNotice from "./DemoNotice";
 import IntroPanel, { IntroMapKey } from "./IntroPanel";
 import { startsWithIntro } from "./intro";
 import EvidenceCard from "./EvidenceCard";
+import FindingList from "./FindingList";
 import { isFinished } from "./format";
 import { findingsOf, itemName, keyOf, type Finding } from "./items";
 import { itemArt } from "./markerArt";
 import MapView from "./MapView";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
+import { reviewProgress } from "./summary";
 import type { Bbox, DemoArea, Entrance, Issue, Picked, Scan, ServerConfig, Walk } from "./types";
 
 const POLL_MS = 3000;
@@ -38,6 +40,7 @@ export default function App() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [walks, setWalks] = useState<Walk[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [openItem, setOpenItem] = useState<string | null>(null); // an item's findings, listed in the panel
   const [streets, setStreets] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<Picked | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -137,6 +140,7 @@ export default function App() {
   function openScan(id: number) {
     setPicked(null);
     setReviewing(false);
+    setOpenItem(null);
     setError(null);
     if (id === scanId) return; // already open: keep its results on screen
     setEntrances([]);
@@ -159,6 +163,7 @@ export default function App() {
     setIntro(true);
     setPicked(null);
     setReviewing(false);
+    setOpenItem(null);
     setNewSurvey(false);
     setSelecting(false);
     if (demos.length > 0) openScan(demos[0].scan_id);
@@ -206,6 +211,8 @@ export default function App() {
 
   const sameItem = selected ? findings.filter((f) => f.item === selected.item) : [];
   const cardList = reviewing ? findings : sameItem;
+  const backLabel = reviewing ? "← Stop reviewing"
+    : selected ? `← ${itemName(selected.item, items)} (${sameItem.length})` : "";
 
   function startReview() {
     const first = findings.find((f) => f.status === "needs_review");
@@ -232,22 +239,21 @@ export default function App() {
             Fieldless
           </button>
         </h1>
-        <p className="tagline">Street surveys without the fieldwork</p>
         {demos.length > 0 && (
-          <nav className="area-tabs" aria-label="Example surveys">
-            <span className="tabs-label">Examples:</span>
-            {demos.map((d) => (
-              <button key={d.scan_id} type="button"
-                aria-current={d.scan_id === scanId && !newSurvey && !intro ? "page" : undefined}
-                onClick={() => {
-                  setIntro(false);
-                  setNewSurvey(false);
-                  openScan(d.scan_id);
-                }}>
-                {d.name}
-              </button>
-            ))}
-          </nav>
+          // One picker for the example surveys, as Project Sidewalk picks its city (docs/specs/2026-10-29-cleanup-design.md 2)
+          <label className="example-picker">
+            <span className="visually-hidden">Example survey</span>
+            <select value={intro || newSurvey || !demos.some((d) => d.scan_id === scanId) ? "" : String(scanId)}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setIntro(false);
+                setNewSurvey(false);
+                openScan(Number(e.target.value));
+              }}>
+              <option value="" disabled>Examples</option>
+              {demos.map((d) => <option key={d.scan_id} value={d.scan_id}>Example: {d.name}</option>)}
+            </select>
+          </label>
         )}
         {!STATIC_DEMO && (
           <button type="button" className="primary new-survey" aria-expanded={newSurvey}
@@ -270,8 +276,8 @@ export default function App() {
         findings={intro || newSurvey ? [] : findings}
         items={items}
         hidden={hidden}
-        onToggleItem={toggleItem}
-        onShowAll={() => setHidden(new Set())}
+        focusItem={intro || newSurvey ? null : openItem}
+        padLeft={intro ? 370 : 0}
         walks={newSurvey ? previewWalks : walks}
         selected={intro || newSurvey ? null : selected}
         selectedLabel={selectedLabel}
@@ -286,8 +292,7 @@ export default function App() {
             onGo={(b) => setFitTo([b[0], b[1], b[2], b[3]])} />
         )}
         {selected && !newSurvey && !intro && (
-          <PhotoWindow finding={selected} list={sameItem} items={items} onStep={(f) => setPicked(f.picked)}
-            onClose={() => setPicked(null)} />
+          <PhotoWindow finding={selected} items={items} onClose={() => setPicked(null)} />
         )}
       </MapView>
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
@@ -301,7 +306,8 @@ export default function App() {
         )}
         <div ref={detailRef}>
           {selected && !newSurvey && !intro && (
-            <EvidenceCard finding={selected} list={cardList} queue={reviewing} items={items}
+            <EvidenceCard finding={selected} list={cardList} queue={reviewing} items={items} backLabel={backLabel}
+              progress={reviewing && scan ? reviewProgress(scan.counts) : undefined}
               checks={scan?.checks ?? []} photoOnMap={wide && !!selected.picked.item.evidence}
               street={streets[selected.key]} city={scan?.city_check}
               onNavigate={(f) => setPicked(f.picked)} onUpdated={updated}
@@ -328,14 +334,19 @@ export default function App() {
             onPreview={(p) => setPreviewWalks((p?.walks ?? []).map((points, clip) => ({ clip, points })))}
           />
         )}
-        {scan && finished && !newSurvey && !intro && (
+        {/* One thing at a time: a finding's card, else an item's findings, else the survey (cleanup design 2). */}
+        {scan && finished && !newSurvey && !intro && !selected && openItem && (
+          <FindingList scan={scan} item={openItem} findings={findings.filter((f) => f.item === openItem)}
+            streets={streets} selectedKey={null} onPick={(f) => pick(f.picked)} onBack={() => setOpenItem(null)} />
+        )}
+        {scan && finished && !newSurvey && !intro && !selected && !openItem && (
           <ResultsPanel
             scan={scan}
             name={demos.find((d) => d.scan_id === scan.id)?.name ?? null}
             findings={findings}
-            streets={streets}
-            selectedKey={selected?.key ?? null}
-            onPick={(f) => pick(f.picked)}
+            hidden={hidden}
+            onToggle={toggleItem}
+            onOpenItem={setOpenItem}
             onReview={startReview}
             onIntro={goIntro}
           />
