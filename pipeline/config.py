@@ -44,7 +44,8 @@ DAILY_COST_CAP_USD = 10.0
 # Cost per 100 photos, measured 2026-10-27/28. The stages every scan runs: Seongsu $0.91, Myeongdong $0.93, Seattle
 # $0.56 (the highest is used). Each photo check of a standard adds SAM on every 2nd photo, Spark on each pick and the
 # blur of its evidence: Seattle scan 3, curb ramps $0.27, street assets $0.32 each. A US scan with five checks cost
-# $2.09 per 100 photos; this estimate says $2.48, erring high so a scan stays inside its cap.
+# $2.09 per 100 photos; this estimate says $2.48, erring high so a scan stays inside its cap. Poles and trees in 8 m
+# pieces (2026-10-28) add about 36 picks a scan, about $0.30 per 100 photos: still under the estimate.
 EST_USD_PER_100_PHOTOS = 0.93
 EST_USD_PER_100_PHOTOS_PER_CHECK = 0.31
 PARALLEL_REQUESTS = 6
