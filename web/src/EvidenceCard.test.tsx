@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import Attribution from "./Attribution";
-import { PhotoCredit, tagPlace, zoomTransform } from "./Photo";
+import { PhotoCredit, tagOverflows, tagPlace, zoomTransform } from "./Photo";
 import { choiceForKey, choicesFor } from "./review";
 import type { Issue } from "./types";
 
@@ -67,9 +67,10 @@ describe("the card", () => {
 });
 
 describe("the box's tag", () => {
-  it("stays inside the photo: under the top edge, and ending at the box on the right side", () => {
-    expect(tagPlace([100, 300, 200, 500])).toEqual({ inside: false, right: false });
-    expect(tagPlace([700, 300, 800, 500])).toEqual({ inside: false, right: true });
-    expect(tagPlace([100, 0, 200, 900])).toEqual({ inside: true, right: false });
+  it("stays inside the photo: under the top edge, and ending at the box when it would run past the right", () => {
+    expect(tagPlace([100, 300, 200, 500])).toEqual({ inside: false });
+    expect(tagPlace([100, 0, 200, 900])).toEqual({ inside: true });
+    expect(tagOverflows(420, 400)).toBe(true); // issue 136 on a phone: x1 = 577, a long tag
+    expect(tagOverflows(400.3, 400)).toBe(false);
   });
 });

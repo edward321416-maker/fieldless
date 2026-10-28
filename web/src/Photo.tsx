@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { photoMonth } from "./format";
 import { isLight } from "./items";
 import type { Evidence } from "./types";
@@ -45,10 +45,14 @@ interface Props {
   large?: boolean;
 }
 
-// The tag goes above the box, or inside it at the top when the box touches the photo's top edge, and it ends at
-// the box's right edge when the box is in the right part of the photo, so it is never cut off.
-export function tagPlace(box: number[]): { inside: boolean; right: boolean } {
-  return { inside: box[1] < 60, right: box[0] > 600 };
+// The tag goes above the box, or inside it at the top when the box touches the photo's top edge. It starts at the
+// box's left edge unless it would run past the photo's right edge: then it ends at the box's right edge.
+export function tagPlace(box: number[]): { inside: boolean } {
+  return { inside: box[1] < 60 };
+}
+
+export function tagOverflows(tagRight: number, frameRight: number): boolean {
+  return tagRight > frameRight + 0.5;
 }
 
 // The evidence photo with the model's box drawn on it, and "Zoom to box" for an object photographed from afar
@@ -56,16 +60,27 @@ export function tagPlace(box: number[]): { inside: boolean; right: boolean } {
 export function EvidencePhoto({ evidence, box, boxLabel, colour, alt, large = false }: Props) {
   const [zoom, setZoom] = useState(false);
   const zoomed = zoom && box !== null;
+  const frame = useRef<HTMLDivElement>(null);
+  const tag = useRef<HTMLSpanElement>(null);
+  const boxKey = `${box?.join(",")}|${boxLabel}`;
+  const [flip, setFlip] = useState<{ key: string; right: boolean }>({ key: "", right: false });
+  // Measured once per box, with the tag at the box's left edge: does it run past the photo?
+  useLayoutEffect(() => {
+    if (flip.key === boxKey || !tag.current || !frame.current) return;
+    const right = tagOverflows(tag.current.getBoundingClientRect().right, frame.current.getBoundingClientRect().right);
+    setFlip({ key: boxKey, right });
+  });
+  const alignRight = flip.key === boxKey && flip.right;
   return (
     <figure className={`photo${large ? " photo-large" : ""}`}>
-      <div className="photo-frame">
+      <div className="photo-frame" ref={frame}>
         <div className="photo-inner" style={zoomed ? { transform: zoomTransform(box!) } : undefined}>
           <img src={evidence.url} alt={alt} />
           {box && (
             <div className="photo-box" style={{ left: `${box[0] / 10}%`, top: `${box[1] / 10}%`,
               width: `${(box[2] - box[0]) / 10}%`, height: `${(box[3] - box[1]) / 10}%`, borderColor: colour }}>
               {!zoomed && (
-                <span className={`photo-box-label${tagPlace(box).inside ? " tag-inside" : ""}${tagPlace(box).right ? " tag-right" : ""}`}
+                <span ref={tag} className={`photo-box-label${tagPlace(box).inside ? " tag-inside" : ""}${alignRight ? " tag-right" : ""}`}
                   style={{ background: colour, color: isLight(colour) ? "#111827" : "#ffffff" }}>
                   {boxLabel}
                 </span>
