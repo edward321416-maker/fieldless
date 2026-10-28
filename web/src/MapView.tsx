@@ -274,7 +274,8 @@ export default function MapView(props: Props) {
     const map = mapRef.current;
     if (!map || !loaded) return;
     if (props.coverage && !map.getSource("coverage")) {
-      map.addSource("coverage", { type: "vector", minzoom: 6, maxzoom: 14,
+      // The server serves zooms 6-13 (a zoom 14 tile holds every photo as a point, megabytes); MapLibre overzooms 13.
+      map.addSource("coverage", { type: "vector", minzoom: 6, maxzoom: 13,
         tiles: [`${window.location.origin}/api/mapillary/tiles/{z}/{x}/{y}`] });
       map.addLayer({ id: "coverage", type: "line", source: "coverage", "source-layer": "sequence",
         filter: ["!=", ["get", "is_pano"], true], layout: { "line-cap": "round", "line-join": "round" },
