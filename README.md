@@ -1,8 +1,10 @@
 # Fieldless
 
-**Street surveys without the fieldwork.** Cities still survey their streets on foot, one block at a time. Fieldless does the first pass from street photos that already exist on Mapillary. It records what it finds with an evidence photo for each item, and a surveyor only confirms. The point is speed and cost: how long a street survey takes on foot, and what it costs per kilometer, compared with Fieldless.
+**Street surveys without the fieldwork.** Cities still send people to walk every block to survey their streets: where the street lights, trees and bins are, which curb ramps lack a warning surface, which shops have steps. Fieldless does the first pass from street photos that already exist on Mapillary. Pick an area, and it records each survey item with an evidence photo, so a surveyor only confirms. The point is speed and cost: weeks of walking against minutes of processing and review, at a few dollars per kilometer.
 
-Today it surveys sidewalks (tactile paving with missing blocks or cut by a cover, fixed objects standing on it, objects blocking it) and the steps at shop entrances. It is built on Meta's Mapillary imagery, SAM 3.1 and Muse Spark.
+One survey covers street assets (utility and streetlight poles, street trees, public litter cans, parking pay stations), a condition (curb ramps without a detectable warning surface) and records (steps at shop entrances, objects blocking the walkway). The same tool runs on Korean rules in Seoul. It is built on Meta's Mapillary imagery, SAM 3.1, Muse Spark and Muse Spark Open, with Muse Glimmer, served on Modal, for large runs.
+
+Live app: https://edward321416--fieldless-web.us-east.modal.run (start your own survey; spend is capped) · Read-only demo: https://huggingface.co/spaces/BBONG1201/fieldless (surveys already run).
 
 This is a work in progress for the Meta Global AI Developer Hackathon. The full README, with measured results, comes with the submission. The repository folder and code keep the earlier working name `threshold`.
 
