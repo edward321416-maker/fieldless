@@ -222,11 +222,12 @@ def video_picks(texts: dict[int, str | None], videos: dict[int, Video],
 
 def find_areas(api, check: Check, idxs: list[int], photos: dict[int, Path], workers: int,
                known: dict[int, int] | None = None) -> dict[int, int | None]:
-    """Largest confident mask area of the check's `find` per photo: 0 when not found, None when the request failed.
-    Photos in `known` (areas measured earlier for this same `find`) are not asked again."""
+    """Largest confident box area of the check's `find` per photo (boxes only: sam_output.boxes): 0 when not found,
+    None when the request failed. Photos in `known` (areas measured earlier for this same `find`) are not asked
+    again."""
     def one(idx):
         try:
-            segs = confident(parse(api.sam_image(check.find, photos[idx]), video=False))
+            segs = confident(parse(api.sam_image(check.find, photos[idx]), video=False, masks=False))
         except CostCapReached:
             raise
         except Exception:

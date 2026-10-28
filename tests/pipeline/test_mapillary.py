@@ -144,3 +144,15 @@ def test_download_writes_on_200_and_reports_failure(monkeypatch, tmp_path):
     assert (tmp_path / "a.jpg").read_bytes() == b"jpegbytes"
     assert not mapillary.download("https://x/gone.jpg", tmp_path / "b.jpg")
     assert not mapillary.download(None, tmp_path / "c.jpg")
+
+
+def test_a_coverage_tile_is_fetched_with_the_token_and_an_empty_one_is_none(offline, monkeypatch):
+    tiles = {"14/2620/5720": (200, b"\x1a\x02tile"), "14/1/1": (204, b""), "14/2/2": (500, "MLY|secret-token down")}
+    calls = respond(monkeypatch, lambda url, params: tiles["/".join(url.rsplit("/", 3)[1:])])
+    assert mapillary.coverage_tile(14, 2620, 5720) == b"\x1a\x02tile"
+    assert calls[0] == ("https://tiles.mapillary.com/maps/vtp/mly1_public/2/14/2620/5720",
+                        {"access_token": "MLY|secret-token"})
+    assert mapillary.coverage_tile(14, 1, 1) is None
+    with pytest.raises(mapillary.MapillaryError) as err:
+        mapillary.coverage_tile(14, 2, 2)
+    assert "secret-token" not in str(err.value)

@@ -7,7 +7,7 @@ from pathlib import Path
 from pipeline import events
 from pipeline.cost import CostCapReached
 from pipeline.parallel import run_parallel
-from pipeline.sam_output import Seg, check_frames, confident, parse
+from pipeline.sam_output import Seg, check_frames, confident, parse_away
 from pipeline.scene import Chunk
 from pipeline.survey_items import PathSpec
 
@@ -25,7 +25,7 @@ def surface_segs(api, phrase: str, idxs: list[int], photos: dict[int, Path],
     marks a photo whose request failed."""
     def one(idx):
         try:
-            return confident(parse(api.sam_image(phrase, photos[idx]), video=False))
+            return confident(parse_away(api.sam_image(phrase, photos[idx]), video=False))
         except CostCapReached:
             raise
         except Exception:
@@ -49,7 +49,7 @@ def obstacle_segs(api, chunk: Chunk, labels: list[str], workers: int = 1) -> dic
     labels are asked at once (up to workers) on one upload of the chunk."""
     def one(file_id, label):
         try:
-            segs = confident(parse(api.sam_video(label, file_id, frames=len(chunk.idxs)), video=True))
+            segs = confident(parse_away(api.sam_video(label, file_id, frames=len(chunk.idxs)), video=True))
             check_frames(segs, len(chunk.idxs))
         except CostCapReached:
             raise

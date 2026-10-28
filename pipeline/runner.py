@@ -305,7 +305,7 @@ def _run_check(s: Scan, check, clips, photos, by_idx, judge=None, dropped: list[
     if kept.exists():
         try:
             saved = json.loads(kept.read_text(encoding="utf-8"))
-            if saved.get("phrase") == check.find:
+            if saved.get("phrase") == check.find and saved.get("measure") == "box":  # earlier files hold mask areas
                 known = {int(i): a for i, a in saved["areas"].items()}
         except (ValueError, KeyError, AttributeError):
             known = {}  # a half-written file: measure again
@@ -313,7 +313,8 @@ def _run_check(s: Scan, check, clips, photos, by_idx, judge=None, dropped: list[
         return survey_checks.run_check(s.api, check, clips, photos, by_idx, s.workers, known=known, judge=judge,
                                        audit_seed=s.scan_id, dropped=dropped)
     finally:
-        kept.write_text(json.dumps({"phrase": check.find, "areas": {str(i): a for i, a in known.items()}}),
+        kept.write_text(json.dumps({"phrase": check.find, "measure": "box",
+                                    "areas": {str(i): a for i, a in known.items()}}),
                         encoding="utf-8")
 
 

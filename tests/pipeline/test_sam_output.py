@@ -84,3 +84,27 @@ def test_parse_can_keep_only_the_boxes():
     answer = text([line(0, [record("0", 10, 20, 50, 60, 100, 100, 0.9)])])
     (seg,) = parse(answer, video=True, masks=False)
     assert seg.mask is None and seg.box == (10, 20, 50, 60) and seg.area == 40 * 40
+
+
+def test_boxes_read_fast_match_the_parser():
+    answer = text([line(0, [record("1", 10, 20, 50, 60, 100, 100, 0.9), record("12", 0, 0, 5, 5, 100, 100, 0.3)]),
+                   line(3, [record("2", 1, 2, 3, 4, 100, 100, 0.7)])])
+    image = text([line(0, [record("1", 10, 20, 50, 60, 100, 100, 0.9)])])
+    for answer, video in ((answer, True), (image, False)):
+        slow = [(s.frame, s.obj, s.box, round(s.conf, 4)) for s in parse(answer, video=video)]
+        fast = [(s.frame, s.obj, s.box, round(s.conf, 4)) for s in parse(answer, video=video, masks=False)]
+        assert fast == slow
+    with pytest.raises(ValueError, match="malformed box"):
+        parse("<0f>1<|box;x1=1;y1=2;w=9;h=9|><|mask;x=0;y=0|>\n", video=False, masks=False)
+
+
+def test_a_large_answer_is_decoded_in_another_process_with_the_same_result(monkeypatch):
+    from pipeline import sam_output
+    monkeypatch.setattr(sam_output, "PARSE_PROCESSES", 2)
+    monkeypatch.setattr(sam_output, "POOL_MIN_CHARS", 0)
+    answer = text([line(0, [record("1", 10, 20, 50, 60, 100, 100, 0.9)])])
+    (away,) = sam_output.parse_away(answer, video=False)
+    (here,) = parse(answer, video=False)
+    assert away.box == here.box and away.conf == here.conf and (away.mask == here.mask).all()
+    with pytest.raises(ValueError):
+        sam_output.parse_away("<0f>1<|box;x1=1|><|mask;x=0;y=0;data=1,1,!!|>\n", video=False)

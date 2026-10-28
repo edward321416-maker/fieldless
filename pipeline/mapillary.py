@@ -79,6 +79,29 @@ def _retrying(request, retry_5xx: bool = True) -> httpx.Response:
     raise RuntimeError("unreachable")
 
 
+# Mapillary's public coverage tiles (Mapbox vector tiles). Zooms 6-13 hold only the "sequence" layer; zoom 14 adds
+# every photo as a point (Capitol Hill: 9.2 MB against 0.94 MB at zoom 13, 2026-10-28), so the map draws closer
+# zooms from the zoom 13 tile.
+COVERAGE_TILE_URL = "https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}"
+COVERAGE_ZOOMS = range(6, 14)
+
+
+def coverage_tile(z: int, x: int, y: int) -> bytes | None:
+    """One coverage tile, fetched with this server's token; None when Mapillary has no tile there. Raises
+    MapillaryError (token scrubbed) when the request fails."""
+    token = config.mapillary_token()
+    url = COVERAGE_TILE_URL.format(z=z, x=x, y=y)
+    try:
+        resp = _retrying(lambda: httpx.get(url, params={"access_token": token}, timeout=20))
+    except httpx.HTTPError as e:
+        raise MapillaryError(_scrub(f"coverage tile {z}/{x}/{y} failed: {type(e).__name__}: {e}", token)) from None
+    if resp.status_code in (204, 404) or (resp.status_code == 200 and not resp.content):
+        return None
+    if resp.status_code >= 400:
+        raise MapillaryError(f"coverage tile {z}/{x}/{y}: HTTP {resp.status_code}", resp.status_code)
+    return resp.content
+
+
 def _scrub(text: str, token: str) -> str:
     return text.replace(token, "<redacted>") if token else text
 

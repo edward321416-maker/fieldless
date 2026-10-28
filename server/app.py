@@ -5,10 +5,12 @@
 Starting a survey passes the spec 13 limits (invite code if set, area size, surveys per address per day). Scans run
 one at a time on the ScanWorker thread, and the pipeline's own caps ($3 per scan, $10 per day) still apply.
 """
+import gzip
 import json
 import logging
 import re
 import threading
+import time
 from contextlib import asynccontextmanager, closing
 from typing import Literal
 
@@ -57,7 +59,12 @@ class IssueReview(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-def create_app(settings: Settings | None = None, worker=None, preview=None, store=None) -> FastAPI:
+TILE_CACHE_S = 3600  # coverage changes when people upload; an hour old is fine for choosing an area
+TILE_CACHE_BYTES = 64_000_000  # compressed tiles kept; a dense zoom 13 tile is about 1 MB, a third of that gzipped
+
+
+def create_app(settings: Settings | None = None, worker=None, preview=None, store=None,
+               tile=mapillary.coverage_tile) -> FastAPI:
     settings = settings or load()
     if settings.ip_hash_salt == "threshold":
         log.warning("IP_HASH_SALT is not set; set a random salt in production")
@@ -131,7 +138,38 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
 
     @app.get("/api/config")
     def get_config():
-        return {"invite_required": settings.invite_code is not None, "max_bbox_deg2": settings.max_bbox_deg2}
+        return {"invite_required": settings.invite_code is not None, "max_bbox_deg2": settings.max_bbox_deg2,
+                "coverage_tiles": settings.coverage_tiles}
+
+    tiles: dict[tuple[int, int, int], tuple[float, bytes | None]] = {}  # (z, x, y) -> (fetched at, gzipped body)
+    tiles_lock = threading.Lock()
+
+    @app.get("/api/mapillary/tiles/{z}/{x}/{y}")
+    def coverage_tile(z: int, x: int, y: int, request: Request):
+        """Mapillary's coverage tile, so the new survey screen can draw where photos exist (docs/specs
+        2026-10-28-design-pass2-design.md). The token stays on the server; tiles are kept TILE_CACHE_S."""
+        if not settings.coverage_tiles or z not in mapillary.COVERAGE_ZOOMS or not (0 <= x < 2 ** z and 0 <= y < 2 ** z):
+            raise HTTPException(404, "no such tile")
+        now = time.time()
+        with tiles_lock:
+            kept = tiles.get((z, x, y))
+        if kept is None or now - kept[0] > TILE_CACHE_S:
+            try:
+                body = tile(z, x, y)
+            except mapillary.MapillaryError:
+                raise HTTPException(502, "Mapillary coverage is not available right now") from None
+            kept = (now, None if body is None else gzip.compress(body, 6))
+            with tiles_lock:
+                tiles[(z, x, y)] = kept
+                while sum(len(b or b"") for _, b in tiles.values()) > TILE_CACHE_BYTES and len(tiles) > 1:
+                    tiles.pop(min(tiles, key=lambda k: tiles[k][0]))  # the oldest
+        if kept[1] is None:
+            return Response(status_code=204)
+        headers = {"Cache-Control": f"public, max-age={TILE_CACHE_S}", "Vary": "Accept-Encoding"}
+        if "gzip" in request.headers.get("accept-encoding", ""):
+            return Response(kept[1], media_type="application/vnd.mapbox-vector-tile",
+                            headers={**headers, "Content-Encoding": "gzip"})
+        return Response(gzip.decompress(kept[1]), media_type="application/vnd.mapbox-vector-tile", headers=headers)
 
     @app.get("/api/demo")
     def demo():

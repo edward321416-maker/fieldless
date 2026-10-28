@@ -531,7 +531,7 @@ def test_rerunning_the_defects_stage_does_not_ask_sam_again_unless_the_phrase_ch
     first = sam_calls(api, phrases)
     assert ("curb cut", "img2.jpg") in first and len(first) == 3 * len(phrases)  # sampled photos 0, 2, 4 per check
     saved = json.loads(scan.state("find_curb_ramp_warning").read_text(encoding="utf-8"))
-    assert saved == {"phrase": "curb cut", "areas": {"0": 0, "2": 1600, "4": 0}}
+    assert saved == {"phrase": "curb cut", "measure": "box", "areas": {"0": 0, "2": 1600, "4": 0}}
 
     db.set_stage(conn, us_scan, "defects", "pending")
     again = make(api, us_scan)
@@ -547,7 +547,7 @@ def test_rerunning_the_defects_stage_does_not_ask_sam_again_unless_the_phrase_ch
     third = make(api, us_scan)
     third.standard = changed
     runner.run_scan(third)
-    assert [c for c in sam_calls(api, {*phrases, "dropped kerb"}) if c not in first] == [
+    assert sorted(c for c in sam_calls(api, {*phrases, "dropped kerb"}) if c not in first) == [
         ("dropped kerb", "img0.jpg"), ("dropped kerb", "img2.jpg"), ("dropped kerb", "img4.jpg")]  # only the new phrase
     assert json.loads(third.state("find_curb_ramp_warning").read_text(encoding="utf-8"))["phrase"] == "dropped kerb"
 

@@ -30,6 +30,7 @@ class Settings:
     hf_data_repo: str | None = None  # private Hugging Face dataset that keeps the data on a host without a disk
     backup_dir: Path | None = None  # or a backup folder (a mounted Modal Volume) that keeps it
     static_dir: Path = ROOT / "web" / "dist"
+    coverage_tiles: bool = True  # serve Mapillary's coverage tiles through /api/mapillary/tiles (the static site cannot)
 
 
 def _number(name: str, text: str, kind=int):

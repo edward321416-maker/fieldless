@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from pipeline import config, db, survey_items
+from pipeline import config, db, mapillary, survey_items
 from pipeline.runner import RESUME_MIN_USD
 from server import limits
 from server.app import create_app
@@ -70,7 +70,8 @@ def test_health_and_config(make):
     client, _ = make()
     assert client.get("/api/health").json() == {"ok": True, "forwarded_for_entries": 0}
     assert client.get("/api/health", headers={"x-forwarded-for": "1.2.3.4, 5.6.7.8"}).json()["forwarded_for_entries"] == 2
-    assert client.get("/api/config").json() == {"invite_required": False, "max_bbox_deg2": 0.0001}
+    assert client.get("/api/config").json() == {"invite_required": False, "max_bbox_deg2": 0.0001,
+                                                "coverage_tiles": True}
     client, _ = make(invite_code="abc")
     assert client.get("/api/config").json()["invite_required"] is True
 
@@ -467,3 +468,30 @@ def test_undo_takes_back_a_decision_and_its_seconds_for_a_minute(make):
     assert db.get_scan(store(), scan_id)["review_seconds"] == 3.0
     demo_client, _ = make(demo_scans=((scan_id, "Demo"),))
     assert demo_client.post(f"/api/entrances/{stairs}/review/undo").status_code == 403
+
+
+def test_coverage_tiles_are_passed_through_gzipped_kept_for_an_hour_and_refused_outside_the_zooms(tmp_path):
+    asked = []
+
+    def tile(z, x, y):
+        asked.append((z, x, y))
+        if (x, y) == (9, 9):
+            raise mapillary.MapillaryError("down")
+        return None if (x, y) == (0, 0) else b"\x1a\x02pbf"
+
+    client = TestClient(create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(),
+                                   preview=lambda *a, **k: PREVIEW, tile=tile))
+    ok = client.get("/api/mapillary/tiles/13/1312/2860")  # the test client takes gzip and unpacks it
+    assert ok.status_code == 200 and ok.content == b"\x1a\x02pbf" and ok.headers["content-encoding"] == "gzip"
+    assert ok.headers["content-type"] == "application/vnd.mapbox-vector-tile"
+    plain = client.get("/api/mapillary/tiles/13/1312/2860", headers={"Accept-Encoding": "identity"})
+    assert plain.content == b"\x1a\x02pbf" and "content-encoding" not in plain.headers
+    assert asked == [(13, 1312, 2860)]  # kept: Mapillary was asked once
+    assert client.get("/api/mapillary/tiles/13/0/0").status_code == 204  # Mapillary has no tile there
+    assert client.get("/api/mapillary/tiles/13/9/9").status_code == 502
+    assert client.get("/api/mapillary/tiles/14/0/0").status_code == 404  # zoom 14 adds every photo: 10x the size
+    assert client.get("/api/mapillary/tiles/6/64/0").status_code == 404  # x beyond 2**z
+    off = TestClient(create_app(Settings(static_dir=tmp_path / "no-web", coverage_tiles=False), worker=FakeWorker(),
+                                preview=lambda *a, **k: PREVIEW, tile=tile))
+    assert off.get("/api/config").json()["coverage_tiles"] is False
+    assert off.get("/api/mapillary/tiles/13/1312/2860").status_code == 404

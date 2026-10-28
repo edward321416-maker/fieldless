@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 
 from pipeline import config
-from pipeline.sam_output import Seg, confident, parse
+from pipeline.sam_output import Seg, confident, parse_away
 
 BLUR_CONCEPTS = ["person", "license plate"]
 BLUR_CONF = 0.3  # lower than the detection cut: missing a face is worse than blurring a little extra
@@ -52,7 +52,7 @@ def make_evidence(api, photo: Path, frame: dict, dst: Path) -> dict:
         raise ValueError(f"cannot read {photo}")
     segs: list[Seg] = []
     for concept in BLUR_CONCEPTS:
-        segs += confident(parse(api.sam_image(concept, photo), video=False), BLUR_CONF)
+        segs += confident(parse_away(api.sam_image(concept, photo), video=False), BLUR_CONF)
     out = blur(img, segs)
     scale = MAX_SIDE / max(out.shape[:2])
     if scale < 1:

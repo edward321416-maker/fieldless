@@ -60,7 +60,8 @@ def build_web(out: Path) -> None:
 
 def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
     """Write the GET answers for the demo surveys under out/api and copy their evidence photos. Returns the paths."""
-    settings = Settings(run_name=run, demo_scans=tuple(scans), static_dir=out / "no-web")
+    settings = Settings(run_name=run, demo_scans=tuple(scans), static_dir=out / "no-web",
+                        coverage_tiles=False)  # a static site has no server to fetch Mapillary's tiles
     client = TestClient(create_app(settings, worker=NoWorker(), preview=lambda *a: None))
     paths = ["/api/config", "/api/demo"]
     for scan_id, _ in scans:
