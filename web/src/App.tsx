@@ -189,7 +189,16 @@ export default function App() {
         <button type="button" className="skip-link" onClick={() => panelRef.current?.focus()}>
           Skip to the survey panel
         </button>
-        <h1>Fieldless</h1>
+        <h1 className="brand">
+          {/* the logo: a walk with two photo points (docs/ui-rules.md U10) */}
+          <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+            <rect width="24" height="24" rx="6" fill="#1d4ed8" />
+            <path d="M5 17L10 9l4 5 5-7" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="10" cy="9" r="1.6" fill="#fff" />
+            <circle cx="14" cy="14" r="1.6" fill="#fff" />
+          </svg>
+          Fieldless
+        </h1>
         <p className="tagline">Street surveys without the fieldwork</p>
         {demos.length > 0 && (
           <nav className="area-tabs" aria-label="Surveyed areas">

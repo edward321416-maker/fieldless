@@ -24,7 +24,7 @@ button, input, select { font: inherit; }
   height: 100vh;
 }
 .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
-.top h1 { margin: 0; font-size: 1.25rem; }
+.top h1 { margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 8px; }
 .top .tagline { margin: 0; color: var(--muted); }
 .area-tabs { display: flex; gap: 4px; margin-left: 16px; }
 .area-tabs button { border: none; background: none; border-radius: 8px; padding: 8px 12px; min-height: 40px; color: var(--muted); }
@@ -118,7 +118,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .small { font-size: 0.85rem; }
 .headline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0; }
 .headline div { background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
-.headline strong { display: block; font-size: 1.75rem; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.headline strong { display: block; font-size: 1.875rem; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .headline small { font-size: 0.9rem; font-weight: 600; color: var(--muted); }
 .headline span { display: block; font-size: 0.8rem; color: var(--muted); }
 .benchmark { font-size: 0.9rem; color: var(--muted); margin: 8px 0 16px; }
