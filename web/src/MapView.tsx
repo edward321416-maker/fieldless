@@ -345,7 +345,12 @@ export default function MapView(props: Props) {
 
   useEffect(() => {
     const b = props.fitTo;
-    if (b) mapRef.current?.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 48, duration: 0 });
+    const map = mapRef.current;
+    if (!b || !map) return;
+    // On a wide screen the legend (or the new survey guide) covers the map's left 360 px: keep the streets clear of it.
+    const wide = map.getContainer().clientWidth > 800;
+    map.fitBounds([[b[0], b[1]], [b[2], b[3]]],
+      { padding: wide ? { top: 48, bottom: 48, left: 370, right: 48 } : 48, duration: 0 });
   }, [props.fitTo]);
 
   const counts = new Map<string, number>();
