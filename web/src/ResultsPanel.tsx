@@ -4,6 +4,7 @@ import { BENCHMARKS } from "./benchmarks";
 import { dollars, isFinished, photoMonth, yearsSpan } from "./format";
 import { itemName, STATUS_SENTENCE, type Finding } from "./items";
 import { itemArt } from "./markerArt";
+import { cityLine, reviewChips } from "./summary";
 import type { Scan } from "./types";
 
 interface Props {
@@ -64,18 +65,25 @@ export default function ResultsPanel(props: Props) {
       </div>
       {benchmark && (
         <p className="benchmark">
-          {benchmark.text} <a href={benchmark.source} target="_blank" rel="noreferrer">Source</a>
+          <strong>On foot</strong> · {benchmark.short} ·{" "}
+          <a href={benchmark.source} target="_blank" rel="noreferrer" title={benchmark.scope}>Source</a>
         </p>
       )}
 
-      <h3>What the survey found</h3>
+      <div className="found-head">
+        <h3>What the survey found</h3>
+        {city && (
+          <a className="small" href={city.method_url} target="_blank" rel="noreferrer"
+            title={`Measured offline on ${city.measured_at} (${city.city})`}>How the city list check works</a>
+        )}
+      </div>
       <ul className="found">
         {present.map((it) => {
           const mine = findings.filter((f) => f.item === it.id);
           const confirmed = mine.filter((f) => f.badge === "defect" && f.status === "verified").length;
           const possible = mine.filter((f) => f.badge === "defect" && f.status !== "verified").length;
           const site = mine.filter((f) => f.badge === "site").length;
-          const match = city?.items[it.id];
+          const line = cityLine(city?.items[it.id], !!city);
           return (
             <li key={it.id}>
               <button type="button" className="found-row"
@@ -87,29 +95,26 @@ export default function ResultsPanel(props: Props) {
                   {confirmed > 0 && <span className="chip chip-defect">{plural(confirmed, "defect")} confirmed</span>}
                   {possible > 0 && <span className="chip chip-defect">{plural(possible, "possible defect")}</span>}
                   {site > 0 && <span className="chip chip-site">{site} to check on site</span>}
-                  {match && <span className="chip">{match.found} of {match.covered} in the city's list</span>}
                 </span>
+                {line && (
+                  <span className="found-city">
+                    {line.share !== null && (
+                      <span className="city-bar" aria-hidden="true"><span style={{ width: `${Math.round(line.share * 100)}%` }} /></span>
+                    )}
+                    {line.text}
+                  </span>
+                )}
               </button>
             </li>
           );
         })}
       </ul>
-      {city && (
-        <p className="hint small">
-          City list match measured offline on {city.measured_at} ({city.city}).{" "}
-          <a href={city.method_url} target="_blank" rel="noreferrer">How it was measured</a>
-        </p>
-      )}
-
-      <h3>A person's review</h3>
-      <dl className="stats review-counts">
-        <dt>To review</dt><dd>{counts.needs_review}</dd>
-        <dt>To check on site</dt><dd>{counts.field_check}</dd>
-        <dt>Confirmed by a person</dt><dd>{counts.verified}</dd>
-        <dt>Rejected by a person</dt><dd>{counts.rejected}</dd>
-        <dt>Set aside by the models as not the item</dt>
-        <dd>{counts.dropped === null ? <span className="hint small">not recorded for this survey</span> : counts.dropped}</dd>
-      </dl>
+      <p className="review-chips">
+        <strong>A person's review</strong>
+        {reviewChips(counts).map((c) => (
+          <span key={c.text} className={`chip${c.kind === "site" ? " chip-site" : ""}`}>{c.text}</span>
+        ))}
+      </p>
       {counts.needs_review > 0 && !STATIC_DEMO && (
         <button type="button" className="primary" onClick={props.onReview}>
           Review {plural(counts.needs_review, "finding")}
