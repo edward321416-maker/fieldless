@@ -316,7 +316,7 @@ export default function MapView(props: Props) {
 
   useEffect(() => {
     const b = props.fitTo;
-    if (b) mapRef.current?.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, duration: 0 });
+    if (b) mapRef.current?.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 48, duration: 0 });
   }, [props.fitTo]);
 
   const counts = new Map<string, number>();

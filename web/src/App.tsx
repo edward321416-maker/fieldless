@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, STATIC_DEMO } from "./api";
+import { contentBounds } from "./bbox";
 import AreaPanel from "./AreaPanel";
 import Attribution from "./Attribution";
 import DemoNotice from "./DemoNotice";
@@ -98,7 +99,13 @@ export default function App() {
         setIssues(i);
       })
       .catch((e: Error) => !cancelled && setError(e.message));
-    api.walks(scan.id).then((w) => !cancelled && setWalks(w)).catch(() => !cancelled && setWalks([]));
+    api.walks(scan.id)
+      .then((w) => {
+        if (cancelled) return;
+        setWalks(w);
+        setFitTo(contentBounds(w) ?? scan.bbox); // the photographed streets, not the drawn box's empty corners
+      })
+      .catch(() => !cancelled && setWalks([]));
     return () => {
       cancelled = true;
     };

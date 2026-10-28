@@ -1,5 +1,5 @@
 import type { Feature, Polygon } from "geojson";
-import type { Bbox } from "./types";
+import type { Bbox, Walk } from "./types";
 
 export function bboxFromCorners(a: [number, number], b: [number, number]): Bbox {
   return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
@@ -7,6 +7,15 @@ export function bboxFromCorners(a: [number, number], b: [number, number]): Bbox 
 
 export function viewToBbox(west: number, south: number, east: number, north: number): Bbox {
   return [west, south, east, north];
+}
+
+// The streets a survey photographed: what the map shows first, rather than the drawn box with its empty corners.
+export function contentBounds(walks: Walk[]): Bbox | null {
+  const pts = walks.flatMap((w) => w.points);
+  if (pts.length === 0) return null;
+  const lngs = pts.map((p) => p[0]);
+  const lats = pts.map((p) => p[1]);
+  return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
 }
 
 export function bboxArea(b: Bbox): number {
