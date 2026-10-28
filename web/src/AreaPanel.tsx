@@ -67,6 +67,7 @@ export default function AreaPanel(props: Props) {
   const [loading, setLoading] = useState(false);
   const [invite, setInvite] = useState("");
   const [starting, setStarting] = useState(false);
+  const [waited, setWaited] = useState(0); // seconds the preview has taken so far
   const running = props.scan !== null && (props.scan.status === "queued" || props.scan.status === "running");
 
   useEffect(() => {
@@ -97,6 +98,14 @@ export default function AreaPanel(props: Props) {
       cancelled = true;
     };
   }, [bbox, maxDeg2]);
+
+  // Counting the photos asks Mapillary for every walk in the area: 20-50 s. Say so, and count, so it never looks stuck.
+  useEffect(() => {
+    if (!loading) return;
+    setWaited(0);
+    const t = window.setInterval(() => setWaited((w) => w + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [loading]);
 
   async function start() {
     if (!bbox || starting) return;
@@ -129,7 +138,9 @@ export default function AreaPanel(props: Props) {
         <button type="button" onClick={props.onUseView}>Use this map view</button>
       </div>
       {props.selecting && <p className="hint">Drag on the map to draw the survey area. On a phone, move the map to the streets and use "Use this map view".</p>}
-      {loading && <p role="status">Counting street photos…</p>}
+      {loading && (
+        <p role="status">Counting the public street photos of this area on Mapillary… {waited} s (usually under a minute)</p>
+      )}
       {message && <p className="error" role="alert">{message}</p>}
       {preview && (
         <div role="status">
