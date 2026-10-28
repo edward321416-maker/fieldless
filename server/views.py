@@ -46,7 +46,7 @@ def entrance_label(row: dict) -> dict:
     count = row.get("step_count")
     if count is None:
         return {"icon": "?", "text": "Not analysed"}
-    if row["review_status"] == "needs_review" and "possible_sill" in (row.get("review_reasons") or []):
+    if row["review_status"] in ("needs_review", "field_check") and "possible_sill" in (row.get("review_reasons") or []):
         return {"icon": "?", "text": "Possible sill"}
     if count == 0:
         return {"icon": "✓", "text": "No steps"}
@@ -144,6 +144,7 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
     defects = sum(std.is_defect(i) for i in live)
     obstructions = sum(i["issue_type"] == "obstruction" for i in live)
     needs_review = sum(r["review_status"] == "needs_review" for r in [*entrances, *live])
+    field_check = sum(r["review_status"] == "field_check" for r in [*entrances, *live])  # a person could not tell
     with_steps = sum(entrance_label(e)["icon"] == "▲" for e in entrances)  # a possible sill is not counted
     checks = [{"id": c.id, "find": c.find, "target": c.target, "report_when": c.report_when,
                "label_yes": c.label_yes, "label_no": c.label_no, "inventory": c.inventory,
@@ -154,4 +155,5 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
             "km": km,
             "usd_per_km": round(scan["cost_usd"] / km, 2) if km else None,
             "counts": {"defects": defects, "obstructions": obstructions, "entrances": len(entrances),
-                       "entrances_with_steps": with_steps, "needs_review": needs_review}}
+                       "entrances_with_steps": with_steps, "needs_review": needs_review,
+                       "field_check": field_check}}

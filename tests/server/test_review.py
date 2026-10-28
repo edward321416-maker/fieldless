@@ -62,3 +62,14 @@ def test_an_answer_sets_the_check_and_keeps_the_previous_one():
                                        "seconds": 4.0}]}
     with pytest.raises(ValueError):
         review.issue_update({"corrections": [], "object_label": "unclear"}, "answer", 4.0, AT, "maybe")
+
+
+def test_a_person_who_cannot_tell_from_the_photo_leaves_the_row_for_a_site_visit():
+    issue = {"corrections": [], "object_label": "unclear", "review_status": "needs_review"}
+    fields = review.issue_update(issue, "field_check", 6.5, "2026-10-28T09:00:00Z")
+    assert fields == {"review_status": "field_check",
+                      "corrections": [{"at": "2026-10-28T09:00:00Z", "action": "field_check", "seconds": 6.5}]}
+    entrance = {"corrections": [], "step_count": 1, "review_status": "needs_review"}
+    fields = review.entrance_update(entrance, "field_check", {"step_count": 3}, 4.0, "2026-10-28T09:00:00Z")
+    assert fields["review_status"] == "field_check" and "step_count" not in fields  # nothing is changed
+    assert "field_check" in review.REVIEWED

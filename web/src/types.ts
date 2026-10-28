@@ -57,7 +57,10 @@ export interface Scan {
   standard: "KR" | "US";
   checks: CheckCount[];
   error: string | null;
-  counts: { defects: number; obstructions: number; entrances: number; entrances_with_steps: number; needs_review: number };
+  counts: {
+    defects: number; obstructions: number; entrances: number; entrances_with_steps: number; needs_review: number;
+    field_check: number; // a surveyor looked and could not tell from the photo: a site visit decides
+  };
 }
 
 export interface Evidence {
@@ -85,7 +88,7 @@ export interface Entrance {
   stairs_detected: boolean | null;
   sill_possible: boolean | null;
   label: Label;
-  review_status: string; // auto | needs_review | verified
+  review_status: string; // auto | needs_review | verified | field_check
   review_reasons: string[];
   evidence: Evidence | null;
   captured_at: string | null;
@@ -108,7 +111,7 @@ export interface Issue {
   object_label: string | null;
   frame_start: number | null;
   frame_end: number | null;
-  review_status: string; // auto | needs_review | verified | rejected
+  review_status: string; // auto | needs_review | verified | rejected | field_check
   review_reasons: string[];
   evidence: Evidence | null;
   captured_at: string | null;
@@ -122,13 +125,13 @@ export interface DemoArea {
 }
 
 export interface EntranceReview {
-  action: "confirm" | "correct";
+  action: "confirm" | "correct" | "field_check";
   seconds: number;
   step_count?: number;
 }
 
 export interface IssueReview {
-  action: "confirm" | "reject" | "answer";
+  action: "confirm" | "reject" | "answer" | "field_check";
   answer?: "yes" | "no";
   seconds: number;
 }

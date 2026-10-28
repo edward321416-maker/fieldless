@@ -90,6 +90,9 @@ export default function EvidenceCard({ picked, onClose, onReview }: Props) {
         <button type="button" className="primary" onClick={onReview}>Review now</button>
       )}
       {item.review_status === "verified" && <p className="badge">Checked by a surveyor</p>}
+      {item.review_status === "field_check" && (
+        <p className="badge">A surveyor could not tell from the photo: check on site</p>
+      )}
     </section>
   );
 }

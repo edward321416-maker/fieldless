@@ -17,9 +17,10 @@ interface Props {
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const STATUS_TEXT: Record<string, string> = { needs_review: "To review", field_check: "Check on site" };
 
 function IssueButton({ issue, onPick }: { issue: Issue; onPick: (p: Picked) => void }) {
-  const parts = [issue.review_status === "needs_review" ? "To review" : "", issue.durable ? "" : photoMonth(issue.captured_at)];
+  const parts = [STATUS_TEXT[issue.review_status] ?? "", issue.durable ? "" : photoMonth(issue.captured_at)];
   const status = parts.filter(Boolean).join(" · ");
   return (
     <li>
@@ -65,6 +66,12 @@ export default function ResultsPanel(props: Props) {
         )}
         <dt>To confirm (?)</dt>
         <dd>{counts.needs_review}</dd>
+        {counts.field_check > 0 && (
+          <>
+            <dt>To check on site</dt>
+            <dd>{counts.field_check}</dd>
+          </>
+        )}
       </dl>
       <h3>What the survey found</h3>
       <dl className="stats">

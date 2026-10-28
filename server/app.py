@@ -40,7 +40,7 @@ class ScanBody(BaseModel):
 
 
 class EntranceReview(BaseModel):
-    action: Literal["confirm", "correct"]
+    action: Literal["confirm", "correct", "field_check"]
     seconds: float = Field(ge=0, le=3600)
     step_count: int | None = Field(default=None, ge=0, le=50)
 
@@ -48,7 +48,7 @@ class EntranceReview(BaseModel):
 
 
 class IssueReview(BaseModel):
-    action: Literal["confirm", "reject", "answer"]
+    action: Literal["confirm", "reject", "answer", "field_check"]
     seconds: float = Field(ge=0, le=3600)
     answer: Literal["yes", "no"] | None = None  # only with action "answer", on a survey check row
 
@@ -78,7 +78,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     def check_reviewable(row: dict) -> None:
         if row["scan_id"] in demo_ids:
             raise HTTPException(403, "Demo surveys are read-only")
-        if row["review_status"] in ("verified", "rejected"):
+        if row["review_status"] in review.REVIEWED:
             raise HTTPException(409, "This item has already been reviewed")
 
     @asynccontextmanager

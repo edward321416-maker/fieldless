@@ -94,6 +94,12 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
   const rejectIssue = (issue: Issue) =>
     decide(async (seconds) => ({ kind: "issue", item: await api.reviewIssue(issue.id, { action: "reject", seconds }) }));
 
+  // The surveyor cannot tell from the photo either: the item stays, marked for a site visit, and the queue moves on.
+  const fieldCheck = (picked: Picked) =>
+    decide(async (seconds) => picked.kind === "entrance"
+      ? { kind: "entrance", item: await api.reviewEntrance(picked.item.id, { action: "field_check", seconds }) }
+      : { kind: "issue", item: await api.reviewIssue(picked.item.id, { action: "field_check", seconds }) });
+
   const done = times.length > 0 && (
     <p role="status">Reviewed {times.length} item{times.length === 1 ? "" : "s"}, median {median(times).toFixed(1)} s each.</p>
   );
@@ -200,6 +206,9 @@ export default function ReviewPanel({ entrances, issues, first = null, onUpdated
           )}
         </>
       )}
+      <button type="button" className="link-button" disabled={busy} onClick={() => fieldCheck(current)}>
+        Can't tell from the photo: check on site
+      </button>
     </section>
   );
 }

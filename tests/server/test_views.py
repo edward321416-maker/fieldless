@@ -105,7 +105,7 @@ def test_scan_json_counts_defects_obstructions_and_items_to_review():
               issue(issue_type="fixed_obstruction", object_label="pole"), issue(review_status="rejected"), issue()]
     out = views.scan_json(scan, entrances, issues)
     assert out["counts"] == {"defects": 2, "obstructions": 1, "entrances": 2, "entrances_with_steps": 1,
-                             "needs_review": 2}
+                             "needs_review": 2, "field_check": 0}
     assert out["id"] == 1 and out["status"] == "done" and out["image_count"] == 60
 
 

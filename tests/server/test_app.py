@@ -156,7 +156,7 @@ def test_scan_json(make):
     body = client.get(f"/api/scans/{scan_id}").json()
     assert body["status"] == "done"
     assert body["counts"] == {"defects": 1, "obstructions": 1, "entrances": 2, "entrances_with_steps": 1,
-                              "needs_review": 2}
+                              "needs_review": 2, "field_check": 0}
     assert client.get("/api/scans/999").status_code == 404
 
 
@@ -400,3 +400,19 @@ def test_survey_files_wait_for_the_survey_to_finish(make):
     scan_id = db.create_scan(conn, "mapillary", BBOX)
     db.update_scan(conn, scan_id, status="running")
     assert client.get(f"/api/scans/{scan_id}/files.zip").status_code == 409
+
+
+def test_cant_tell_from_the_photo_keeps_the_item_for_a_site_visit_and_counts_the_time(make):
+    client, _ = make()
+    scan_id, _, sill, _, broken = seed()
+    issue = client.post(f"/api/issues/{broken}/review", json={"action": "field_check", "seconds": 7.0}).json()
+    assert issue["review_status"] == "field_check"
+    assert broken in [r["id"] for r in client.get(f"/api/scans/{scan_id}/issues").json()]  # still on the map
+    entrance = client.post(f"/api/entrances/{sill}/review", json={"action": "field_check", "seconds": 5.0}).json()
+    assert entrance["review_status"] == "field_check"
+    assert entrance["label"] == {"icon": "?", "text": "Possible sill"}  # nobody settled it
+    counts = client.get(f"/api/scans/{scan_id}").json()["counts"]
+    assert counts["needs_review"] == 0 and counts["field_check"] == 2
+    assert db.get_scan(store(), scan_id)["review_seconds"] == 12.0
+    again = client.post(f"/api/issues/{broken}/review", json={"action": "confirm", "seconds": 1.0})
+    assert again.status_code == 409  # a person has answered it

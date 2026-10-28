@@ -41,6 +41,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .hint { color: var(--muted); }
 .error { color: var(--red); }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #f3f4f6; color: var(--muted); }
+.link-button { display: block; margin-top: 12px; padding: 4px 0; border: none; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .stats { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; margin: 8px 0; }
 .stats dd { white-space: nowrap; }
 .progress summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
