@@ -55,6 +55,19 @@ def test_the_cli_turns_on_the_second_opinion_only_with_a_baseten_key(monkeypatch
     assert isinstance(captured[1].second_opinion, second_opinion.OpenModel)
 
 
+def test_muse_glimmer_judges_only_a_run_that_asks_for_it(monkeypatch):
+    from pipeline import second_opinion
+    captured = []
+    monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))
+    with pytest.raises(SystemExit):  # --glimmer without the server's address
+        run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "g", "--glimmer"])
+    monkeypatch.setenv("GLIMMER_URL", "https://me--fieldless-glimmer-serve.modal.run")
+    run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "g"])
+    run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "g", "--glimmer"])
+    assert captured[0].judge is None  # the address alone is not enough: a small scan stays on Muse Spark
+    assert captured[1].judge.model == second_opinion.GLIMMER_MODEL
+
+
 def test_a_new_scan_takes_its_standard_from_the_area_or_the_flag(monkeypatch, capsys):
     captured = []
     monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))

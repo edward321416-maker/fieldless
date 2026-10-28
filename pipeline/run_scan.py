@@ -7,12 +7,14 @@
   python -m pipeline.run_scan --resume SCAN_ID --rerun defects   # run one stage again, e.g. after editing a standard
   python -m pipeline.run_scan --resume SCAN_ID --rerun defects --check ID   # only that check; others keep their rows
   python -m pipeline.run_scan --bbox ... --cap-usd 6          # local runs only: this scan's cost cap (default $3)
+  python -m pipeline.run_scan --bbox ... --glimmer            # large runs: Muse Glimmer judges the checks that name it
 
 Results: <data>/runs/<run>/threshold.db, calls with costs in <data>/runs/<run>/calls.jsonl, blurred evidence photos
 in <data>/runs/<run>/evidence/. Exit code 0 when the scan is done, 1 otherwise.
 """
 import argparse
 import json
+import os
 import sys
 
 from pipeline import collect, config, db, second_opinion, sidewalk, survey_items
@@ -67,6 +69,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="local runs only: this scan's cost cap in dollars (default: the $3 scan cap); "
                              "the daily cap still applies")
     parser.add_argument("--run", default="dev", help="run folder under <data>/runs")
+    parser.add_argument("--glimmer", action="store_true",
+                        help="Muse Glimmer (GLIMMER_URL) judges the checks with judge = \"glimmer\". For large runs: its "
+                             "GPU pays off only while it stays busy (a small scan is cheaper and faster on Muse Spark)")
     parser.add_argument("--max-photos", type=positive_int, default=config.MAX_PHOTOS_PER_SCAN)
     parser.add_argument("--tactile-every", type=positive_int, default=sidewalk.TACTILE_EVERY)
     args = parser.parse_args(argv)
@@ -84,6 +89,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--rerun needs --resume")
     if args.check and args.rerun != "defects":
         parser.error("--check needs --rerun defects")
+    if args.glimmer and not os.environ.get("GLIMMER_URL"):
+        parser.error("--glimmer needs GLIMMER_URL, the deployed fieldless-glimmer address")
     run_dir = config.run_dir(args.run)
     conn = db.connect(run_dir / "threshold.db")
     if args.resume is not None:
@@ -105,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan, args.cap_usd))
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,
                            tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir),
-                           judge=second_opinion.glimmer_from_env(run_dir),
+                           judge=second_opinion.glimmer_from_env(run_dir) if args.glimmer else None,
                            only_checks=tuple(args.check or ())))
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0 if result["status"] == "done" else 1

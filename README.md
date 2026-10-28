@@ -143,7 +143,7 @@ label_yes = "Utility or streetlight pole"
 
 `group_m = 15` gives things that stand in rows (poles, trees) one row per 15 m of walk instead of one per run of photos.
 
-`judge = "glimmer"` (inventory checks only) has Muse Glimmer, the open-weight model served on Modal, answer the check first when `GLIMMER_URL` is set. Muse Spark answers what Glimmer calls unclear or cannot answer, and checks a tenth of the rest; a disagreement goes to a person first. Each row records which model answered.
+`judge = "glimmer"` (inventory checks only) lets Muse Glimmer, the open-weight model we serve on Modal (`deploy/modal_glimmer.py`), answer the check first in a run started with `--glimmer` (and `GLIMMER_URL`). Muse Spark answers what Glimmer calls unclear or cannot answer, and checks a tenth of the rest; a disagreement goes to a person first. Each row records which model answered. Glimmer is for large runs: on a busy GPU one answer costs about a sixteenth of a Muse Spark call, but a small survey pays the GPU's start and idle time for a few dozen answers, so it is cheaper and faster on Muse Spark. The live site and plain `run_scan` use Muse Spark.
 
 ### Export a survey
 
