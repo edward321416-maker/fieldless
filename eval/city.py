@@ -10,7 +10,8 @@ metres apart but tens of degrees apart seen from the photo, so the row's directi
 sits across the image) decides between them. Only points a photo could have shown can be missed. The city record is
 not ground truth either: a row with no city point is "not in the city record" (new, moved, or a false find), a row
 that could only pair with a point another row already found is a repeat (two photos of one thing), and a point
-installed after the photo is its own class."""
+installed after the photo is its own class. A row a person rejected whose photo looked straight at a city point
+nobody found is listed apart: the person and the record disagree, so the place needs a visit."""
 import argparse
 import json
 import math
@@ -237,6 +238,16 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
         else:
             missed.append(point["id"])
 
+    # A row a person rejected ("not one") whose photo looked straight at a city point the scan did not find: the person
+    # and the city record disagree (the record is old, or the object was too far to tell). Neither is taken as the
+    # truth; the place is listed for a site visit. A row without a direction does not count: its photo may not show it.
+    rejected = [r for r in rows if r["issue_type"] == item_id and r.get("review_status") == "rejected"]
+    disputed = [{"issue_id": rejected[ri]["id"], "point_id": near[pi]["id"], "dist_m": round(dist, 1),
+                 "offset_deg": round(offset, 1), "city_value": city_answer(near[pi]["props"], truth_field, truth_yes)}
+                for ri, pi, dist, offset in assign(
+                    [c for c in candidates(rejected, by_idx, near, fov=fov, max_m=max_m, max_deg=max_deg,
+                                           max_m_no_dir=max_m_no_dir) if c[4] is not None and c[2] not in paired_points])]
+
     covered = len(matched) + len(missed)
     out = {"item": item_id, "rows": len(kept), "points_in_layer": len(layer), "covered": covered,
            "matched": sorted(matched, key=lambda m: m["issue_id"]),
@@ -244,6 +255,7 @@ def evaluate(rows: list[dict], frames: list[dict], points: dict | list[dict], it
            "rows_unmatched": sorted(r["id"] for ri, r in enumerate(kept) if ri not in paired_rows | repeats),
            "rows_repeat": sorted(kept[ri]["id"] for ri in repeats),
            "missed_covered": missed, "not_photographed": not_photographed, "installed_after_photo": after,
+           "rejected_at_city_point": sorted(disputed, key=lambda d: d["issue_id"]),
            "params": {"inventory": inventory, "fov": fov, "max_m": max_m, "max_deg": max_deg,
                       "max_m_no_dir": max_m_no_dir, "cover_m": cover_m, "id_field": id_field,
                       "installed_field": installed_field, "truth_field": truth_field, "truth_yes": truth_yes,
@@ -265,7 +277,9 @@ def to_markdown(r: dict) -> str:
              f"| Installed after the photo | {len(r['installed_after_photo'])} |",
              f"| Not photographed | {r['not_photographed']} |",
              f"| Rows repeating a found city point | {len(r.get('rows_repeat', []))} |",
-             f"| Rows not in the city record | {len(r['rows_unmatched'])} |"]
+             f"| Rows not in the city record | {len(r['rows_unmatched'])} |",
+             f"| Rejected by a person where the photo looked at a city point | "
+             f"{len(r.get('rejected_at_city_point', []))} |"]
     if "agree" in r:
         lines += [f"| Answer agrees with the city record | {r['agree']} |",
                   f"| Answer differs from the city record | {r['disagree']} |",
@@ -278,6 +292,10 @@ def to_markdown(r: dict) -> str:
         lines.append(f"- Not in the city record (new, moved, or a false find): rows {r['rows_unmatched']}")
     if r["missed_covered"]:
         lines.append(f"- Photographed but not found: city points {r['missed_covered']}")
+    if r.get("rejected_at_city_point"):
+        d = r["rejected_at_city_point"]
+        lines.append(f"- A person rejected these but the photo looked at a city point (check on site): rows "
+                     f"{[x['issue_id'] for x in d]}, city points {[x['point_id'] for x in d]}")
     for a in r["installed_after_photo"]:
         seen = f", row {a['issue_id']}" if a["issue_id"] is not None else ""
         lines.append(f"- Installed after the photo: city point {a['point_id']} (installed {a['installed'][:10]}, "

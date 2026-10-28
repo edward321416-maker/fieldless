@@ -42,7 +42,7 @@ def test_summary_counts_every_item_the_same_way():
     assert (items["obstruction"]["kind"], items["obstruction"]["by_answer"]) == ("other", {"traffic cone": 1})
     assert (items["entrance"]["kind"], items["entrance"]["by_answer"]) == ("entrance", {"2": 1})
     assert s["totals"] == {"found": 7, "defects_confirmed": 1, "defects_unconfirmed": 1, "needs_review": 2,
-                           "unclear": 1, "rejected": 1}
+                           "field_check": 0, "unclear": 1, "rejected": 1}
 
 
 def test_summary_takes_km_and_cost_by_the_apps_rules_and_dates_from_the_photos():
@@ -64,10 +64,10 @@ def test_markdown_lists_confirmed_defects_and_attributes_every_photo():
 
     assert text.startswith("# Street survey — Capitol Hill\n") and "SAM 3.1" in text and "Muse Spark" in text
     assert ("| curb ramp (curb_ramp_warning) | check | 3 | 2 × Curb ramp without detectable warning; "
-            "1 × Curb ramp with detectable warning | 1 / 1 / 1 | 1 / 1 |") in text
+            "1 × Curb ramp with detectable warning | 1 / 1 / 0 / 1 | 1 / 1 |") in text
     assert "| streetlight pole (streetlight_pole) | inventory | 2 |" in text
-    assert "| litter can (litter_can) | inventory | 0 | - | 0 / 0 / 0 | - |" in text
-    assert "| entrance | entrance | 1 | 1 × 2 steps | 1 / 0 / 0 | - |" in text
+    assert "| litter can (litter_can) | inventory | 0 | - | 0 / 0 / 0 / 0 | - |" in text
+    assert "| entrance | entrance | 1 | 1 × 2 steps | 1 / 0 / 0 / 0 | - |" in text
     photo_lines = [line for line in text.splitlines() if "pKey=" in line]
     assert len(photo_lines) == 1 and "pKey=101" in photo_lines[0]  # the confirmed defect only
     for line in photo_lines:
@@ -171,3 +171,16 @@ def test_cli_narrate_and_out(tmp_path, monkeypatch, capsys):
     text = (tmp_path / "hand-over" / "report.md").read_text(encoding="utf-8")
     assert made_with == [report.NARRATE_CAP_USD] and GOOD["summary"] in text
     assert text.startswith("# Street survey — Capitol Hill\n") and "model spend: $0.00" in capsys.readouterr().out
+
+
+def test_a_row_a_person_could_not_tell_stays_and_is_listed_for_a_site_visit():
+    data = survey_scan.load()
+    ramp = next(r for r in data["issues"] if r["review_status"] == "needs_review")
+    ramp["review_status"] = "field_check"
+
+    s = report.summary(data, STANDARD, area="Capitol Hill", now=NOW)
+    text = report.to_markdown(s)
+
+    assert s["totals"]["field_check"] == 1 and s["totals"]["needs_review"] == 1
+    assert "A person could not tell from the photo either: 1. These need a site visit" in text
+    assert "Confirmed / to review / check on site / rejected" in text

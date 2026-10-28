@@ -87,3 +87,15 @@ def test_write_makes_one_geojson_and_one_csv_per_item(tmp_path):
         ("47.6001", "-122.3", "no", "true"), ("47.6002", "-122.3", "yes", "false"),
         ("47.6003", "-122.3", "no", "true")]
     assert table[1]["evidence"] == "" and table[0]["creator"] == "alice"
+
+
+def test_every_row_says_its_review_status_in_words_and_a_site_visit_row_is_kept():
+    data = survey_scan.load()
+    row = next(r for r in data["issues"] if r["review_status"] == "needs_review")
+    row["review_status"] = "field_check"
+
+    feats = by_row(export.features(data, STANDARD))
+
+    assert feats[f"issue{row['id']}"]["properties"]["status"] == "Check on site"
+    assert feats["issue1"]["properties"]["status"] == "Confirmed by a person"
+    assert all(f["properties"]["status"] in export.STATUS_TEXT.values() for f in feats.values())

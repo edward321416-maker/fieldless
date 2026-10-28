@@ -11,7 +11,8 @@ Why it is built this way:
   claiming more precision here would mislead.
 - Every feature names the photo's creator, its Mapillary link and the licence: Mapillary's terms require that
   attribution wherever a photo is referenced, and these files leave our hands.
-- Rows a person rejected are left out unless asked for: a rejection means "the models were wrong here".
+- Rows a person rejected are left out unless asked for: a rejection means "the models were wrong here". A row a
+  person could not settle from the photo either stays, as "Check on site" (review_status field_check).
 """
 import csv
 import json
@@ -23,8 +24,11 @@ from pipeline.survey_items import Standard
 from server import views
 
 ENTRANCE = "entrance"
-PROPERTIES = ("item", "label", "answer", "review_status", "defect", "photo_id", "photo_url", "captured_at",
-              "creator", "license", "evidence", "scan_id", "row_id")
+PROPERTIES = ("item", "label", "answer", "review_status", "status", "defect", "photo_id", "photo_url",
+              "captured_at", "creator", "license", "evidence", "scan_id", "row_id")
+# review_status in words, for whoever opens the file in a GIS or a spreadsheet
+STATUS_TEXT = {"auto": "Found by the models", "needs_review": "To review", "verified": "Confirmed by a person",
+               "field_check": "Check on site", "rejected": "Rejected by a person"}
 UNSAFE = re.compile(r"[^a-z0-9_]+")
 
 
@@ -74,7 +78,9 @@ def feature(item: str, row: dict, frame: dict | None, standard: Standard, scan_i
     lat, lng = photo.pop("lat"), photo.pop("lng")
     kind = ENTRANCE if item == ENTRANCE else "issue"
     props = {"item": item, "label": label(item, row, standard), "answer": answer(item, row),
-             "review_status": row["review_status"], "defect": is_defect(item, row, standard), **photo,
+             "review_status": row["review_status"],
+             "status": STATUS_TEXT.get(row["review_status"], row["review_status"]),
+             "defect": is_defect(item, row, standard), **photo,
              "scan_id": scan_id, "row_id": f"{kind}{row['id']}"}
     geometry = {"type": "Point", "coordinates": [lng, lat]} if None not in (lat, lng) else None
     return {"type": "Feature", "geometry": geometry, "properties": {k: props[k] for k in PROPERTIES}}

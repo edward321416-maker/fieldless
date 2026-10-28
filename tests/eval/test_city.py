@@ -252,3 +252,19 @@ def test_cli_where_takes_key_value_pairs(tmp_path):
         city.main(["--run", "r", "--scan", "1", "--item", ITEM, "--layer", str(tmp_path / "x.geojson"),
                    "--where", "IS_STREETLIGHT"])
     assert city.parse_where(["IS_STREETLIGHT=YES", "OWNER=SCL"]) == {"IS_STREETLIGHT": "YES", "OWNER": "SCL"}
+
+
+def test_a_rejected_row_that_looked_at_an_unfound_city_point_is_listed_for_a_site_visit():
+    # Three city points ahead: one a kept row found, one a rejected row looked at, one only a boxless rejected row is near.
+    pts = layer(point(10, 0, 10), point(11, 30, 10), point(12, 180, 5))
+    rows = [row(1, box=box_at(500)),                                  # kept: finds point 10 straight ahead
+            row(2, box=box_at(500 + 30 / 70 * 1000), status="rejected"),  # looked at point 11
+            row(3, box=box_at(500), status="rejected"),               # looked at point 10, already found
+            row(4, box=[], status="rejected")]                        # no direction: 5 m from point 12
+
+    r = run(rows, pts)
+
+    assert pairs(r) == {1: 10}
+    assert [(d["issue_id"], d["point_id"]) for d in r["rejected_at_city_point"]] == [(2, 11)]
+    assert 11 in r["missed_covered"]  # still a miss: the record and the person disagree, neither wins
+    assert "rows [2], city points [11]" in city.to_markdown(r)

@@ -46,7 +46,7 @@ LIMITS_FIXED = (
     "Each finding is placed at the position of its photo, not of the object itself.",
     "Inventory items list what was found and are never counted as defects.",
 )
-ITEM_HEADERS = ("Item", "Kind", "Found", "Results", "Confirmed / awaiting review / rejected",
+ITEM_HEADERS = ("Item", "Kind", "Found", "Results", "Confirmed / to review / check on site / rejected",
                 "Defects confirmed / to confirm")
 
 NARRATE_SCHEMA = {
@@ -119,6 +119,7 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
                    "defects_confirmed": sum(i["defects_confirmed"] for i in items),
                    "defects_unconfirmed": sum(i["defects_unconfirmed"] for i in items),
                    "needs_review": sum(r["review_status"] == "needs_review" for r in live),
+                   "field_check": sum(r["review_status"] == "field_check" for r in live),
                    "unclear": sum(i["by_answer"].get("unclear", 0) for i in items),
                    "rejected": sum(i["by_review"].get("rejected", 0) for i in items)},
     }
@@ -134,7 +135,7 @@ def _item_cells(i: dict) -> list[str]:
     """One row of the items table as plain text. Results are counted by label, so every item reads the same way;
     inventory items and entrances are never defects, so their defect cell is a dash, not a zero."""
     results = "; ".join(f"{n} × {label}" for label, n in i["by_label"].items()) or "-"
-    review = " / ".join(str(i["by_review"].get(k, 0)) for k in ("verified", "needs_review", "rejected"))
+    review = " / ".join(str(i["by_review"].get(k, 0)) for k in ("verified", "needs_review", "field_check", "rejected"))
     never = i["kind"] in ("inventory", "entrance")
     defects = "-" if never else f"{i['defects_confirmed']} / {i['defects_unconfirmed']}"
     return [_item_name(i), i["kind"], str(i["found"]), results, review, defects]
@@ -163,6 +164,9 @@ def _limits(s: dict) -> list[str]:
     if t["unclear"] or t["needs_review"]:
         out.append(f"Unclear from the photo: {t['unclear']}. Awaiting a person's review: {t['needs_review']}. "
                    f"Both are in the GeoJSON and CSV files with their review status.")
+    if t["field_check"]:
+        out.append(f"A person could not tell from the photo either: {t['field_check']}. These need a site visit "
+                   f"(status \"Check on site\" in the GeoJSON and CSV files).")
     return out + list(LIMITS_FIXED)
 
 
