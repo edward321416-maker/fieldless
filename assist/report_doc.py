@@ -112,11 +112,20 @@ def summary_text(s: dict) -> str:
     taken = f" taken {dates['from']} to {dates['to']}" if dates else ""
     found = [i["title"] for i in s["items"] if i["found"]]
     what = ", ".join(found) if found else "no survey item"
-    places = sum(c["not_in_city"] + c["not_seen"] for c in a["city"])
-    city = f" and {places} places where the city's records may need updating" if s.get("city_check") else ""
+    if s.get("city_check"):  # a difference from a list is not an error in it: either side may be the one missing
+        new = sum(c["not_in_city"] for c in a["city"])
+        unconfirmed = sum(c["not_seen"] for c in a["city"])
+        city = (f" and, against the city's lists, {new} {_plural(new, 'find')} the lists do not have and "
+                f"{unconfirmed} listed {_plural(unconfirmed, 'point')} the photos did not confirm")
+    else:
+        city = ""
     return (f"This survey covered {s['km']} km of street from {s['photos']} public street photos{taken}. It recorded "
             f"{t['found']} findings ({what}). {len(a['repairs'])} possible repairs, {len(a['site_visits'])} findings "
-            f"for a site visit{city} are listed in section 4.")
+            f"for a site visit{city} are listed in section 4 for a check.")
+
+
+def _plural(n: int, word: str) -> str:
+    return word if n == 1 else word + "s"
 
 
 def item_text(i: dict) -> str:
@@ -266,7 +275,7 @@ def _actions(s: dict, notes: dict | None) -> str:
                                    for p in prio) + '</ol><p class="muted">Ordered by Muse Spark from the counts.</p>'
                   if prio else "<p>See 4.1 to 4.3.</p>")
     body = (f"<h3>4.1 Repairs</h3>{repairs}<h3>4.2 Site visits</h3>{visits}"
-            f"<h3>4.3 City records to update</h3>{city}<h3>4.4 Priorities</h3>{priorities}")
+            f"<h3>4.3 City records to check</h3>{city}<h3>4.4 Priorities</h3>{priorities}")
     return _section("actions", body)
 
 

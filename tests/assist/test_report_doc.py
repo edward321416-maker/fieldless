@@ -114,4 +114,6 @@ def test_names_are_capitalised_every_item_has_a_question_and_rejections_are_said
 
     assert "Curb ramp</h3>" in page and "<b>Shop entrance</b>: How many steps are at the shop entrance?" in page
     assert "1 found by the models, 1 awaiting review, 1 confirmed; 1 more rejected by a person (not counted)" in page
-    assert "3 places where the city&#x27;s records may need updating" in html.escape(report_doc.summary_text(s))
+    text = html.escape(report_doc.summary_text(s))
+    assert ("against the city&#x27;s lists, 1 find the lists do not have and 2 listed points the photos did not "
+            "confirm") in text and "may need updating" not in text and "4.3 City records to check" in page

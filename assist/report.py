@@ -67,8 +67,10 @@ NARRATE_SCHEMA = {
 NARRATE_PROMPT = """You write the prose of a street survey report for a city official. The JSON below is the whole
 survey; use nothing else.
 - summary: 3 to 4 plain sentences: what was surveyed, what was found, and what needs action first.
-- items: for each item in the JSON, in its order, one paragraph of 2 to 3 sentences on what was found and what it
-  means for the city's records or repairs. "item" is the item's exact "item" value.
+- items: for each item in the JSON, in its order, one paragraph of 2 to 3 sentences on what was found and what to
+  check or repair. "item" is the item's exact "item" value. Where the item has a city list ("city"), say only where
+  the survey and the list differ; never say the list is wrong or out of date, since photos miss things and other
+  agencies keep their own lists.
 - priorities: up to {max_priorities} actions the city should take first. "item" is an exact "item" value; "reason" is
   one sentence.
 Rules: never write a digit (no numbers, no dates); say "most", "a few", "one" or "none" instead. State facts only;
