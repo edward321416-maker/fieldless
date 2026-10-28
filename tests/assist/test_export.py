@@ -99,3 +99,29 @@ def test_every_row_says_its_review_status_in_words_and_a_site_visit_row_is_kept(
     assert feats[f"issue{row['id']}"]["properties"]["status"] == "Check on site"
     assert feats["issue1"]["properties"]["status"] == "Confirmed by a person"
     assert all(f["properties"]["status"] in export.STATUS_TEXT.values() for f in feats.values())
+
+
+def test_finds_the_models_set_aside_get_their_own_csv_with_the_photo_credit(tmp_path):
+    data = survey_scan.load()
+    data["dropped"] = [{"issue_type": "curb_ramp_warning", "frame_idx": 2, "lat": 47.6002, "lng": -122.3,
+                        "captured_at": "2025-06-03T10:00:00Z", "audited": 0,
+                        "model_outputs": {"check": {"visible": False, "answer": "unclear", "note": "a driveway"}}}]
+
+    paths = export.write(data, STANDARD, tmp_path)
+
+    with open(paths["dropped"], encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert len(rows) == 1 and rows[0]["item"] == "curb_ramp_warning" and rows[0]["photo_id"] == "102"
+    assert rows[0]["creator"] == "carol" and rows[0]["license"] == "CC BY-SA 4.0" and rows[0]["audited"] == "false"
+    assert rows[0]["model_note"] == "a driveway"
+    assert "dropped" not in export.write(survey_scan.load(), STANDARD, tmp_path / "none")  # nothing set aside
+
+
+def test_load_scan_reads_set_aside_finds_and_an_older_database_has_none(tmp_path):
+    from eval import store
+    import sqlite3
+    old = tmp_path / "old.db"
+    conn = sqlite3.connect(old)
+    conn.close()
+    with store.open_ro(old) as c:
+        assert store.dropped(c, 1) == []

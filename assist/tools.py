@@ -6,8 +6,9 @@ shows measured scores, never the agent's own claims.
 
 A check item's question is scored against its labelled question (`ask`). An inventory item's question only confirms
 that what SAM found is the target (`confirm`), so it is also asked on photos without the target where SAM fired:
-there a "no" is right, because the pipeline drops the find. Its answers are counted the way the pipeline counts them
-(survey_checks.status: an answer with visible=false is unclear), so the score says what a scan would record."""
+there a "no" is right, because the pipeline drops the find. Answers are counted the way the pipeline counts them
+(survey_checks.status), so the score says what a scan would record: an answer that does not see the target drops the
+pick, which for a check item on a photo that shows it is a miss ("dropped", scored wrong)."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,10 +22,13 @@ from pipeline.sam_output import confident, parse
 from pipeline.survey_checks import PROMPT, SCHEMA  # the scan's own, so a test asks exactly what a scan asks
 
 
-def counted(out: dict) -> str:
-    """Spark's answer as the pipeline counts it: yes or no only when Spark says the target is visible, else unclear."""
+def counted_check(out: dict) -> str:
+    """A check item's answer as the pipeline counts it (survey_checks.status): the target not visible drops the pick
+    ("dropped"); otherwise yes, no or unclear."""
+    if not out.get("visible", True):
+        return "dropped"
     answer = out.get("answer")
-    return answer if out.get("visible", True) and answer in ("yes", "no") else "unclear"
+    return answer if answer in ("yes", "no") else "unclear"
 
 
 def counted_inventory(out: dict) -> str:
@@ -94,7 +98,7 @@ class Bench:
                 return cached
             out = self.api.spark_json([image_part(Path(self.photo(photo_id))), text_part(prompt)], "survey_check",
                                       SCHEMA)
-            got = (out.get("answer", "unclear"), out.get("note", ""))
+            got = (counted_check(out), out.get("note", ""))
             self.answers[(find, ask, photo_id)] = got
             return got
 

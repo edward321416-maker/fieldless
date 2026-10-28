@@ -34,7 +34,7 @@ def test_summary_counts_every_item_the_same_way():
         "by_answer": {"no": 2, "yes": 1},
         "by_label": {"Curb ramp without detectable warning": 2, "Curb ramp with detectable warning": 1},
         "by_review": {"verified": 1, "auto": 1, "needs_review": 1, "rejected": 1},
-        "defects_confirmed": 1, "defects_unconfirmed": 1}
+        "defects_confirmed": 1, "defects_unconfirmed": 1, "dropped": 0}
     pole, can = items["streetlight_pole"], items["litter_can"]
     assert (pole["kind"], pole["found"], pole["by_answer"], pole["defects_unconfirmed"]) == (
         "inventory", 2, {"yes": 1, "unclear": 1}, 0)
@@ -42,7 +42,7 @@ def test_summary_counts_every_item_the_same_way():
     assert (items["obstruction"]["kind"], items["obstruction"]["by_answer"]) == ("other", {"traffic cone": 1})
     assert (items["entrance"]["kind"], items["entrance"]["by_answer"]) == ("entrance", {"2": 1})
     assert s["totals"] == {"found": 7, "defects_confirmed": 1, "defects_unconfirmed": 1, "needs_review": 2,
-                           "field_check": 0, "unclear": 1, "rejected": 1}
+                           "field_check": 0, "unclear": 1, "rejected": 1, "dropped": 0, "dropped_audited": 0}
 
 
 def test_summary_takes_km_and_cost_by_the_apps_rules_and_dates_from_the_photos():
@@ -184,3 +184,20 @@ def test_a_row_a_person_could_not_tell_stays_and_is_listed_for_a_site_visit():
     assert s["totals"]["field_check"] == 1 and s["totals"]["needs_review"] == 1
     assert "A person could not tell from the photo either: 1. These need a site visit" in text
     assert "Confirmed / to review / check on site / rejected" in text
+
+
+def test_finds_the_models_set_aside_are_counted_and_listed_with_their_spot_check():
+    data = survey_scan.load()
+    data["dropped"] = [
+        {"issue_type": "curb_ramp_warning", "frame_idx": 0, "lat": 47.6, "lng": -122.3,
+         "captured_at": "2025-06-01T10:00:00Z", "audited": 1,
+         "model_outputs": {"check": {"visible": False, "answer": "unclear", "note": "a driveway"}}},
+        {"issue_type": "curb_ramp_warning", "frame_idx": 5, "lat": 47.6005, "lng": -122.3,
+         "captured_at": "2021-03-01T10:00:00Z", "audited": 0, "model_outputs": {"check": {"visible": False}}}]
+
+    s = report.summary(data, STANDARD, area="Capitol Hill", now=NOW)
+    text = report.to_markdown(s)
+
+    ramp = next(i for i in s["items"] if i["item"] == "curb_ramp_warning")
+    assert ramp["dropped"] == 2 and (s["totals"]["dropped"], s["totals"]["dropped_audited"]) == (2, 1)
+    assert "Set aside by the models as not the target: 2" in text and "1 of them went to a person" in text

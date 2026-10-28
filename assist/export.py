@@ -13,6 +13,8 @@ Why it is built this way:
   attribution wherever a photo is referenced, and these files leave our hands.
 - Rows a person rejected are left out unless asked for: a rejection means "the models were wrong here". A row a
   person could not settle from the photo either stays, as "Check on site" (review_status field_check).
+- Finds the models set aside as not the target (pipeline.db.dropped) are not findings, but they are not hidden
+  either: they get their own CSV, with the photo, the model's note and whether a person spot-checked it.
 """
 import csv
 import json
@@ -115,9 +117,32 @@ def _write_csv(path: Path, feats: list[dict]) -> None:
             out.writerow([_cell(v) for v in (lat, lng, *(feat["properties"][k] for k in PROPERTIES))])
 
 
+DROPPED_COLUMNS = ("lat", "lng", "item", "photo_id", "photo_url", "captured_at", "creator", "license", "audited",
+                   "model_answer", "model_note", "scan_id")
+
+
+def _write_dropped(path: Path, scan_data: dict) -> None:
+    by_idx = {f["idx"]: f for f in scan_data["frames"]}
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        out = csv.writer(f)
+        out.writerow(DROPPED_COLUMNS)
+        for d in scan_data["dropped"]:
+            frame = by_idx.get(d.get("frame_idx")) or {}
+            check = (d.get("model_outputs") or {}).get("check") or {}
+            image_id = frame.get("image_id")
+            row = {"lat": d.get("lat", frame.get("lat")), "lng": d.get("lng", frame.get("lng")),
+                   "item": d["issue_type"], "photo_id": image_id,
+                   "photo_url": mapillary_link(image_id) if image_id else None,
+                   "captured_at": d.get("captured_at") or frame.get("captured_at"), "creator": frame.get("creator"),
+                   "license": LICENSE, "audited": bool(d.get("audited")), "model_answer": check.get("answer"),
+                   "model_note": check.get("note"), "scan_id": scan_data["scan"]["id"]}
+            out.writerow([_cell(row[k]) for k in DROPPED_COLUMNS])
+
+
 def write(scan_data: dict, standard: Standard, out_dir: Path) -> dict:
-    """survey_scan<N>.geojson with every finding and survey_scan<N>_<item>.csv per item found.
-    Returns {"geojson": path, "csv": {item: path}}."""
+    """survey_scan<N>.geojson with every finding, survey_scan<N>_<item>.csv per item found, and
+    survey_scan<N>_dropped.csv when the models set finds aside. Returns {"geojson": path, "csv": {item: path}} and
+    "dropped": path when there is one."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     scan_id = scan_data["scan"]["id"]
@@ -130,4 +155,8 @@ def write(scan_data: dict, standard: Standard, out_dir: Path) -> dict:
         path = out_dir / f"survey_scan{scan_id}_{UNSAFE.sub('_', item.lower())}.csv"
         _write_csv(path, [f for f in feats if f["properties"]["item"] == item])
         csvs[item] = path
-    return {"geojson": geojson, "csv": csvs}
+    paths = {"geojson": geojson, "csv": csvs}
+    if scan_data.get("dropped"):
+        paths["dropped"] = out_dir / f"survey_scan{scan_id}_dropped.csv"
+        _write_dropped(paths["dropped"], scan_data)
+    return paths

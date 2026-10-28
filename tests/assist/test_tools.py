@@ -136,3 +136,13 @@ def test_confirm_asks_the_injected_judge_and_never_spark(tmp_path):
     assert sorted(a[3] for a in asked) == ["a", "b", "d", "k", "m", "n"]  # SAM's hits; u is labelled unclear
     assert asked[0][:3] == ("streetlight_pole", "Is this a streetlight pole?", "streetlight pole")
     assert (r["kept_true"], r["kept_false"]) == (1, 1)  # the same answers Spark gave in the test above
+
+
+def test_a_check_answer_that_does_not_see_the_target_is_a_miss_as_in_a_scan(tmp_path):
+    # A scan drops a defect-check pick whose answer says the target is not in the photo (survey_checks.status), so
+    # on a labelled photo that shows it, the item lost it: scored wrong, not unclear.
+    answer = {"visible": False, "answer": "yes", "box": [], "confidence": 0.9, "note": "no ramp here"}
+    _, bench = make(tmp_path, answer)
+    r = bench.ask("warning_present", "curb cut", "Does it have domes?")
+    assert (r["right"], r["unclear"]) == (0, 0)
+    assert r["wrong"] == [{"photo_id": "a", "truth": "yes", "answer": "dropped", "note": "no ramp here"}]

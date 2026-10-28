@@ -15,6 +15,16 @@ def open_ro(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def dropped(conn: sqlite3.Connection, scan_id: int) -> list[dict]:
+    """The picks the models set aside as not the target (pipeline.db.dropped); none in a database made before the
+    pipeline kept them."""
+    try:
+        return db.dropped(conn, scan_id)
+    except sqlite3.OperationalError:  # no dropped_pick table yet
+        return []
+
+
 def load_scan(conn: sqlite3.Connection, scan_id: int) -> dict:
     return {"scan": db.get_scan(conn, scan_id), "frames": db.frames(conn, scan_id),
-            "issues": db.issues(conn, scan_id), "entrances": db.entrances(conn, scan_id)}
+            "issues": db.issues(conn, scan_id), "entrances": db.entrances(conn, scan_id),
+            "dropped": dropped(conn, scan_id)}

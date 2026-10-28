@@ -73,7 +73,7 @@ def _date(stamp: str | None) -> str | None:
     return stamp[:10] if stamp else None
 
 
-def _item_entry(item: str, check, rows: list[tuple[dict, dict]]) -> dict:
+def _item_entry(item: str, check, rows: list[tuple[dict, dict]], dropped: int = 0) -> dict:
     """Counts for one item. rows: (row, feature properties) for every row of the item, rejected ones included."""
     live = [(r, p) for r, p in rows if r["review_status"] != "rejected"]
     defects = [p for _, p in live if p["defect"]]
@@ -85,7 +85,8 @@ def _item_entry(item: str, check, rows: list[tuple[dict, dict]]) -> dict:
             "by_label": dict(Counter(p["label"] for _, p in live)),
             "by_review": dict(Counter(r["review_status"] for r, _ in rows)),
             "defects_confirmed": sum(p["review_status"] == "verified" for p in defects),
-            "defects_unconfirmed": sum(p["review_status"] != "verified" for p in defects)}
+            "defects_unconfirmed": sum(p["review_status"] != "verified" for p in defects),
+            "dropped": dropped}
 
 
 def summary(scan_data: dict, standard: Standard, area: str | None = None, now: datetime | None = None) -> dict:
@@ -98,7 +99,11 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
     for item, row in export.rows(scan_data):
         props = export.feature(item, row, by_idx.get(row.get("frame_idx")), standard, scan["id"])["properties"]
         grouped.setdefault(item, []).append((row, props))
-    items = [_item_entry(item, standard.check(item), rows) for item, rows in grouped.items()]
+    set_aside = scan_data.get("dropped") or []
+    for d in set_aside:
+        grouped.setdefault(d["issue_type"], [])
+    items = [_item_entry(item, standard.check(item), rows, sum(d["issue_type"] == item for d in set_aside))
+             for item, rows in grouped.items()]
     titles = {i["item"]: i["title"] for i in items}
     defects = [{**p, "title": titles[item]} for item, rows in grouped.items() for _, p in rows
                if p["defect"] and p["review_status"] == "verified"]
@@ -121,7 +126,8 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
                    "needs_review": sum(r["review_status"] == "needs_review" for r in live),
                    "field_check": sum(r["review_status"] == "field_check" for r in live),
                    "unclear": sum(i["by_answer"].get("unclear", 0) for i in items),
-                   "rejected": sum(i["by_review"].get("rejected", 0) for i in items)},
+                   "rejected": sum(i["by_review"].get("rejected", 0) for i in items),
+                   "dropped": len(set_aside), "dropped_audited": sum(bool(d.get("audited")) for d in set_aside)},
     }
 
 
@@ -164,6 +170,9 @@ def _limits(s: dict) -> list[str]:
     if t["unclear"] or t["needs_review"]:
         out.append(f"Unclear from the photo: {t['unclear']}. Awaiting a person's review: {t['needs_review']}. "
                    f"Both are in the GeoJSON and CSV files with their review status.")
+    if t["dropped"]:
+        out.append(f"Set aside by the models as not the target: {t['dropped']} (in the dropped CSV, with their "
+                   f"photos); {t['dropped_audited']} of them went to a person as a random spot check.")
     if t["field_check"]:
         out.append(f"A person could not tell from the photo either: {t['field_check']}. These need a site visit "
                    f"(status \"Check on site\" in the GeoJSON and CSV files).")
