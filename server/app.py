@@ -194,7 +194,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             scan = found(db.get_scan, conn, scan_id, "scan")
             return views.scan_json(scan, db.entrances(conn, scan_id), db.issues(conn, scan_id),
                                    km=views.surveyed_km(db.frames(conn, scan_id)), city_check=city_check(scan_id),
-                                   dropped=len(db.dropped(conn, scan_id)))
+                                   dropped=views.dropped_count(scan, len(db.dropped(conn, scan_id))))
 
     @app.get("/api/scans/{scan_id}/walks")
     def get_walks(scan_id: int):

@@ -7,6 +7,8 @@ from pipeline import config, geo, second_opinion, survey_items
 
 OLD_PHOTO_YEARS = 3  # spec 9.3: photos older than this get an "old photo" badge
 ISSUE_ICONS = {"missing_blocks": "✖", "cover_cut": "◼", "fixed_obstruction": "▮", "obstruction": "⛔"}
+# Scans made before this (main 70eaece) never recorded the picks the models set aside: their count is unknown, not 0.
+DROPPED_SINCE = "2026-10-28T07:50:00Z"
 MAX_STEP_M = 50.0  # a longer jump between consecutive photos of one walk is a gap in coverage, not surveyed street
 SCAN_FIELDS = ("id", "status", "stage_status", "bbox", "image_count", "captured_from", "captured_to", "cost_usd",
                "processing_seconds", "review_seconds", "error")
@@ -170,8 +172,13 @@ def issue_json(row: dict, now: datetime | None = None, std: survey_items.Standar
             "old_photo": is_old(row.get("captured_at"), now)}
 
 
+def dropped_count(scan: dict, picks: int) -> int | None:
+    """How many picks the models set aside, or None for a scan made before they were recorded."""
+    return picks if picks or scan["created_at"] >= DROPPED_SINCE else None
+
+
 def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float | None = None,
-              city_check: dict | None = None, dropped: int = 0) -> dict:
+              city_check: dict | None = None, dropped: int | None = 0) -> dict:
     """city_check: the offline comparison with the city's own records (eval, city_check_scan<N>.json), if one was
     made for this scan; left out otherwise."""
     std = standard_of(scan)
@@ -196,4 +203,4 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
             "counts": {"defects": defects, "obstructions": obstructions, "entrances": len(entrances),
                        "entrances_with_steps": with_steps, "needs_review": needs_review,
                        "field_check": field_check, "verified": verified, "rejected": rejected,
-                       "dropped": dropped}}  # dropped: picks the models set aside as not the target
+                       "dropped": dropped}}  # picks the models set aside as not the target; None: not recorded

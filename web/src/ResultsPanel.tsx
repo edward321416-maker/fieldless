@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { filesUrl, STATIC_DEMO } from "./api";
 import { BENCHMARKS } from "./benchmarks";
 import { dollars, isFinished, photoMonth, yearsSpan } from "./format";
@@ -21,6 +21,7 @@ const STATUS_SHORT: Record<string, string> = {
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const SHORT_LIST = 5; // an item's list shows this many until "Show all" (a phone would scroll for metres)
 
 // The results, top to bottom (docs/specs/2026-10-28-ui-redesign-design.md 3.1, docs/ui-rules.md U1, U2, U8): the
 // survey, its three main numbers, a published walking survey for scale, one equal row per item, a person's review,
@@ -34,6 +35,7 @@ export default function ResultsPanel(props: Props) {
   const { counts } = scan;
   const present = items.filter((it) => findings.some((f) => f.item === it.id));
   const selectedRow = useRef<HTMLButtonElement>(null);
+  const [opened, setOpened] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     selectedRow.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -70,7 +72,8 @@ export default function ResultsPanel(props: Props) {
       <ul className="found">
         {present.map((it) => {
           const mine = findings.filter((f) => f.item === it.id);
-          const defects = mine.filter((f) => f.badge === "defect").length;
+          const confirmed = mine.filter((f) => f.badge === "defect" && f.status === "verified").length;
+          const possible = mine.filter((f) => f.badge === "defect" && f.status !== "verified").length;
           const site = mine.filter((f) => f.badge === "site").length;
           const match = city?.items[it.id];
           return (
@@ -81,7 +84,8 @@ export default function ResultsPanel(props: Props) {
                 <span className="found-name">{itemName(it.id, items)}</span>
                 <span className="found-count">{mine.length}</span>
                 <span className="found-notes">
-                  {defects > 0 && <span className="chip chip-defect">{plural(defects, "possible defect")}</span>}
+                  {confirmed > 0 && <span className="chip chip-defect">{plural(confirmed, "defect")} confirmed</span>}
+                  {possible > 0 && <span className="chip chip-defect">{plural(possible, "possible defect")}</span>}
                   {site > 0 && <span className="chip chip-site">{site} to check on site</span>}
                   {match && <span className="chip">{match.found} of {match.covered} in the city's list</span>}
                 </span>
@@ -103,7 +107,8 @@ export default function ResultsPanel(props: Props) {
         <dt>To check on site</dt><dd>{counts.field_check}</dd>
         <dt>Confirmed by a person</dt><dd>{counts.verified}</dd>
         <dt>Rejected by a person</dt><dd>{counts.rejected}</dd>
-        <dt>Set aside by the models as not the item</dt><dd>{counts.dropped}</dd>
+        <dt>Set aside by the models as not the item</dt>
+        <dd>{counts.dropped === null ? <span className="hint small">not recorded for this survey</span> : counts.dropped}</dd>
       </dl>
       {counts.needs_review > 0 && !STATIC_DEMO && (
         <button type="button" className="primary" onClick={props.onReview}>
@@ -118,11 +123,14 @@ export default function ResultsPanel(props: Props) {
       )}
 
       {present.map((it) => {
-        const mine = findings.filter((f) => f.item === it.id);
+        const all = findings.filter((f) => f.item === it.id);
+        const at = all.findIndex((f) => f.key === props.selectedKey);
+        const full = opened.has(it.id) || at >= SHORT_LIST;
+        const mine = full ? all : all.slice(0, SHORT_LIST);
         return (
           <section key={it.id} className="item-section" aria-labelledby={`list-${it.id}`}>
             <h3 id={`list-${it.id}`} className="item-heading">
-              <img src={art[it.id]} alt="" width={28} height={28} /> {itemName(it.id, items)} ({mine.length})
+              <img src={art[it.id]} alt="" width={28} height={28} /> {itemName(it.id, items)} ({all.length})
             </h3>
             <ul className="finding-list">
               {mine.map((f, i) => {
@@ -148,6 +156,11 @@ export default function ResultsPanel(props: Props) {
                 );
               })}
             </ul>
+            {!full && all.length > SHORT_LIST && (
+              <button type="button" className="link-button" onClick={() => setOpened((o) => new Set(o).add(it.id))}>
+                Show all {all.length}
+              </button>
+            )}
           </section>
         );
       })}

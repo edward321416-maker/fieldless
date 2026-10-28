@@ -34,6 +34,7 @@ interface Props {
   items: ItemMeta[];
   hidden: Set<string>;
   onToggleItem: (item: string) => void;
+  onShowAll: () => void;
   walks: Walk[];
   selected: Finding | null;
   selectedLabel: string;
@@ -77,10 +78,7 @@ function selectionData(f: Finding | null): { data: FeatureCollection; at: LngLat
 function labelAnchor(bearing: number | null): maplibregl.PositionAnchor {
   if (bearing === null) return "bottom";
   const b = ((bearing % 360) + 360) % 360;
-  if (b < 45 || b >= 315) return "bottom";
-  if (b < 135) return "left";
-  if (b < 225) return "top";
-  return "right";
+  return b < 90 || b >= 270 ? "bottom" : "top"; // above or below, centred: never under the legend at the side
 }
 
 function nearestWalk(f: Finding | null, walks: Walk[]): number | null {
@@ -112,7 +110,7 @@ export default function MapView(props: Props) {
       map.addSource("walks", { type: "geojson", data: EMPTY });
       map.addSource("area", { type: "geojson", data: areaData(latest.current.bbox) });
       map.addSource("selection", { type: "geojson", data: EMPTY });
-      map.addSource("findings", { type: "geojson", data: EMPTY, cluster: true, clusterRadius: 26, clusterMaxZoom: 15 });
+      map.addSource("findings", { type: "geojson", data: EMPTY, cluster: true, clusterRadius: 12, clusterMaxZoom: 16 });
       map.addLayer({ id: "walks", type: "line", source: "walks", layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": "#6b7280", "line-width": 3, "line-opacity": 0.55 } });
       map.addLayer({ id: "walk-picked", type: "line", source: "walks", filter: ["==", ["get", "clip"], -1],
@@ -313,7 +311,8 @@ export default function MapView(props: Props) {
     <div className="map-wrap">
       <div ref={container} className="map" role="region" aria-label="Survey map" />
       {props.findings.length > 0 && (
-        <Legend items={props.items} counts={counts} badges={badges} hidden={props.hidden} onToggle={props.onToggleItem} />
+        <Legend items={props.items} counts={counts} badges={badges} hidden={props.hidden} onToggle={props.onToggleItem}
+          onShowAll={props.onShowAll} />
       )}
       {props.children}
     </div>

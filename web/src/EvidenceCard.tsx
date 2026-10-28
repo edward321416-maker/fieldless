@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, STATIC_DEMO } from "./api";
 import { photoMonth, reasonText } from "./format";
 import { compassWord, targetBearing } from "./geo";
-import { STATUS_SENTENCE, type Finding } from "./items";
+import { colourOf, STATUS_SENTENCE, type Finding } from "./items";
 import { itemArt } from "./markerArt";
 import { EvidencePhoto, PhotoCredit } from "./Photo";
 import { choiceForKey, choicesFor, type Choice } from "./review";
-import type { CityCheck, ItemMeta, Picked } from "./types";
+import type { CheckCount, CityCheck, ItemMeta, Picked } from "./types";
 
 export { MapillaryMark, PhotoCredit } from "./Photo";
 
@@ -15,6 +15,8 @@ interface Props {
   list: Finding[]; // what the arrows step through: the item's findings, or the review queue
   queue: boolean; // reviewing: after an answer, go to the next finding waiting for a person
   items: ItemMeta[];
+  checks: CheckCount[]; // the scan's checks, for their short questions
+  photoOnMap: boolean; // the photo window shows the big photo: the card keeps a thumbnail
   street: string | undefined;
   city: CityCheck | undefined;
   onNavigate: (f: Finding) => void;
@@ -174,9 +176,15 @@ export default function EvidenceCard(props: Props) {
       </h2>
       <p className="status-line">{STATUS_SENTENCE[f.status] ?? f.status}</p>
 
-      {evidence ? (
+      {evidence && props.photoOnMap ? (
+        <p className="card-thumb">
+          <img src={evidence.url} alt="" />
+          <span className="hint small">The photo is open over the map.</span>
+        </p>
+      ) : evidence ? (
         <>
-          <EvidencePhoto evidence={evidence} box={f.box} boxLabel={`the ${target}`} alt={`Street photo: ${title}`} />
+          <EvidencePhoto evidence={evidence} box={f.box} boxLabel={`the ${target}`} colour={colourOf(f.item, items)}
+            alt={`Street photo: ${title}`} />
           <PhotoCredit evidence={evidence} />
         </>
       ) : (
@@ -193,11 +201,16 @@ export default function EvidenceCard(props: Props) {
       {check ? (
         <>
           <h3>We asked {check.model}</h3>
-          <blockquote className="asked">{check.question}</blockquote>
+          <p className="asked">{props.checks.find((c) => c.id === check.id)?.question ?? check.question}</p>
+          <details className="instruction">
+            <summary>Full instruction to the model</summary>
+            <p>{check.question}</p>
+          </details>
           <p><strong>Answer: {p.kind === "issue" ? p.item.label.text : ""}</strong>
             {check.note && <> · “{check.note}”</>}</p>
           {p.kind === "issue" && p.item.defect && (
-            <p className="hint">→ Listed as a possible defect for you to confirm. Look at the boxed {target}.</p>
+            <p className="hint">{f.status === "verified" ? "→ Confirmed as a defect by a person."
+              : `→ Listed as a possible defect for you to confirm. Look at the boxed ${target}.`}</p>
           )}
         </>
       ) : p.kind === "entrance" ? (

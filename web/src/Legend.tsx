@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { BADGE_TEXT, itemName, type Badge } from "./items";
 import { badgeCanvas, itemArt } from "./markerArt";
 import type { ItemMeta } from "./types";
@@ -9,18 +9,25 @@ interface Props {
   badges: Set<Badge>;
   hidden: Set<string>;
   onToggle: (item: string) => void;
+  onShowAll: () => void;
 }
 
 const BADGES: Badge[] = ["review", "site", "defect"];
 
 // The legend is the filter (docs/ui-rules.md U4): each item's marker exactly as the map draws it, its count, and a
 // switch. Only what is on the map is listed.
-export default function Legend({ items, counts, badges, hidden, onToggle }: Props) {
+export default function Legend({ items, counts, badges, hidden, onToggle, onShowAll }: Props) {
+  // On a phone the legend would cover the map: it starts folded there.
+  const [open, setOpen] = useState(() => typeof window === "undefined" || window.innerWidth > 800);
   const art = useMemo(() => itemArt(items), [items]);
   const badgeArt = useMemo(() => Object.fromEntries(BADGES.map((b) => [b, badgeCanvas(b).toDataURL()])), []);
   const present = items.filter((it) => (counts.get(it.id) ?? 0) > 0);
   return (
-    <section className="legend" aria-label="Map legend and filter">
+    <section className={`legend${open ? "" : " legend-folded"}`} aria-label="Map legend and filter">
+      <button type="button" className="legend-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {open ? "Hide legend" : "Legend"}
+      </button>
+      {open && (<>
       <ul>
         {present.map((it) => {
           const on = !hidden.has(it.id);
@@ -36,6 +43,11 @@ export default function Legend({ items, counts, badges, hidden, onToggle }: Prop
           );
         })}
       </ul>
+      {hidden.size > 0 && (
+        <p className="legend-hidden">
+          {hidden.size} hidden · <button type="button" className="link-button inline" onClick={onShowAll}>Show all</button>
+        </p>
+      )}
       {BADGES.some((b) => badges.has(b)) && (
         <ul className="legend-badges">
           {BADGES.filter((b) => badges.has(b)).map((b) => (
@@ -43,6 +55,7 @@ export default function Legend({ items, counts, badges, hidden, onToggle }: Prop
           ))}
         </ul>
       )}
+      </>)}
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import Attribution from "./Attribution";
-import { PhotoCredit, zoomTransform } from "./Photo";
+import { PhotoCredit, tagPlace, zoomTransform } from "./Photo";
 import { choiceForKey, choicesFor } from "./review";
 import type { Issue } from "./types";
 
@@ -63,5 +63,13 @@ describe("the card", () => {
     expect(choices.map((c) => c.key)).toEqual(["Y", "N", "C"]);
     expect(choices[0]).toMatchObject({ label: "Yes, a street tree", send: { body: { action: "answer", answer: "yes" } } });
     expect(choiceForKey(choices, "c")?.send.body).toEqual({ action: "field_check" });
+  });
+});
+
+describe("the box's tag", () => {
+  it("stays inside the photo: under the top edge, and ending at the box on the right side", () => {
+    expect(tagPlace([100, 300, 200, 500])).toEqual({ inside: false, right: false });
+    expect(tagPlace([700, 300, 800, 500])).toEqual({ inside: false, right: true });
+    expect(tagPlace([100, 0, 200, 900])).toEqual({ inside: true, right: false });
   });
 });

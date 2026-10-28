@@ -33,6 +33,14 @@ export default function App() {
   const [picked, setPicked] = useState<Picked | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [newSurvey, setNewSurvey] = useState(false);
+  // Over 800 px the photo opens over the map (PhotoWindow); on a phone it stays in the card.
+  const [wide, setWide] = useState(() => window.matchMedia("(min-width: 801px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 801px)");
+    const onChange = () => setWide(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
   const [fitTo, setFitTo] = useState<Bbox | null>(null);
   const [error, setError] = useState<string | null>(null);
   const getView = useRef<(() => Bbox) | null>(null);
@@ -198,19 +206,20 @@ export default function App() {
         selecting={selecting}
         bbox={bbox}
         fitTo={fitTo}
-        findings={findings}
+        findings={newSurvey ? [] : findings}
         items={items}
         hidden={hidden}
         onToggleItem={toggleItem}
-        walks={walks}
-        selected={selected}
+        onShowAll={() => setHidden(new Set())}
+        walks={newSurvey ? [] : walks}
+        selected={newSurvey ? null : selected}
         selectedLabel={selectedLabel}
         onSelect={onSelect}
         onPick={(f) => pick(f.picked)}
         onReady={(fn) => (getView.current = fn)}
         onStreets={setStreets}
       >
-        {selected && (
+        {selected && !newSurvey && (
           <PhotoWindow finding={selected} list={sameItem} items={items} onStep={(f) => setPicked(f.picked)}
             onClose={() => setPicked(null)} />
         )}
@@ -218,8 +227,9 @@ export default function App() {
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
         {error && <p className="error" role="alert">{error}</p>}
         <div ref={detailRef}>
-          {selected && (
+          {selected && !newSurvey && (
             <EvidenceCard finding={selected} list={cardList} queue={reviewing} items={items}
+              checks={scan?.checks ?? []} photoOnMap={wide && !!selected.picked.item.evidence}
               street={streets[selected.key]} city={scan?.city_check}
               onNavigate={(f) => setPicked(f.picked)} onUpdated={updated}
               onClose={() => {

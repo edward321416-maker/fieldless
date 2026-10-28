@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { photoMonth } from "./format";
+import { isLight } from "./items";
 import type { Evidence } from "./types";
 
 // The official Mapillary logo (press kit v0.0.4, the light-background version, outer margin trimmed); the word if it fails to load.
@@ -39,13 +40,20 @@ interface Props {
   evidence: Evidence;
   box: number[] | null;
   boxLabel: string; // "the pole"
+  colour: string; // the item's colour, as on the map
   alt: string;
   large?: boolean;
 }
 
+// The tag goes above the box, or inside it at the top when the box touches the photo's top edge, and it ends at
+// the box's right edge when the box is in the right part of the photo, so it is never cut off.
+export function tagPlace(box: number[]): { inside: boolean; right: boolean } {
+  return { inside: box[1] < 60, right: box[0] > 600 };
+}
+
 // The evidence photo with the model's box drawn on it, and "Zoom to box" for an object photographed from afar
 // (docs/ui-rules.md U5).
-export function EvidencePhoto({ evidence, box, boxLabel, alt, large = false }: Props) {
+export function EvidencePhoto({ evidence, box, boxLabel, colour, alt, large = false }: Props) {
   const [zoom, setZoom] = useState(false);
   const zoomed = zoom && box !== null;
   return (
@@ -55,8 +63,13 @@ export function EvidencePhoto({ evidence, box, boxLabel, alt, large = false }: P
           <img src={evidence.url} alt={alt} />
           {box && (
             <div className="photo-box" style={{ left: `${box[0] / 10}%`, top: `${box[1] / 10}%`,
-              width: `${(box[2] - box[0]) / 10}%`, height: `${(box[3] - box[1]) / 10}%` }}>
-              {!zoomed && <span className="photo-box-label">{boxLabel}</span>}
+              width: `${(box[2] - box[0]) / 10}%`, height: `${(box[3] - box[1]) / 10}%`, borderColor: colour }}>
+              {!zoomed && (
+                <span className={`photo-box-label${tagPlace(box).inside ? " tag-inside" : ""}${tagPlace(box).right ? " tag-right" : ""}`}
+                  style={{ background: colour, color: isLight(colour) ? "#111827" : "#ffffff" }}>
+                  {boxLabel}
+                </span>
+              )}
             </div>
           )}
         </div>

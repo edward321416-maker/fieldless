@@ -250,3 +250,10 @@ def test_a_check_row_carries_the_models_note():
            "model_outputs": {"check": {"visible": True, "answer": "yes", "note": "wooden pole with a lamp arm"}}}
     assert views.issue_json(row, NOW, std=us)["check"]["note"] == "wooden pole with a lamp arm"
     assert views.issue_json({**row, "model_outputs": {}}, NOW, std=us)["check"]["note"] is None
+
+
+def test_a_scan_from_before_drops_were_recorded_says_so_instead_of_zero():
+    old = {"created_at": "2026-10-28T00:00:40Z"}
+    new = {"created_at": "2026-10-29T01:00:00Z"}
+    assert views.dropped_count(old, 0) is None and views.dropped_count(old, 3) == 3
+    assert views.dropped_count(new, 0) == 0

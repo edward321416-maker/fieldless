@@ -1,4 +1,4 @@
-import { itemName, type Finding } from "./items";
+import { colourOf, itemName, type Finding } from "./items";
 import { EvidencePhoto, PhotoCredit } from "./Photo";
 import type { ItemMeta } from "./types";
 
@@ -30,6 +30,7 @@ export default function PhotoWindow({ finding, list, items, onStep, onClose }: P
         </span>
       </div>
       <EvidencePhoto evidence={evidence} box={finding.box} boxLabel={`the ${target}`} large
+        colour={colourOf(finding.item, items)}
         alt={`Street photo: ${finding.title}`} />
       <PhotoCredit evidence={evidence} />
     </section>
