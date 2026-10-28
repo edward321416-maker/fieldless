@@ -31,6 +31,8 @@ target = "utility or streetlight pole"
 ask = "Look at the tall pole closest to the camera along the sidewalk. Is it a pole for overhead lines or street lighting: a wooden or metal utility pole, a streetlight pole, or a traffic-signal pole with a light arm? Answer no for a tree, a sign post, a parking meter, a flagpole or a pole on private land. If the pole is too far away or mostly hidden to tell, answer unclear."
 label_yes = "Utility or streetlight pole"
 group_m = 15
+judge = "glimmer"  # stage 1 at medium: agreement 0.79 under 0.85, but no fewer found and no extra false keeps, and of
+                   # the 15 photos the two models disagreed on Glimmer was right on 10 (Spark drops signal poles)
 
 [[check]]
 id = "street_tree"
