@@ -68,6 +68,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .mapillary-logo { height: 14px; vertical-align: -2px; }
 .mapillary-word { font-weight: 700; }
 .attribution { font-size: 0.8rem; color: var(--muted); padding-top: 12px; }
+.download { margin: 12px 0; }
 .marker { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; color: #fff; font-weight: 700; padding: 0; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .marker-missing_blocks, .marker-cover_cut, .marker-fixed_obstruction { background: var(--defect); }
 .marker-obstruction { background: var(--obstruction); }

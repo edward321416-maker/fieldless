@@ -14,13 +14,13 @@ from typing import Literal
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from pipeline import collect, config, db, mapillary, survey_items
 from pipeline.runner import RESUME_MIN_USD
-from server import limits, review, views
+from server import files, limits, review, views
 from server.jobs import ScanWorker
 from server.settings import Settings, load
 from server.store import DatasetStore, folder_store
@@ -190,6 +190,19 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             std = views.standard_of(found(db.get_scan, conn, scan_id, "scan"))
             rows = [row for row in db.issues(conn, scan_id) if row["review_status"] != "rejected"]
             return [views.issue_json(row, std=std) for row in sorted(rows, key=lambda r: views.issue_order(r, std))]
+
+    @app.get("/api/scans/{scan_id}/files.zip")
+    def get_files(scan_id: int):
+        with connect() as conn:
+            scan = found(db.get_scan, conn, scan_id, "scan")
+            if scan["status"] in ("queued", "running"):
+                raise HTTPException(409, "The survey is still running; its files are ready when it finishes.")
+            data = {"scan": scan, "frames": db.frames(conn, scan_id), "issues": db.issues(conn, scan_id),
+                    "entrances": db.entrances(conn, scan_id)}
+        body = files.survey_zip(data, views.standard_of(scan), run_dir / "evidence",
+                                area=dict(settings.demo_scans).get(scan_id))
+        return Response(body, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="fieldless-survey-{scan_id}.zip"'})
 
     @app.get("/api/evidence/{name}")
     def get_evidence(name: str):

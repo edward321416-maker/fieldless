@@ -1,6 +1,6 @@
 import { Fragment } from "react";
-import { STATIC_DEMO } from "./api";
-import { dollars, issueTone, km, minutes, photoMonth } from "./format";
+import { filesUrl, STATIC_DEMO } from "./api";
+import { dollars, isFinished, issueTone, km, minutes, photoMonth } from "./format";
 import type { Picked } from "./MapView";
 import type { Entrance, Issue, Scan } from "./types";
 
@@ -105,6 +105,12 @@ export default function ResultsPanel(props: Props) {
         <button type="button" className="primary" onClick={props.onReview}>
           Confirm {counts.needs_review} finding{counts.needs_review === 1 ? "" : "s"}
         </button>
+      )}
+      {isFinished(props.scan) && (
+        <p className="download">
+          <a href={filesUrl(props.scan.id)} download>Download the survey files</a>: a one-page report, GeoJSON and a
+          CSV per item for a GIS, and the evidence photos.
+        </p>
       )}
       <fieldset>
         <legend>Map layers</legend>

@@ -64,12 +64,19 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
     client = TestClient(create_app(settings, worker=NoWorker(), preview=lambda *a: None))
     paths = ["/api/config", "/api/demo"]
     for scan_id, _ in scans:
-        paths += [f"/api/scans/{scan_id}", f"/api/scans/{scan_id}/entrances", f"/api/scans/{scan_id}/issues"]
+        paths += [f"/api/scans/{scan_id}", f"/api/scans/{scan_id}/entrances", f"/api/scans/{scan_id}/issues",
+                  f"/api/scans/{scan_id}/files.zip"]
     evidence = config.run_dir(run) / "evidence"
     written = []
     for path in paths:
         response = client.get(path)
         response.raise_for_status()
+        if path.endswith(".zip"):  # the download is served as it is, not as a JSON answer
+            target = out / path.lstrip("/")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(response.content)
+            written.append(path)
+            continue
         body = response.json()
         target = out / f"{path.lstrip('/')}.json"
         target.parent.mkdir(parents=True, exist_ok=True)

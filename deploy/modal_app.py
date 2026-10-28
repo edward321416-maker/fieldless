@@ -79,6 +79,8 @@ image = (
     .env(SETTINGS)
     .add_local_dir(ROOT / "pipeline", f"{APP_DIR}/pipeline", ignore=["**/__pycache__/**"])
     .add_local_dir(ROOT / "server", f"{APP_DIR}/server", ignore=["**/__pycache__/**"])
+    .add_local_dir(ROOT / "assist", f"{APP_DIR}/assist", ignore=["**/__pycache__/**"])  # the survey files (report)
+    .add_local_dir(ROOT / "eval", f"{APP_DIR}/eval", ignore=["**/__pycache__/**"])  # assist.report reads with it
     .add_local_dir(ROOT / "web" / "dist", f"{APP_DIR}/web/dist")
 )
 secret = modal.Secret.from_dict(_server_secret() if modal.is_local() else {})

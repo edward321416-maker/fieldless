@@ -16,6 +16,9 @@ const READ_ONLY = "This public demo is read-only. Run Fieldless with your own ke
 
 export const staticPath = (path: string) => `${path}.json`;
 
+// A finished survey's files (report, GeoJSON, CSV per item, evidence photos); the static demo has the same zip.
+export const filesUrl = (scanId: number) => `/api/scans/${scanId}/files.zip`;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (STATIC_DEMO) {
     if (init?.method && init.method !== "GET") throw new ApiError(405, READ_ONLY);

@@ -372,3 +372,31 @@ def test_issues_of_a_us_scan_list_check_defects_first(make):
                                               "review_status": "needs_review", "review_reasons": ["possible_defect"]})
     ids = [r["id"] for r in client.get(f"/api/scans/{scan_id}/issues").json()]
     assert ids == [no_warning, unclear, cone]
+
+
+def test_a_finished_survey_downloads_as_one_zip_of_report_geojson_csv_and_evidence(make):
+    import io
+    import zipfile
+    scan_id, *_ = seed()
+    photos = config.run_dir("server") / "evidence"
+    photos.mkdir(parents=True, exist_ok=True)
+    (photos / f"scan{scan_id}_entrance1.jpg").write_bytes(b"jpg")  # the seeded Cafe entrance's evidence
+    client, _ = make(demo_scans=((scan_id, "Myeongdong"),))
+    response = client.get(f"/api/scans/{scan_id}/files.zip")
+    assert response.status_code == 200 and response.headers["content-type"] == "application/zip"
+    assert f'filename="fieldless-survey-{scan_id}.zip"' in response.headers["content-disposition"]
+    z = zipfile.ZipFile(io.BytesIO(response.content))
+    names = set(z.namelist())
+    assert {"report.html", "report.md", f"survey_scan{scan_id}.geojson", f"evidence/scan{scan_id}_entrance1.jpg"} <= names
+    assert any(n.endswith(".csv") for n in names)
+    assert "Myeongdong" in z.read("report.html").decode("utf-8")  # the demo survey's name titles the report
+    assert z.read(f"evidence/scan{scan_id}_entrance1.jpg") == b"jpg"
+
+
+def test_survey_files_wait_for_the_survey_to_finish(make):
+    client, _ = make()
+    assert client.get("/api/scans/999/files.zip").status_code == 404
+    conn = store()
+    scan_id = db.create_scan(conn, "mapillary", BBOX)
+    db.update_scan(conn, scan_id, status="running")
+    assert client.get(f"/api/scans/{scan_id}/files.zip").status_code == 409
