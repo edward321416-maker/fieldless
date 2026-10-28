@@ -18,6 +18,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from eval.city import box_of
 from eval.store import load_scan, open_ro
 
 VALUES = ("yes", "no", "unclear")
@@ -31,10 +32,9 @@ def targets(data: dict) -> list[dict]:
     out = []
     for i in data["issues"]:
         if i["review_status"] == "auto":
-            check = (i.get("model_outputs") or {}).get("check") or {}
             out.append({"kind": "issues", "id": i["id"], "item": i["issue_type"],
                         "image_id": i["evidence"]["image_id"], "image": i["evidence"]["image"],
-                        "box": check.get("box") or None, "title": f"#{i['id']} {i['issue_type']}"})
+                        "box": box_of(i), "title": f"#{i['id']} {i['issue_type']}"})
     for e in data["entrances"]:
         if e["review_status"] == "auto":
             out.append({"kind": "entrances", "id": e["id"], "item": "entrance", "image_id": e["evidence"]["image_id"],

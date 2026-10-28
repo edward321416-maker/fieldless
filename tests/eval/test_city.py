@@ -53,6 +53,15 @@ def test_row_direction_adds_the_box_offset_to_the_compass_and_wraps():
     assert city.row_direction(row(1, box=box_at(500)), frame(compass=None)) is None
 
 
+def test_the_box_sam_tracked_comes_before_the_box_spark_drew():
+    tracked = {"id": 1, "model_outputs": {"find": {"box": box_at(1000), "track": {"clip": 0, "id": 3}},
+                                          "check": {"box": box_at(500)}}}
+    assert city.box_of(tracked) == box_at(1000)
+    assert city.row_direction(tracked, frame(compass=0.0)) == pytest.approx(35.0)
+    assert city.box_of(row(1, box=box_at(500))) == box_at(500)  # a row made before tracking
+    assert city.box_of({"id": 1, "model_outputs": {"find": {"box": [1, 2]}}}) is None
+
+
 def test_box_on_the_left_or_right_picks_the_pole_on_that_side_of_the_corner():
     # Two poles 15 m away on the two sides of a crossing, 50 degrees apart as seen from the photo.
     corner = layer(point(10, -25, 15), point(11, 25, 15))

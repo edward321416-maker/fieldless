@@ -44,11 +44,21 @@ def angle_between(a: float, b: float) -> float:
     return abs((a - b + 180) % 360 - 180)
 
 
+def box_of(row: dict) -> list | None:
+    """The row's object as [x1, y1, x2, y2] in 0-1000 of its photo: the box SAM 3.1 tracked (find.box) when there is
+    one, else the box Muse Spark drew (check.box), as server.views.box_of reads it. None when neither is a box."""
+    outputs = row.get("model_outputs") or {}
+    for box in ((outputs.get("find") or {}).get("box"), (outputs.get("check") or {}).get("box")):
+        if isinstance(box, list) and len(box) == 4:
+            return box
+    return None
+
+
 def row_direction(row: dict, frame: dict, fov: float = FOV) -> float | None:
     """Bearing from the photo to the row's object: compass + (box centre x / 1000 - 0.5) * fov. None when the row
     has no box or the photo no compass."""
-    box = ((row.get("model_outputs") or {}).get("check") or {}).get("box") or []
-    if len(box) != 4 or frame.get("compass") is None:
+    box = box_of(row)
+    if box is None or frame.get("compass") is None:
         return None
     return (frame["compass"] + ((box[0] + box[2]) / 2000 - 0.5) * fov) % 360
 

@@ -29,6 +29,12 @@ def test_targets_are_the_findings_no_person_has_seen():
         ("issues", 1, "pole", "a", [0, 0, 100, 500]), ("entrances", 7, "entrance", "d", None)]
 
 
+def test_targets_take_the_tracked_box_when_there_is_one():
+    row = issue(1, "pole", "a", [0, 0, 100, 500])
+    row["model_outputs"]["find"] = {"box": [600, 0, 700, 900]}
+    assert precision.targets(data([row]))[0]["box"] == [600, 0, 700, 900]
+
+
 def test_carry_keeps_a_judgement_for_the_same_object_on_the_same_photo():
     old = data([issue(1, "pole", "a", [100, 0, 200, 600]), issue(2, "pole", "a", [600, 0, 700, 600]),
                 issue(3, "tree", "b", [0, 0, 500, 500])], [entrance(7, "JACK", "d")])
