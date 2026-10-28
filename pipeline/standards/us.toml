@@ -12,6 +12,8 @@ fixed = []  # poles and hydrants at the curb edge are normal on US sidewalks; no
 
 [[check]]
 id = "curb_ramp_warning"
+map_icon = "curb-ramp"
+question = "Does the curb ramp have a detectable warning surface (raised domes) at its bottom edge?"
 find = "curb cut"
 target = "curb ramp"
 ask = "A curb ramp is the short sloped section where a pedestrian crossing meets the sidewalk. Driveways, alley entrances and plain raised curbs are not curb ramps; if the photo shows only those, set visible to false. If there is a curb ramp, does it have a detectable warning surface (a panel of raised truncated domes) at its bottom edge? If its bottom edge is too far away or too small to see, answer unclear."
@@ -29,6 +31,8 @@ label_unclear = "Curb ramp: detectable warning unclear"
 
 [[check]]
 id = "utility_pole"
+map_icon = "street-light"
+question = "Is the pole closest to the camera a pole for overhead lines or street lighting?"
 inventory = true
 find = "street light pole"
 target = "utility or streetlight pole"
@@ -40,6 +44,8 @@ judge = "glimmer"  # stage 1 at medium: agreement 0.79 under 0.85, but no fewer 
 
 [[check]]
 id = "street_tree"
+map_icon = "tree"
+question = "Is this tree planted in the sidewalk or the planting strip?"
 inventory = true
 find = "street tree"
 target = "street tree"
@@ -49,6 +55,8 @@ group_m = 8
 
 [[check]]
 id = "litter_can"
+map_icon = "litter-bin"
+question = "Is this a public litter or recycling can (a fixed city bin)?"
 inventory = true
 find = "trash can"
 target = "public litter can"
@@ -61,6 +69,8 @@ judge = "glimmer"  # Muse Glimmer answers first; passed stage 1 at medium (agree
 # assist/testsets/seattle_paystations.json: SAM 8/12 (0/6 on negatives), Spark confirmed 8/8 (2026-10-28).
 [[check]]
 id = "parking_pay_station"
+map_icon = "parking-kiosk"
+question = "Is this a parking pay station (a grey kiosk with a blue P sign)?"
 inventory = true
 find = "grey parking kiosk"
 target = "parking pay station"

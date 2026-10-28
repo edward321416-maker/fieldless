@@ -52,3 +52,10 @@ def test_marker_svg_draws_the_colour_and_the_icon_or_the_letter():
     assert svg.startswith("<svg") and s["i0"]["color"] in svg and style.ICONS["tree"] in svg
     assert 'aria-hidden="true"' in svg and 'width="24"' in svg and 'fill-rule="evenodd"' in svg
     assert ">T<" in style.marker_svg(s["i1"])
+
+
+def test_every_check_of_every_standard_has_a_known_icon_and_a_short_question():
+    for code in ("us", "kr"):
+        for check in survey_items.load(code).checks:
+            assert check.map_icon in style.ICONS, (code, check.id)
+            assert check.question.endswith("?") and len(check.question) <= 110, (code, check.id)
