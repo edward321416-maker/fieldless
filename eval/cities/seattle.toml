@@ -1,0 +1,49 @@
+# Seattle's own asset records, one layer per survey item (docs/specs/2026-10-29-city-fields-design.md).
+# eval.city_check pairs a survey's findings with these points; assist.export then writes each finding with the
+# fields Seattle names a record by, so a finding can be looked up, or a record updated, in the city's own system.
+# Another city is another file of this shape: python -m eval.city_check --city <name>.
+#
+#   layer            GeoJSON of the city's points, relative to the city layers' folder
+#   name             the layer as the city calls it
+#   inventory        a list of assets (a finding answered "no" is not one)
+#   installed_field  install date, epoch milliseconds: a point installed after its photo is not counted
+#   truth_field      a field that holds the same yes/no the survey's question asks, and its values (truth_yes/no)
+#   id_fields        the fields that name one record in the city's system
+
+city = "Seattle"
+root = "seattle"
+
+[items.utility_pole]
+layer = "assets/poles.geojson"
+name = "Seattle City Light poles"
+inventory = true
+id_fields = ["SCLNR", "ASSET_ID"]
+
+[items.street_tree]
+layer = "assets/trees.geojson"
+name = "SDOT street trees"
+inventory = true
+installed_field = "PLANTED_DATE"
+id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
+
+[items.litter_can]
+layer = "assets/litter.geojson"
+name = "SPU public litter cans"
+inventory = true
+id_fields = ["pc_sp_id"]
+
+[items.parking_pay_station]
+layer = "assets/paystations.geojson"
+name = "SDOT pay stations"
+inventory = true
+id_fields = ["OBJECTID"]  # the downloaded layer carries no other number for a pay station
+
+[items.curb_ramp_warning]
+layer = "ramps_capitolhill.geojson"
+name = "SDOT curb ramps"
+inventory = false
+installed_field = "INSTALL_DATE"
+truth_field = "DETWARN_EXISTS"
+truth_yes = "Y"
+truth_no = "N"
+id_fields = ["COMPKEY", "UNITID", "UNITDESC"]

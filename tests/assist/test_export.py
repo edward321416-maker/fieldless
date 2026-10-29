@@ -125,3 +125,71 @@ def test_load_scan_reads_set_aside_finds_and_an_older_database_has_none(tmp_path
     conn.close()
     with store.open_ro(old) as c:
         assert store.dropped(c, 1) == []
+
+
+CITY = {"city": "Seattle", "items": {
+    "curb_ramp_warning": {"layer": "SDOT curb ramps", "id_fields": ["COMPKEY", "UNITID"],
+                          "answer_field": {"name": "DETWARN_EXISTS", "yes": "Y", "no": "N"},
+                          "pairs": [{"issue_id": 1, "in_view": True, "dist_m": 8.0,
+                                     "city": {"COMPKEY": 805801, "UNITID": "CBR-1"}},
+                                    {"issue_id": 2, "in_view": False, "dist_m": 26.0,
+                                     "city": {"COMPKEY": 805802, "UNITID": "CBR-2"}}],
+                          "missed": [{"lat": 47.61, "lng": -122.31, "city": {"COMPKEY": 805803, "UNITID": "CBR-3"}}]},
+    "streetlight_pole": {"layer": "City Light poles", "id_fields": ["SCLNR"], "pairs": [], "missed": []}}}
+
+
+def test_with_a_city_check_each_finding_carries_the_citys_own_record_fields():
+    """docs/specs/2026-10-29-city-fields-design.md 3: a finding names the record it paired with, in the city's fields."""
+    data = {**survey_scan.load(), "city_check": CITY}
+
+    rows = by_row(export.features(data, STANDARD))
+
+    ramp = rows["issue1"]["properties"]
+    assert subset(ramp, {"city_layer": 1, "city_match": 1, "COMPKEY": 1, "UNITID": 1, "DETWARN_EXISTS": 1}) == {
+        "city_layer": "SDOT curb ramps", "city_match": "In the city's list", "COMPKEY": 805801, "UNITID": "CBR-1",
+        "DETWARN_EXISTS": "N"}  # the survey's answer "no" in the city's own value
+    far = rows["issue2"]["properties"]
+    assert (far["city_match"], far["UNITID"], far["DETWARN_EXISTS"]) == (
+        "In the city's list (beyond the photo's view)", "CBR-2", "Y")
+    alone = rows["issue3"]["properties"]
+    assert (alone["city_match"], alone["COMPKEY"], alone["UNITID"]) == ("Not paired with the city's list", None, None)
+    unclear = rows["issue6"]["properties"]  # a pole the models could not settle: no city value is made up
+    assert unclear["city_match"] == "Not paired with the city's list" and unclear["SCLNR"] is None
+    assert "DETWARN_EXISTS" not in unclear
+    assert "city_layer" not in rows["issue7"]["properties"]  # an item the city has no layer for
+
+
+def test_an_unclear_answer_leaves_the_citys_yes_no_field_empty():
+    data = survey_scan.load()
+    ramp = next(r for r in data["issues"] if r["id"] == 3)
+    ramp["object_label"] = "unclear"
+    data["city_check"] = CITY
+    assert by_row(export.features(data, STANDARD))["issue3"]["properties"]["DETWARN_EXISTS"] is None
+
+
+def test_the_city_records_the_photos_showed_but_the_survey_did_not_find_get_a_csv_to_check(tmp_path):
+    data = {**survey_scan.load(), "city_check": CITY}
+    scan_id = data["scan"]["id"]
+
+    paths = export.write(data, STANDARD, tmp_path)
+
+    with open(paths["csv"]["curb_ramp_warning"], encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        table = list(reader)
+    assert reader.fieldnames == ["lat", "lng", *export.PROPERTIES, "city_layer", "city_match", "COMPKEY", "UNITID",
+                                 "DETWARN_EXISTS"]
+    assert table[0]["UNITID"] == "CBR-1" and table[0]["DETWARN_EXISTS"] == "N"
+    check = paths["city_records"]["curb_ramp_warning"]
+    assert check.name == f"survey_scan{scan_id}_curb_ramp_warning_city_records_to_check.csv"
+    with open(check, encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert rows == [{"lat": "47.61", "lng": "-122.31", "city_layer": "SDOT curb ramps", "COMPKEY": "805803",
+                     "UNITID": "CBR-3", "note": export.RECORD_TO_CHECK}]
+    assert "streetlight_pole" not in paths["city_records"]  # nothing missed: no file
+
+
+def test_without_a_city_check_the_files_are_as_before(tmp_path):
+    paths = export.write(survey_scan.load(), STANDARD, tmp_path)
+    with open(paths["csv"]["curb_ramp_warning"], encoding="utf-8-sig", newline="") as f:
+        assert csv.DictReader(f).fieldnames == ["lat", "lng", *export.PROPERTIES]
+    assert paths["city_records"] == {}

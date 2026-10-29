@@ -15,6 +15,12 @@ Why it is built this way:
   person could not settle from the photo either stays, as "Check on site" (review_status field_check).
 - Finds the models set aside as not the target (pipeline.db.dropped) are not findings, but they are not hidden
   either: they get their own CSV, with the photo, the model's note and whether a person spot-checked it.
+- When the scan was compared with the city's own records (eval.city_check, scan_data["city_check"]), each finding of
+  an item the city keeps a layer for also carries that record in the city's own field names (docs/specs/
+  2026-10-29-city-fields-design.md): the layer, whether a record was paired, the fields that name it (UNITID,
+  COMPKEY, ...), and, where the city keeps the survey's own question as a field (DETWARN_EXISTS), the survey's answer
+  in the city's values. An unclear answer leaves that field empty. The city's inspection dates are never filled: a
+  photo is not the city's inspection. The records the photos showed but the survey did not find get a CSV to check.
 """
 import csv
 import json
@@ -32,6 +38,10 @@ PROPERTIES = ("item", "label", "answer", "review_status", "status", "defect", "p
 STATUS_TEXT = {"auto": "Found by the models", "needs_review": "To review", "verified": "Confirmed by a person",
                "field_check": "Check on site", "rejected": "Rejected by a person"}
 UNSAFE = re.compile(r"[^a-z0-9_]+")
+MATCH_TEXT = {True: "In the city's list", False: "In the city's list (beyond the photo's view)",
+              None: "Not paired with the city's list"}
+RECORD_TO_CHECK = ("In the city's list and in a photo's view; not found by this survey. Check on site or in the "
+                   "photos.")
 
 
 def is_inventory(check) -> bool:
@@ -94,11 +104,31 @@ def rows(scan_data: dict) -> list[tuple[str, dict]]:
             + [(ENTRANCE, r) for r in scan_data["entrances"]])
 
 
+def city_fields(item: str, row: dict, city: dict | None) -> dict:
+    """The city's record for one finding, in the city's own field names, or {} when the city keeps no layer for the
+    item. Entrances are never paired (eval.city_check pairs sidewalk rows only)."""
+    c = (city or {}).get("items", {}).get(item)
+    if not c:
+        return {}
+    pair = next((p for p in c.get("pairs", []) if p["issue_id"] == row["id"]), None) if item != ENTRANCE else None
+    out = {"city_layer": c["layer"], "city_match": MATCH_TEXT[pair["in_view"] if pair else None],
+           **{k: (pair["city"].get(k) if pair else None) for k in c.get("id_fields", [])}}
+    if field := c.get("answer_field"):
+        out[field["name"]] = {"yes": field["yes"], "no": field["no"]}.get(answer(item, row))
+    return out
+
+
 def features(scan_data: dict, standard: Standard, include_rejected: bool = False) -> list[dict]:
     scan_id = scan_data["scan"]["id"]
     by_idx = {f["idx"]: f for f in scan_data["frames"]}
-    return [feature(item, row, by_idx.get(row.get("frame_idx")), standard, scan_id)
-            for item, row in rows(scan_data) if include_rejected or row["review_status"] != "rejected"]
+    city = scan_data.get("city_check")
+    out = []
+    for item, row in rows(scan_data):
+        if include_rejected or row["review_status"] != "rejected":
+            feat = feature(item, row, by_idx.get(row.get("frame_idx")), standard, scan_id)
+            feat["properties"].update(city_fields(item, row, city))
+            out.append(feat)
+    return out
 
 
 def _cell(value) -> str:
@@ -109,12 +139,24 @@ def _cell(value) -> str:
 
 def _write_csv(path: Path, feats: list[dict]) -> None:
     # utf-8-sig: Excel then reads non-ASCII labels and place names correctly; QGIS and pandas skip the mark.
+    extra = [k for k in (feats[0]["properties"] if feats else {}) if k not in PROPERTIES]  # the city's fields
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         out = csv.writer(f)
-        out.writerow(["lat", "lng", *PROPERTIES])
+        out.writerow(["lat", "lng", *PROPERTIES, *extra])
         for feat in feats:
             lng, lat = feat["geometry"]["coordinates"] if feat["geometry"] else (None, None)
-            out.writerow([_cell(v) for v in (lat, lng, *(feat["properties"][k] for k in PROPERTIES))])
+            out.writerow([_cell(v) for v in (lat, lng, *(feat["properties"].get(k) for k in (*PROPERTIES, *extra)))])
+
+
+def _write_records_to_check(path: Path, layer: dict) -> None:
+    """The city records some photo showed within reach that no finding paired with: for a person to look at."""
+    fields = list(layer.get("id_fields", []))
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        out = csv.writer(f)
+        out.writerow(["lat", "lng", "city_layer", *fields, "note"])
+        for m in layer["missed"]:
+            out.writerow([_cell(v) for v in (m["lat"], m["lng"], layer["layer"], *(m["city"].get(k) for k in fields),
+                                             RECORD_TO_CHECK)])
 
 
 DROPPED_COLUMNS = ("lat", "lng", "item", "photo_id", "photo_url", "captured_at", "creator", "license", "audited",
@@ -140,9 +182,10 @@ def _write_dropped(path: Path, scan_data: dict) -> None:
 
 
 def write(scan_data: dict, standard: Standard, out_dir: Path) -> dict:
-    """survey_scan<N>.geojson with every finding, survey_scan<N>_<item>.csv per item found, and
-    survey_scan<N>_dropped.csv when the models set finds aside. Returns {"geojson": path, "csv": {item: path}} and
-    "dropped": path when there is one."""
+    """survey_scan<N>.geojson with every finding, survey_scan<N>_<item>.csv per item found,
+    survey_scan<N>_<item>_city_records_to_check.csv per item the city check lists unfound records for, and
+    survey_scan<N>_dropped.csv when the models set finds aside. Returns {"geojson": path, "csv": {item: path},
+    "city_records": {item: path}} and "dropped": path when there is one."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     scan_id = scan_data["scan"]["id"]
@@ -155,7 +198,12 @@ def write(scan_data: dict, standard: Standard, out_dir: Path) -> dict:
         path = out_dir / f"survey_scan{scan_id}_{UNSAFE.sub('_', item.lower())}.csv"
         _write_csv(path, [f for f in feats if f["properties"]["item"] == item])
         csvs[item] = path
-    paths = {"geojson": geojson, "csv": csvs}
+    records = {}
+    for item, layer in ((scan_data.get("city_check") or {}).get("items") or {}).items():
+        if layer.get("missed"):
+            records[item] = out_dir / f"survey_scan{scan_id}_{UNSAFE.sub('_', item.lower())}_city_records_to_check.csv"
+            _write_records_to_check(records[item], layer)
+    paths = {"geojson": geojson, "csv": csvs, "city_records": records}
     if scan_data.get("dropped"):
         paths["dropped"] = out_dir / f"survey_scan{scan_id}_dropped.csv"
         _write_dropped(paths["dropped"], scan_data)

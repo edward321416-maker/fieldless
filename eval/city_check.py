@@ -4,10 +4,13 @@ paired with one, and which rejections looked straight at an unfound one. eval/ci
 
     python -m eval.city_check --run demo --scan 4
 
-Writes <run>/city_check_scan<N>.json; the server attaches it to the scan as "city_check" when it is there.
+Writes <run>/city_check_scan<N>.json; the server attaches it to the scan as "city_check" when it is there. Each item
+also names the city records its findings paired with and the photographed ones it missed, in the fields the city's
+file lists (eval/cities/<city>.toml), so assist.export can write them (docs/specs/2026-10-29-city-fields-design.md).
 """
 import argparse
 import json
+import tomllib
 from datetime import date
 from pathlib import Path
 
@@ -16,15 +19,16 @@ from eval.store import load_scan, open_ro
 
 METHOD = "Rows paired one-to-one with the city's points by photo position and viewing direction (eval/city.py)."
 METHOD_URL = "https://github.com/edward321416-maker/fieldless/blob/main/eval/city.py"
-SEATTLE = {  # the layers data/seattle/city_eval_all.sh scores, relative to data/seattle
-    "utility_pole": {"layer": "assets/poles.geojson", "name": "Seattle City Light poles", "inventory": True},
-    "street_tree": {"layer": "assets/trees.geojson", "name": "SDOT street trees", "inventory": True,
-                    "installed_field": "PLANTED_DATE"},
-    "litter_can": {"layer": "assets/litter.geojson", "name": "SPU public litter cans", "inventory": True},
-    "parking_pay_station": {"layer": "assets/paystations.geojson", "name": "SDOT pay stations", "inventory": True},
-    "curb_ramp_warning": {"layer": "ramps_capitolhill.geojson", "name": "SDOT curb ramps", "inventory": False,
-                          "installed_field": "INSTALL_DATE", "truth_field": "DETWARN_EXISTS", "truth_yes": "Y"},
-}
+CITIES = Path(__file__).parent / "cities"
+
+
+def load_city(name: str) -> dict:
+    """A city's file: its name, the folder of its layers and, per survey item, the layer of its own records and the
+    fields that name one."""
+    return tomllib.loads((CITIES / f"{name}.toml").read_text(encoding="utf-8"))
+
+
+SEATTLE = load_city("seattle")["items"]  # the layers data/seattle/city_eval_all.sh scores, relative to data/seattle
 
 
 def build(data: dict, layers: dict[str, dict], root: Path, measured_at: str, city_name: str = "Seattle") -> dict:
@@ -35,9 +39,23 @@ def build(data: dict, layers: dict[str, dict], root: Path, measured_at: str, cit
         r = city.evaluate(data["issues"], data["frames"], layer, item, inventory=cfg["inventory"],
                           installed_field=cfg.get("installed_field"), truth_field=cfg.get("truth_field"),
                           truth_yes=cfg.get("truth_yes"), id_field="OBJECTID")
+        points = {p["id"]: p for p in city.load_points(layer, "OBJECTID")}
+        fields = list(cfg.get("id_fields", []))
+
+        def record(pid):
+            return {k: points[pid]["props"].get(k) for k in fields}
+
         items[item] = {"layer": cfg["name"], "found": r["found"], "covered": r["covered"],
                        "matched_ids": sorted(m["issue_id"] for m in r["matched"]),
-                       "rejected_at_city_point": sorted(d["issue_id"] for d in r["rejected_at_city_point"])}
+                       "rejected_at_city_point": sorted(d["issue_id"] for d in r["rejected_at_city_point"]),
+                       "id_fields": fields,
+                       "pairs": [{"issue_id": m["issue_id"], "in_view": m["in_view"], "dist_m": m["dist_m"],
+                                  "city": record(m["point_id"])} for m in r["matched"]],
+                       "missed": [{"lat": points[pid]["lat"], "lng": points[pid]["lng"], "city": record(pid)}
+                                  for pid in r["missed_covered"]]}
+        if cfg.get("truth_field") and cfg.get("truth_yes") and cfg.get("truth_no"):
+            # the city keeps the survey's own question as a field: the export writes the answer in it
+            items[item]["answer_field"] = {"name": cfg["truth_field"], "yes": cfg["truth_yes"], "no": cfg["truth_no"]}
     waiting = any(r.get("review_status") == "needs_review" for r in [*data["issues"], *data["entrances"]])
     return {"scan_id": data["scan"]["id"], "city": city_name, "measured_at": measured_at, "reviewed": not waiting,
             "method": METHOD, "method_url": METHOD_URL, "items": items}
@@ -50,16 +68,18 @@ def main(argv=None) -> Path:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--run", required=True)
     ap.add_argument("--scan", type=int, required=True)
-    ap.add_argument("--root", default=str(LEDGER.parent / "seattle"), help="folder of the city layers")
+    ap.add_argument("--city", default="seattle", help="a file in eval/cities, without .toml")
+    ap.add_argument("--root", help="folder of the city layers (default: the city file's root, next to the ledger)")
     ap.add_argument("--measured-at", default=date.today().isoformat())
     args = ap.parse_args(argv)
+    town = load_city(args.city)
     run_dir = config.run_dir(args.run)
     conn = open_ro(run_dir / "threshold.db")
     try:
         data = load_scan(conn, args.scan)
     finally:
         conn.close()
-    out = build(data, SEATTLE, Path(args.root), args.measured_at)
+    out = build(data, town["items"], Path(args.root or LEDGER.parent / town["root"]), args.measured_at, town["city"])
     path = run_dir / f"city_check_scan{args.scan}.json"
     path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     for item, r in out["items"].items():
