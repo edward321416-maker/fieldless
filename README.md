@@ -30,7 +30,7 @@ One pass over the photos fills a whole survey. Each item is a few sentences in a
 | Condition | Curb ramps without a detectable warning surface | Seattle's curb-ramp inventory, plus photo checks |
 | Record | Steps at shop entrances · objects blocking the walkway, with the photo date | Photo checks |
 | Added in the app | Anything a photo can show, typed as a target (for example "bike rack") | Muse Spark Open's answers on sample photos, and the city's list when it has one (SDOT bike racks) |
-| Another country's rules | Seoul: tactile paving with blocks missing or cut by a cover (Korean standard, `kr.toml`) | Photo checks |
+| Another country's rules | Seoul: tactile paving with blocks missing or cut by a cover, steps at shop entrances, street trees (Korean standard, `kr.toml`) | Seoul's street-tree list (Open Data Plaza), plus photo checks |
 
 It reports only what a photo can settle. Slopes, widths and sub-inch lips need a tape measure, and Fieldless says so instead of guessing.
 
@@ -82,7 +82,7 @@ All numbers are measured by us with the code in `eval/` (city check, precision) 
 
 - **Seattle, Capitol Hill**: 181 photos over 0.94 km walked, one pass with five items: $4.21 ($4.48 per km) and about 8 min (7.0 min of processing plus about 1 min to collect the photos). Per item, found vs the city's inventory where the photos reach: utility and streetlight poles 13/29, street trees 25/39, parking pay stations 2/4, litter cans 1/8. Curb-ramp warnings remain weak on this walk: most ramps are too far away or too small in the photo to judge the warning surface, so 6 of the 8 ramp findings are left unclear, and 4 of 27 city ramps were matched (the 1 with an answer agrees with the city record). Items installed after the photos (2022) are counted separately (12 curb ramps). How much a scan finds depends on the walk: another day's walk over the same blocks (181 photos, 0.89 km, same code) found poles 0/24, street trees 18/39 and pay stations 1/9.
 - **How often a finding is right**: of the 86 findings the models recorded on their own, 73 were right when we looked at each evidence photo, 3 were wrong (a traffic-signal pole taken for a utility pole, two street-tree boxes on something else) and 10 could not be told from the photo (park trees, things far away); 1 of the 73 was the same object counted twice. These were judged by Claude, the AI coding assistant, not by a person. Finds the city's list lacks are not called wrong: of the 7 we checked by eye in an earlier pass over the same blocks, 6 were real things kept in another agency's list (signal poles, park trees, utility bins) or off by GPS, and 1 was too small to tell.
-- **Seoul** (Korean standard): Seongsu 103 photos in 5.7 min at $1.68 per km; Myeongdong 280 photos at $3.72 per km. Both tactile-paving defect spots in Seongsu were found with no false alarms; no false alarms across Myeongdong. Entrances: 11 of 12 (Seongsu) and 37 of 46 (Myeongdong) reported entrances are real.
+- **Seoul** (Korean standard): Seongsu 103 photos in 6.6 min at $2.52 per km, with street trees added to the survey afterwards ($0.45 and 54 s for that item alone); Myeongdong 280 photos at $3.72 per km. Street trees in Seongsu: 6 of the 23 trees in Seoul's own list that the photos could see (the photos are from February, with bare trees, and several are far away), and 11 of the 13 trees found pair with a record on the list. Both tactile-paving defect spots in Seongsu were found with no false alarms; no false alarms across Myeongdong. Entrances: 11 of 12 (Seongsu) and 37 of 46 (Myeongdong) reported entrances are real.
 - **Muse Spark item agent**: in the app, "bike rack" passed its test and found 12 racks for $0.72 (above). From the ADA excerpt it wrote 6 items and set aside 16 requirements that need measuring.
 - For scale, field surveys take weeks to months and roughly $100–$1,000 per km. Those surveys record more items, so this compares scale, not the same job.
 
@@ -90,7 +90,7 @@ All numbers are measured by us with the code in `eval/` (city check, precision) 
 
 - Photos come from [Mapillary](https://www.mapillary.com) under CC BY-SA 4.0. Every evidence photo shows its creator, the Mapillary logo and a link. Downloaded photos are never committed.
 - Faces and licence plates are blurred, and blurring is only ever added.
-- City inventories used for checking are the City of Seattle's open GIS layers (SDOT curb ramps, trees, pay stations and bike racks; Seattle City Light poles; Seattle Public Utilities litter cans). They carry no stated licence, only the City's notice that it makes no warranty of accuracy. The repo keeps only the city point IDs that label the small test sets in `assist/testsets/`, not the layers.
+- City inventories used for checking are the City of Seattle's open GIS layers (SDOT curb ramps, trees, pay stations and bike racks; Seattle City Light poles; Seattle Public Utilities litter cans) and Seoul's street-tree list (Seoul Open Data Plaza, OA-23040; `eval/seoul_trees.py` turns it into a layer). Seattle's carry no stated licence, only the City's notice that it makes no warranty of accuracy. The repo keeps only the city point IDs that label the small test sets in `assist/testsets/`, not the layers.
 - This is not a navigation app and not an enforcement tool. It records facts so they can be fixed.
 
 ## Limits
