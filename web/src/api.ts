@@ -71,8 +71,6 @@ export const api = {
   scanItems: (scanId: number) => request<ItemRunSummary[]>(`/api/scans/${scanId}/items`),
   startItem: (scanId: number, target: string, inviteCode: string) =>
     request<{ id: number }>(`/api/scans/${scanId}/items`, post({ target, invite_code: inviteCode || null })),
-  sendLabels: (id: number, labels: Record<number, "yes" | "no" | "unclear">) =>
-    request<unknown>(`/api/items/${id}/labels`, post({ labels })),
   undoEntrance: (id: number | string) => request<Entrance>(`/api/entrances/${id}/review/undo`, post({})),
   undoIssue: (id: number | string) => request<Issue>(`/api/issues/${id}/review/undo`, post({})),
 };

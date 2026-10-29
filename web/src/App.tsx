@@ -412,11 +412,6 @@ export default function App() {
                   setItemRunId(id);
                   setRunTick((t) => t + 1);
                 }}
-                onLabels={async (labels) => {
-                  if (!run) return;
-                  await api.sendLabels(run.id, labels);
-                  setRunTick((t) => t + 1);
-                }}
                 onOpen={(id) => {
                   setItemRunId(id);
                   setRunTick((t) => t + 1);

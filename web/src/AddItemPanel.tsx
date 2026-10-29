@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { dollars, photoMonth } from "./format";
+import { dollars } from "./format";
 import { capital } from "./items";
 import type { ItemRun, ItemRunSummary } from "./types";
-
-type Answer = "yes" | "no" | "unclear";
 
 interface Props {
   canMake: boolean; // the server makes items (an invite code is set) and this is not the static demo
@@ -11,15 +9,12 @@ interface Props {
   examples: ItemRunSummary[]; // the survey's finished runs
   defaultOpen?: boolean;
   onStart: (target: string, inviteCode: string) => Promise<void>;
-  onLabels: (labels: Record<number, Answer>) => Promise<void>;
   onOpen: (id: number) => void;
   onClose: () => void; // the run off the screen
 }
 
-const KEYS: Record<string, Answer> = { y: "yes", n: "no", c: "unclear" };
-
 // Making a survey item in the app (docs/specs/2026-10-29-agent-items-design.md 1): what to record, the agent's steps
-// as they come, ten photos to answer when the city publishes no list to test against, and what was added.
+// as they come, and what was added. No person is asked anything: another model answers the photos it is tested on.
 export default function AddItemPanel(props: Props) {
   const { run } = props;
   const [open, setOpen] = useState(props.defaultOpen ?? !!run);
@@ -80,7 +75,7 @@ function Start({ canMake, examples, onStart, onOpen }: Props) {
           <button type="submit" className="primary" disabled={busy || target.trim().length < 2}>
             {busy ? "Starting…" : "Write and test the item"}
           </button>
-          <span className="hint small">Up to $1 of model calls. A person may be asked about ten photos.</span>
+          <span className="hint small">Up to $1 of model calls. Muse Spark Open answers the photos it is tested on.</span>
         </form>
       ) : (
         <p className="hint small">Making a new item needs an invite code on the live site; this site shows example runs.</p>
@@ -98,14 +93,13 @@ function Steps({ lines, active }: { lines: string[]; active: boolean }) {
   );
 }
 
-function RunView({ run, onLabels, onClose }: Props & { run: ItemRun }) {
+function RunView({ run, onClose }: Props & { run: ItemRun }) {
   const active = run.status === "queued" || run.status === "running";
   return (
     <div className="add-item-body">
       <p className="eyebrow">New survey item, written by Muse Spark</p>
       <h3 className="add-item-target">{capital(run.target)}</h3>
       <Steps lines={run.progress} active={active} />
-      {run.status === "labels_needed" && <Labels run={run} onLabels={onLabels} />}
       {run.status === "failed" && (
         <>
           <p className="error" role="alert">{run.error}</p>
@@ -118,72 +112,6 @@ function RunView({ run, onLabels, onClose }: Props & { run: ItemRun }) {
   );
 }
 
-function Labels({ run, onLabels }: { run: ItemRun; onLabels: Props["onLabels"] }) {
-  const [answers, setAnswers] = useState<Answer[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const n = answers.length;
-  const photo = run.photos[Math.min(n, run.photos.length - 1)];
-
-  async function answer(a: Answer) {
-    if (busy || n >= run.photos.length) return;
-    const next = [...answers, a];
-    setAnswers(next);
-    if (next.length < run.photos.length) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await onLabels(Object.fromEntries(run.photos.map((p, i) => [p.idx, next[i]])));
-    } catch (err) {
-      setError((err as Error).message);
-      setAnswers(next.slice(0, -1));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      const t = ev.target as HTMLElement | null;
-      if (t && ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) return;
-      const a = KEYS[ev.key.toLowerCase()];
-      if (!a || ev.altKey || ev.ctrlKey || ev.metaKey) return;
-      ev.preventDefault();
-      answer(a);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
-  if (!photo) return null;
-  return (
-    <div className="label-card">
-      <p className="label-head">
-        <strong>Does this photo show a {run.target}?</strong>
-        <span>{Math.min(n + 1, run.photos.length)} of {run.photos.length}</span>
-      </p>
-      <span className="bar" aria-hidden="true"><span style={{ width: `${(n / run.photos.length) * 100}%` }} /></span>
-      <p className="hint small">Your answers are what the agent tests its wording on.</p>
-      <img src={photo.url} alt={`Street photo ${n + 1} of ${run.photos.length}`} />
-      <p className="credit">
-        Photo {photoMonth(photo.captured_at)} by {photo.creator ?? "a Mapillary contributor"} ·{" "}
-        <a href={photo.link} target="_blank" rel="noreferrer">Mapillary</a> · CC BY-SA 4.0
-      </p>
-      {error && <p className="error" role="alert">{error}</p>}
-      <div className="label-answers">
-        <button type="button" disabled={busy} onClick={() => answer("yes")}><kbd>Y</kbd> Yes</button>
-        <button type="button" disabled={busy} onClick={() => answer("no")}><kbd>N</kbd> No</button>
-        <button type="button" disabled={busy} onClick={() => answer("unclear")}><kbd>C</kbd> Can't tell</button>
-      </div>
-      {n > 0 && n < run.photos.length && (
-        <button type="button" className="link-button inline" onClick={() => setAnswers(answers.slice(0, -1))}>
-          ‹ Back one photo
-        </button>
-      )}
-    </div>
-  );
-}
-
 function Done({ run, onClose }: { run: ItemRun; onClose: () => void }) {
   const t = run.test;
   return (
@@ -191,8 +119,8 @@ function Done({ run, onClose }: { run: ItemRun; onClose: () => void }) {
       <p><strong>Muse Spark added “{run.target}”</strong> for {dollars(run.cost_usd)}</p>
       {t?.kept && t.false && (
         <p className="hint small">
-          Kept {t.kept[0]} of {t.kept[1]} photos showing it and {t.false[0]} of {t.false[1]} without it, on
-          answers from {t.labels === "city" && t.layer ? t.layer : "a person"}
+          Kept {t.kept[0]} of {t.kept[1]} photos showing it and {t.false[0]} of {t.false[1]} without it, on{" "}
+          {t.judge ?? "another model"}'s answers
         </p>
       )}
       {t?.city && <p className="hint small">{t.city.found} of {t.city.covered} in {t.city.layer}</p>}

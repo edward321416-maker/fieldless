@@ -75,8 +75,9 @@ export interface AgentItem extends ItemMeta {
 }
 
 export interface ItemTest {
-  labels: "city" | "person"; // where the answers it was tested on came from
-  layer: string | null; // the city's layer, when the city's positions gave the answers
+  labels: "model"; // the answers it was tested on came from another model, never a person
+  judge?: string; // that model, "Muse Spark Open"
+  layer: string | null; // the city's layer, when its list helped choose the photos
   phrase: string;
   ask: string;
   calls: number;

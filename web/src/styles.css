@@ -280,12 +280,6 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
   border: 1px solid #ddd6fe; display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: #1f2937; }
 .item-progress li::before { content: "✓ "; color: #15803d; }
 .item-progress .item-progress-now::before { content: "● "; color: var(--accent); }
-.label-card { display: flex; flex-direction: column; gap: 8px; }
-.label-head { display: flex; justify-content: space-between; gap: 8px; margin: 0; }
-.label-card img { width: 100%; border-radius: 8px; border: 1px solid var(--line); background: #111827; }
-.label-card .credit { margin: 0; }
-.label-answers { display: flex; gap: 8px; }
-.label-answers button { flex: 1; min-height: 48px; font-size: 1rem; }
 .agent-done { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 8px;
   background: #f5f3ff; border: 1px solid #ddd6fe; }
 .agent-done p { margin: 0; }
