@@ -45,5 +45,6 @@ describe("adding a survey item", () => {
     expect(html).toContain("on Muse Spark Open&#x27;s answers");
     expect(html).not.toContain("Does this photo show");
     expect(html).toContain("14 of 22 in SDOT bike racks");
+    expect(html).not.toContain("so far");
   });
 });

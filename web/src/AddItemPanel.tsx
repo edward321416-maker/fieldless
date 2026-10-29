@@ -107,7 +107,7 @@ function RunView({ run, onClose }: Props & { run: ItemRun }) {
         </>
       )}
       {run.status === "done" && <Done run={run} onClose={onClose} />}
-      <p className="hint small">Model calls so far {dollars(run.cost_usd)} of the $1.00 cap</p>
+      {run.status !== "done" && <p className="hint small">Model calls so far {dollars(run.cost_usd)} of the $1.00 cap</p>}
     </div>
   );
 }
