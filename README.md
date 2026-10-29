@@ -248,7 +248,7 @@ label_yes = "Utility or streetlight pole"
 
 `group_m` gives things that stand in rows one row per that many metres of walk instead of one per run of photos: 8 m for poles and street trees, which stand close together (on two Seattle surveys it matched about 30% more of the city's poles and almost 40% more of its trees than 15 m, for a few more repeats of one object), and 15 m for litter cans and pay stations.
 
-`judge = "glimmer"` (inventory checks only) lets Muse Glimmer, the open-weight model we serve on Modal (`deploy/modal_glimmer.py`), answer the check first in a run started with `--glimmer` (and `GLIMMER_URL`). Muse Spark answers what Glimmer calls unclear or cannot answer, and checks a tenth of the rest; a disagreement goes to a person first. Each row records which model answered. Glimmer is for large runs: on a busy GPU one answer costs about a sixteenth of a Muse Spark call, but a small survey pays the GPU's start and idle time for a few dozen answers, so it is cheaper and faster on Muse Spark. The live site and plain `run_scan` use Muse Spark.
+`judge = "glimmer"` (inventory checks only) lets Muse Glimmer, the open-weight model we serve on Modal (`deploy/modal_glimmer.py`), answer the check first in a run started with `--glimmer` (and `GLIMMER_URL`). Muse Spark answers what Glimmer calls unclear or cannot answer, and checks a tenth of the rest; a disagreement keeps Glimmer's answer and is marked `models_disagree` on its card. Each row records which model answered. Glimmer is for large runs: on a busy GPU one answer costs about a sixteenth of a Muse Spark call, but a small survey pays the GPU's start and idle time for a few dozen answers, so it is cheaper and faster on Muse Spark. The live site and plain `run_scan` use Muse Spark.
 
 ### Export a survey
 
@@ -276,7 +276,7 @@ python -m deploy.static_site --run <run> --scan <id>:<Name> --out data/site --sp
 
 ### Live on Modal
 
-`deploy/modal_app.py` runs the server on Modal: one always-on container serves the web app and the API and runs surveys one at a time. SQLite runs on the container's disk; after every survey and review the database and evidence photos are copied to a Modal Volume (`BACKUP_DIR`), and a new container restores them from there.
+`deploy/modal_app.py` runs the server on Modal: one always-on container serves the web app and the API and runs surveys one at a time. SQLite runs on the container's disk; after every survey, review and item run the database and evidence photos are copied to a Modal Volume (`BACKUP_DIR`), and a new container restores them from there.
 
 ```bash
 python deploy/modal_app.py --seed data/runs/<run>   # once: the demo surveys
