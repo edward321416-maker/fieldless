@@ -652,7 +652,9 @@ def test_a_finished_item_shows_its_rows_as_the_scans_own_and_leaves_the_scan_as_
         f"item{run_id}-1", run_id, "agent_fire_hydrant", 90.0)
     assert issue["check"]["target"] == "fire hydrant" and issue["check"]["answer"] == "yes"
     assert issue["evidence"]["url"] == f"/api/evidence/{name}"
-    assert client.get(issue["evidence"]["url"]).content == b"jpg"
+    photo = client.get(issue["evidence"]["url"])
+    assert photo.content == b"jpg" and photo.headers["cache-control"] == "public, max-age=86400"
+    assert photo.headers["content-type"] == "image/jpeg"
     assert item["test"]["city"] == {"layer": "Hydrants", "found": 1, "covered": 2}
     assert [r["id"] for r in client.get(f"/api/scans/{scan_id}/items").json()] == [run_id]  # finished runs only
     assert client.get(f"/api/scans/{scan_id}").json() == before

@@ -17,8 +17,7 @@ from typing import Literal
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from assist import report
@@ -26,6 +25,7 @@ from pipeline import collect, config, db, mapillary, sam_output, survey_items
 from pipeline.runner import RESUME_MIN_USD
 from server import files, limits, review, views
 from server.jobs import ScanWorker
+from server.web_files import WholeFiles
 from server.settings import Settings, load
 from server.store import DatasetStore, folder_store
 
@@ -72,6 +72,7 @@ class IssueReview(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+EVIDENCE_CACHE = "public, max-age=86400"
 TILE_CACHE_S = 3600  # coverage changes when people upload; an hour old is fine for choosing an area
 TILE_CACHE_BYTES = 64_000_000  # compressed tiles kept; a dense zoom 13 tile is about 1 MB, a third of that gzipped
 
@@ -290,7 +291,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         path = collect.photo_path(frame["image_id"])
         if not path.is_file():
             raise HTTPException(404, "no such photo")
-        return FileResponse(path, media_type="image/jpeg")
+        return Response(path.read_bytes(), media_type="image/jpeg")  # whole, as get_evidence explains
 
     def city_check(scan_id: int) -> dict | None:
         """The offline comparison with the city's records (eval, docs/specs/2026-10-28-ui-redesign-design.md 4.1),
@@ -382,7 +383,10 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         path = run_dir / "evidence" / name
         if not path.is_file():
             raise HTTPException(404, "no such evidence photo")
-        return FileResponse(path, media_type="image/jpeg")
+        # Sent whole, not streamed: on the live host a 64 KB-chunked FileResponse delivered a 270 KB photo at about
+        # 20 KB/s (2026-10-29), while whole responses (the zip) came at MB/s. A photo's name carries its row and photo
+        # id, so the browser may keep it for a day.
+        return Response(path.read_bytes(), media_type="image/jpeg", headers={"Cache-Control": EVIDENCE_CACHE})
 
     @app.post("/api/entrances/{entrance_id}/review")
     def review_entrance(entrance_id: int, body: EntranceReview):
@@ -460,5 +464,5 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             return issue_out(conn, issue_id)
 
     if settings.static_dir.is_dir():
-        app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="web")
+        app.mount("/", WholeFiles(directory=settings.static_dir, html=True), name="web")
     return app
