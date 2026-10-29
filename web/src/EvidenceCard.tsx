@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, STATIC_DEMO } from "./api";
-import { photoMonth, reasonText } from "./format";
+import { photoMonth, reasonText, zoomChip } from "./format";
 import { compassWord, targetBearing } from "./geo";
 import { colourOf, STATUS_SENTENCE, type Finding } from "./items";
 import { itemArt } from "./markerArt";
@@ -261,8 +261,10 @@ export default function EvidenceCard(props: Props) {
           : `Seen in the photo of ${photoMonth(p.item.captured_at)}; movable objects may be gone now.`}</p>
       )}
 
-      {(match || p.item.old_photo || (p.kind === "issue" && p.item.second_opinion) || p.item.review_reasons.length > 0) && (
+      {(match || p.item.old_photo || (p.kind === "issue" && p.item.second_opinion) || p.item.review_reasons.length > 0
+        || zoomChip(check)) && (
         <p className="chips">
+          {zoomChip(check) && <span className="chip">{zoomChip(check)}</span>}
           {match && <span className="chip">{props.city!.city}'s list has a {target} here</span>}
           {p.item.old_photo && <span className="chip">Photo over 3 years old ({photoMonth(p.item.captured_at)})</span>}
           {p.kind === "issue" && p.item.second_opinion && (

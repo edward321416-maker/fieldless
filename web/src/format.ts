@@ -57,6 +57,12 @@ export function issueTone(issue: Issue): string {
   return issue.defect ? "check-defect" : issue.check.answer === "unclear" ? "check-unclear" : "check-ok";
 }
 
+// A chip for an answer given on a second, enlarged look at the marked box: what the first look said.
+export function zoomChip(check: { zoomed?: boolean; first?: { answer: string | null } | null } | null): string | null {
+  if (!check?.zoomed) return null;
+  return `Looked again at the marked part, enlarged${check.first?.answer ? ` (first look: ${check.first.answer})` : ""}`;
+}
+
 export function reasonText(code: string): string {
   return REASONS[code] ?? code.replace(/_/g, " ");
 }

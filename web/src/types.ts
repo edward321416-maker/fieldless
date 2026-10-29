@@ -35,6 +35,8 @@ export interface CheckInfo {
   label_no: string;
   inventory: boolean; // a confirmed object is an asset point, not a defect
   model: string; // who answered, e.g. "Muse Spark" or "Muse Glimmer (open weights, served on Modal)"
+  zoomed?: boolean; // asked once more on the marked box enlarged, after a first answer of unclear (main 7df850c)
+  first?: { answer: string | null; note: string | null } | null; // that first answer
 }
 
 export interface CheckCount {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  dollars, isFinished, issueQuestion, issueTone, km, labelText, median, minutes, photoMonth, reasonText, stageState, yearsSpan,
+  dollars, isFinished, issueQuestion, issueTone, km, labelText, median, minutes, photoMonth, reasonText, stageState, yearsSpan, zoomChip,
 } from "./format";
 import type { Scan } from "./types";
 
@@ -47,6 +47,10 @@ describe("format", () => {
   it("explains review reasons in words", () => {
     expect(reasonText("possible_sill")).toContain("cannot be confirmed from photos");
     expect(reasonText("too_small")).toBe("The marked part is too small in the photo to judge this detail");
+    expect(zoomChip({ zoomed: true, first: { answer: "unclear" } }))
+      .toBe("Looked again at the marked part, enlarged (first look: unclear)");
+    expect(zoomChip({ zoomed: false })).toBeNull();
+    expect(zoomChip(null)).toBeNull();
     expect(reasonText("something_new")).toBe("something new");
   });
   it("formats dates, years, time and money", () => {
