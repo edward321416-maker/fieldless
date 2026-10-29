@@ -16,6 +16,9 @@ HOSTED_MARKERS = ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PR
 class Settings:
     run_name: str = "server"  # data folder: <THRESHOLD_DATA>/runs/<run_name>
     invite_code: str | None = field(default=None, repr=False)
+    # Making a survey item in the app (plan 12) needs this code; without one the server makes no items and shows the
+    # example. Separate from invite_code, so the live "Start survey" can stay open while items need a code.
+    item_invite_code: str | None = field(default=None, repr=False)
     ip_hash_salt: str = field(default="threshold", repr=False)
     scans_per_ip_per_day: int = 3  # spec 13; 0 turns the per-address limit off
     # Total spend of the scans visitors start; past it the live site stops new scans (finished ones stay open). It
@@ -55,6 +58,7 @@ def load() -> Settings:
     return Settings(
         run_name=os.environ.get("THRESHOLD_RUN") or "server",
         invite_code=os.environ.get("INVITE_CODE") or None,
+        item_invite_code=os.environ.get("ITEM_INVITE_CODE") or os.environ.get("INVITE_CODE") or None,
         ip_hash_salt=os.environ.get("IP_HASH_SALT") or "threshold",
         scans_per_ip_per_day=_number("SCANS_PER_IP_PER_DAY", os.environ.get("SCANS_PER_IP_PER_DAY") or "3"),
         public_cost_cap_usd=(_number("PUBLIC_COST_CAP_USD", os.environ["PUBLIC_COST_CAP_USD"], float)

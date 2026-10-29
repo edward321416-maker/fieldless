@@ -84,9 +84,9 @@ def check_bbox(bbox: list[float], max_deg2: float) -> list[float]:
     return [min_lng, min_lat, max_lng, max_lat]
 
 
-def check_invite(given: str | None, expected: str | None) -> None:
+def check_invite(given: str | None, expected: str | None, what: str = "Starting a survey") -> None:
     if expected and not (given and hmac.compare_digest(given.encode(), expected.encode())):
-        raise LimitError(403, "Starting a survey needs an invite code")
+        raise LimitError(403, f"{what} needs an invite code")
 
 
 def check_daily_scans(conn, hashed: str, limit: int, now: datetime | None = None) -> None:

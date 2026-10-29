@@ -25,6 +25,9 @@ class FakeWorker:
     def submit(self, scan_id):
         self.submitted.append(scan_id)
 
+    def submit_item(self, run_id):
+        self.submitted.append(("item", run_id))
+
 
 @pytest.fixture
 def make(tmp_path):
@@ -71,8 +74,8 @@ def test_health_and_config(make):
     health = client.get("/api/health").json()
     assert health["ok"] is True and health["forwarded_for_entries"] == 0 and health["mask_decoding"]
     assert client.get("/api/health", headers={"x-forwarded-for": "1.2.3.4, 5.6.7.8"}).json()["forwarded_for_entries"] == 2
-    assert client.get("/api/config").json() == {"invite_required": False, "max_bbox_deg2": 0.0001,
-                                                "coverage_tiles": True, "report": True}
+    assert client.get("/api/config").json() == {"invite_required": False, "max_bbox_deg2": 0.0001, "items": True,
+                                                "make_items": False, "coverage_tiles": True, "report": True}
     client, _ = make(invite_code="abc")
     assert client.get("/api/config").json()["invite_required"] is True
 
@@ -542,3 +545,115 @@ def test_the_files_zip_report_carries_the_saved_sentences(make):
 
     page = z.read("report.html").decode("utf-8")
     assert "Most poles were found." in page and f'src="evidence/scan{scan_id}_issue1_900.jpg"' in page
+
+
+# --- survey items the agent writes (plan 12) -----------------------------------------------------------------------
+
+HYDRANT = {"id": "agent_fire_hydrant", "find": "fire hydrant", "target": "fire hydrant", "ask": "Is it a fire hydrant?",
+           "report_when": "yes", "label_yes": "Fire hydrant", "label_no": "Not a fire hydrant",
+           "label_unclear": "Fire hydrant unclear", "inventory": True, "group_m": 15.0}
+
+
+def item_scan(status="done"):
+    conn = store()
+    scan_id = db.create_scan(conn, "mapillary", [-122.33, 47.61, -122.32, 47.62], "US")
+    db.add_frames(conn, scan_id, [{"idx": i, "clip": 0, "image_id": f"88{i}", "sequence_id": "s", "lat": 47.614,
+                                   "lng": -122.32, "compass": 90.0, "captured_at": "2022-08-30T10:00:00Z",
+                                   "creator": "walker", "width": 2048, "height": 1152} for i in range(9)])
+    db.update_scan(conn, scan_id, status=status)
+    return conn, scan_id
+
+
+def test_making_an_item_needs_the_servers_item_code_a_finished_scan_and_a_free_worker(make):
+    conn, scan_id = item_scan()
+    client, worker = make()
+    assert client.get("/api/config").json()["make_items"] is False
+    assert client.post(f"/api/scans/{scan_id}/items", json={"target": "fire hydrant"}).status_code == 403
+
+    client, worker = make(item_invite_code="hydrant")
+    assert client.get("/api/config").json()["make_items"] is True
+    wrong = client.post(f"/api/scans/{scan_id}/items", json={"target": "fire hydrant", "invite_code": "x"})
+    assert wrong.status_code == 403 and wrong.json()["detail"] == "Making a survey item needs an invite code"
+    assert client.post(f"/api/scans/{scan_id}/items", json={"target": "x", "invite_code": "hydrant"}).status_code == 422
+    _, running = item_scan(status="running")
+    assert client.post(f"/api/scans/{running}/items",
+                       json={"target": "fire hydrant", "invite_code": "hydrant"}).status_code == 409
+    db.update_scan(conn, running, status="done")
+
+    made = client.post(f"/api/scans/{scan_id}/items", json={"target": "  fire   hydrant ", "invite_code": "hydrant"})
+    assert made.status_code == 202
+    run_id = made.json()["id"]
+    assert worker.submitted == [("item", run_id)]
+    run = db.item_run(conn, run_id)
+    assert (run["scan_id"], run["target"], run["status"]) == (scan_id, "fire hydrant", "queued")
+    assert run["client_ip_hash"]  # a visitor's run counts toward the visitors' cap
+    busy = client.post(f"/api/scans/{scan_id}/items", json={"target": "bench", "invite_code": "hydrant"})
+    assert busy.status_code == 409  # one at a time
+    conn.close()
+
+
+def test_an_item_waiting_for_answers_shows_its_photos_and_takes_one_answer_per_photo(make):
+    conn, scan_id = item_scan()
+    run_id = db.create_item_run(conn, scan_id, "fire hydrant")
+    db.update_item_run(conn, run_id, status="labels_needed", label_photos=[3, 7], progress=["Muse Spark wrote a draft"])
+    collect_path = config.photo_cache() / "883.jpg"
+    collect_path.write_bytes(b"\xff\xd8 photo")
+    client, worker = make()
+
+    item = client.get(f"/api/items/{run_id}").json()
+    assert (item["status"], item["progress"], item["item"], item["issues"]) == (
+        "labels_needed", ["Muse Spark wrote a draft"], None, [])
+    assert [p["idx"] for p in item["photos"]] == [3, 7]
+    assert item["photos"][0] == {"idx": 3, "url": f"/api/items/{run_id}/photos/3.jpg", "image_id": "883",
+                                 "creator": "walker", "captured_at": "2022-08-30T10:00:00Z",
+                                 "link": "https://www.mapillary.com/app/?pKey=883"}
+    assert client.get(f"/api/items/{run_id}/photos/3.jpg").content == b"\xff\xd8 photo"
+    assert client.get(f"/api/items/{run_id}/photos/4.jpg").status_code == 404  # not one it asks about
+    assert client.get(f"/api/items/{run_id}/photos/7.jpg").status_code == 404  # not on this disk
+
+    assert client.post(f"/api/items/{run_id}/labels", json={"labels": {"3": "yes"}}).status_code == 422
+    assert client.post(f"/api/items/{run_id}/labels", json={"labels": {"3": "yes", "7": "maybe"}}).status_code == 422
+    assert client.post(f"/api/items/{run_id}/labels", json={"labels": {"3": "yes", "7": "unclear"}}).status_code == 202
+    run = db.item_run(conn, run_id)
+    assert (run["status"], run["labels"]) == ("queued", {"3": "yes", "7": "unclear"})
+    assert worker.submitted == [("item", run_id)]
+    assert client.post(f"/api/items/{run_id}/labels", json={"labels": {"3": "no", "7": "no"}}).status_code == 409
+    assert client.get(f"/api/items/{run_id}/photos/3.jpg").status_code == 404  # answered: no longer shown
+    assert client.get("/api/items/999999").status_code == 404
+    conn.close()
+
+
+def test_a_finished_item_shows_its_rows_as_the_scans_own_and_leaves_the_scan_as_it_was(make):
+    conn, scan_id = item_scan()
+    client, _ = make()
+    before = client.get(f"/api/scans/{scan_id}").json()
+    run_id = db.create_item_run(conn, scan_id, "fire hydrant")
+    name = f"scan{scan_id}_item{run_id}-1_882.jpg"
+    (config.run_dir("server") / "evidence").mkdir(exist_ok=True)
+    (config.run_dir("server") / "evidence" / name).write_bytes(b"jpg")
+    row = {"id": f"item{run_id}-1", "scan_id": scan_id, "item_run": run_id, "issue_type": "agent_fire_hydrant",
+           "object_label": "yes", "frame_start": 1, "frame_end": 3, "frame_idx": 2, "lat": 47.614, "lng": -122.32,
+           "confidence": 0.9, "review_status": "auto", "review_reasons": [], "captured_at": "2022-08-30T10:00:00Z",
+           "model_outputs": {"check": {"answer": "yes", "note": "a red hydrant", "box": [1, 2, 3, 4]},
+                             "find": {"phrase": "fire hydrant", "mask_area": 900, "group_idxs": [1, 2, 3]}},
+           "evidence": {"image": name, "image_id": "882", "creator": "walker", "captured_at": "2022-08-30T10:00:00Z",
+                        "link": "https://www.mapillary.com/app/?pKey=882", "license": "CC BY-SA 4.0",
+                        "blurred_regions": 0}}
+    db.update_item_run(conn, run_id, status="done", check_def=HYDRANT, rows=[row], cost_usd=0.41234,
+                       test={"labels": "city", "found": [5, 6], "city": {"layer": "Hydrants", "found": 1, "covered": 2}})
+    failed = db.create_item_run(conn, scan_id, "zzz")
+    db.update_item_run(conn, failed, status="failed", error="No reliable wording found")
+
+    item = client.get(f"/api/items/{run_id}").json()
+    assert item["item"]["id"] == "agent_fire_hydrant" and item["item"]["added_by"] == "agent"
+    assert (item["item"]["yes"], item["item"]["question"], item["cost_usd"]) == (1, "Is it a fire hydrant?", 0.4123)
+    (issue,) = item["issues"]
+    assert (issue["id"], issue["item_run"], issue["issue_type"], issue["heading"]) == (
+        f"item{run_id}-1", run_id, "agent_fire_hydrant", 90.0)
+    assert issue["check"]["target"] == "fire hydrant" and issue["check"]["answer"] == "yes"
+    assert issue["evidence"]["url"] == f"/api/evidence/{name}"
+    assert client.get(issue["evidence"]["url"]).content == b"jpg"
+    assert item["test"]["city"] == {"layer": "Hydrants", "found": 1, "covered": 2}
+    assert [r["id"] for r in client.get(f"/api/scans/{scan_id}/items").json()] == [run_id]  # finished runs only
+    assert client.get(f"/api/scans/{scan_id}").json() == before
+    conn.close()

@@ -1,9 +1,11 @@
 """Rows -> API JSON (spec 5, 9, 15, 16). Display labels are made here, per request; they are never stored (spec 7.4
 step 8). Every label is an icon plus text, so colour is never the only signal (spec 15), and the text states a fact:
 never "violation", "illegal" or "accessible" (spec 9.4)."""
+import dataclasses
 from datetime import datetime, timezone
 
 from pipeline import config, geo, second_opinion, survey_items
+from pipeline.evidence import mapillary_link
 
 OLD_PHOTO_YEARS = 3  # spec 9.3: photos older than this get an "old photo" badge
 ISSUE_ICONS = {"missing_blocks": "✖", "cover_cut": "◼", "fixed_obstruction": "▮", "obstruction": "⛔"}
@@ -177,6 +179,33 @@ def issue_json(row: dict, now: datetime | None = None, std: survey_items.Standar
             "frame_end": row.get("frame_end"), "review_status": row["review_status"], "review_reasons": row["review_reasons"],
             "evidence": evidence_json(row.get("evidence")), "captured_at": row.get("captured_at"),
             "old_photo": is_old(row.get("captured_at"), now)}
+
+
+def item_run_json(run: dict, scan: dict, frames: dict[int, dict]) -> dict:
+    """An item run for the app (plan 12): its progress, the photos a person is asked about while it waits for
+    answers, and once done the item (as items_json gives the scan's own, added_by "agent") and its rows in the scan's
+    Issue form, each with item_run. frames: the scan's frames by photo idx."""
+    std = standard_of(scan)
+    check = survey_items.Check(**run["check_def"]) if run.get("check_def") else None
+    if check is not None:
+        std = dataclasses.replace(std, checks=(*std.checks, check))
+    photos = [{"idx": i, "url": f"/api/items/{run['id']}/photos/{i}.jpg", "image_id": frames[i]["image_id"],
+               "creator": frames[i]["creator"], "captured_at": frames[i]["captured_at"],
+               "link": mapillary_link(frames[i]["image_id"])}
+              for i in run["label_photos"] if i in frames] if run["status"] == "labels_needed" else []
+    rows = run.get("rows") or []
+    item = None
+    if check is not None:
+        meta = next(i for i in items_json(std) if i["id"] == check.id)
+        item = {**meta, "added_by": "agent", "find": check.find, "question": check.question or check.ask,
+                "report_when": check.report_when, "label_yes": check.label_yes, "label_no": check.label_no,
+                **{a: sum((r.get("object_label") or "unclear") == a for r in rows) for a in ("yes", "no", "unclear")}}
+    issues = [{**issue_json(r, std=std, heading=(frames.get(r["frame_idx"]) or {}).get("compass")),
+               "item_run": run["id"]} for r in rows]
+    return {"id": run["id"], "scan_id": run["scan_id"], "target": run["target"], "status": run["status"],
+            "progress": run["progress"], "photos": photos, "item": item, "issues": issues,
+            "cost_usd": round(run["cost_usd"], 4), "error": run["error"], "test": run.get("test"),
+            "created_at": run["created_at"]}
 
 
 def dropped_count(scan: dict, picks: int) -> int | None:

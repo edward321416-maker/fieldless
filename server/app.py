@@ -32,7 +32,8 @@ from server.store import DatasetStore, folder_store
 log = logging.getLogger(__name__)
 
 # used with fullmatch; scans before 2026-10-28 22:00 KST named the files without the photo id (runner.evidence_name)
-EVIDENCE_NAME = re.compile(r"scan\d+_(entrance|issue)\d+(_\d+)?\.jpg", re.ASCII)
+# item run rows (plan 12): scan<N>_item<run>-<n>_<photo id>.jpg
+EVIDENCE_NAME = re.compile(r"scan\d+_(entrance\d+|issue\d+|item\d+-\d+)(_\d+)?\.jpg", re.ASCII)
 
 
 class BboxBody(BaseModel):
@@ -42,6 +43,17 @@ class BboxBody(BaseModel):
 class ScanBody(BaseModel):
     bbox: list[float]
     invite_code: str | None = None
+
+
+class ItemBody(BaseModel):
+    target: str = Field(min_length=2, max_length=60)  # what the survey should record, e.g. "fire hydrant"
+    invite_code: str | None = None
+
+
+class ItemLabels(BaseModel):
+    labels: dict[int, Literal["yes", "no", "unclear"]]  # photo idx -> a person's answer
+
+    model_config = {"extra": "forbid"}
 
 
 class EntranceReview(BaseModel):
@@ -140,6 +152,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     @app.get("/api/config")
     def get_config():
         return {"invite_required": settings.invite_code is not None, "max_bbox_deg2": settings.max_bbox_deg2,
+                "items": True, "make_items": settings.item_invite_code is not None,
                 "coverage_tiles": settings.coverage_tiles, "report": True}  # report: the survey report page
 
     tiles: dict[tuple[int, int, int], tuple[float, bytes | None]] = {}  # (z, x, y) -> (fetched at, gzipped body)
@@ -214,6 +227,70 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             db.update_scan(conn, scan_id, client_ip_hash=hashed)
         worker.submit(scan_id)
         return {"id": scan_id}
+
+    # --- survey items the agent writes on a finished scan (plan 12) ----------------------------------------------
+
+    @app.post("/api/scans/{scan_id}/items", status_code=202)
+    def post_item(scan_id: int, body: ItemBody, request: Request):
+        if settings.item_invite_code is None:
+            raise HTTPException(403, "Making a survey item is not open on this server; see the example run")
+        limits.check_invite(body.invite_code, settings.item_invite_code, "Making a survey item")
+        target = " ".join(body.target.split())
+        peer = request.client.host if request.client else None
+        hashed = limits.ip_hash(limits.client_ip(request.headers, peer), settings.ip_hash_salt)
+        with start_lock, connect() as conn:
+            if found(db.get_scan, conn, scan_id, "scan")["status"] != "done":
+                raise HTTPException(409, "Items are added to a finished survey")
+            if db.busy(conn):
+                raise HTTPException(409, "A survey or an item is running; try again in a few minutes.")
+            if config.DAILY_COST_CAP_USD - db.daily_cost(conn, db.now()[:10]) < RESUME_MIN_USD:
+                raise HTTPException(503, "Today's survey budget is used up. Try again tomorrow (UTC).")
+            cap = settings.public_cost_cap_usd
+            if cap is not None and cap - db.public_cost(conn) < RESUME_MIN_USD:
+                raise HTTPException(503, "The live demo's survey budget is used up; the finished surveys stay open.")
+            run_id = db.create_item_run(conn, scan_id, target, client_ip_hash=hashed)
+        worker.submit_item(run_id)
+        return {"id": run_id}
+
+    @app.get("/api/scans/{scan_id}/items")
+    def get_scan_items(scan_id: int):
+        """The finished item runs of a scan (an unfinished or failed one is only its maker's)."""
+        with connect() as conn:
+            found(db.get_scan, conn, scan_id, "scan")
+            return [{"id": r["id"], "target": r["target"], "status": r["status"], "created_at": r["created_at"]}
+                    for r in db.item_runs(conn, scan_id) if r["status"] == "done"]
+
+    @app.get("/api/items/{run_id}")
+    def get_item(run_id: int):
+        with connect() as conn:
+            run = found(db.item_run, conn, run_id, "item run")
+            frames = {f["idx"]: f for f in db.frames(conn, run["scan_id"])}
+            return views.item_run_json(run, db.get_scan(conn, run["scan_id"]), frames)
+
+    @app.post("/api/items/{run_id}/labels", status_code=202)
+    def post_item_labels(run_id: int, body: ItemLabels):
+        with start_lock, connect() as conn:
+            run = found(db.item_run, conn, run_id, "item run")
+            if run["status"] != "labels_needed":
+                raise HTTPException(409, "This item is not waiting for answers")
+            if set(body.labels) != set(run["label_photos"]):
+                raise HTTPException(422, "Answer every photo the item asks about")
+            db.update_item_run(conn, run_id, labels={str(k): v for k, v in body.labels.items()}, status="queued")
+        worker.submit_item(run_id)
+        return {"id": run_id}
+
+    @app.get("/api/items/{run_id}/photos/{idx}.jpg")
+    def get_item_photo(run_id: int, idx: int):
+        """A photo the item asks a person about, while it asks (Mapillary's own photo; the app shows its credit)."""
+        with connect() as conn:
+            run = found(db.item_run, conn, run_id, "item run")
+            frame = next((f for f in db.frames(conn, run["scan_id"]) if f["idx"] == idx), None)
+        if run["status"] != "labels_needed" or idx not in run["label_photos"] or frame is None:
+            raise HTTPException(404, "no such photo")
+        path = collect.photo_path(frame["image_id"])
+        if not path.is_file():
+            raise HTTPException(404, "no such photo")
+        return FileResponse(path, media_type="image/jpeg")
 
     def city_check(scan_id: int) -> dict | None:
         """The offline comparison with the city's records (eval, docs/specs/2026-10-28-ui-redesign-design.md 4.1),

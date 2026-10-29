@@ -362,6 +362,13 @@ def add_progress(conn, run_id: int, line: str) -> None:
     update_item_run(conn, run_id, progress=[*item_run(conn, run_id)["progress"], line])
 
 
+def busy(conn) -> bool:
+    """Whether a scan or an item run is waiting or running (they share one worker and one day's budget)."""
+    marks = ", ".join("?" for _ in ITEM_RUN_ACTIVE)
+    return any(conn.execute(f"SELECT 1 FROM {table} WHERE status IN ({marks}) LIMIT 1", ITEM_RUN_ACTIVE).fetchone()
+               for table in ("scan", "item_run"))
+
+
 def item_runs(conn, scan_id: int | None = None) -> list[dict]:
     """A scan's item runs (every run when scan_id is None), oldest first. Empty for a database that predates the
     table (a read-only copy)."""
