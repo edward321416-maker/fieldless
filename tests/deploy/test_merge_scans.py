@@ -1,6 +1,6 @@
 import pytest
 
-from deploy.merge_scans import merge_scans
+from deploy.merge_scans import merge_scans, remap_city_check
 from pipeline import db
 
 BBOX = [127.05, 37.54, 127.06, 37.55]
@@ -33,7 +33,8 @@ def test_a_survey_is_replaced_in_the_live_database_and_everything_else_there_sta
 
     written = merge_scans(tmp_path / "local.db", tmp_path / "live.db", [seoul])
 
-    assert written[seoul] == {"frame": 1, "entrance": 0, "sidewalk_issue": 3, "dropped_pick": 0, "report_text": 1}
+    assert written[seoul]["counts"] == {"frame": 1, "entrance": 0, "sidewalk_issue": 3, "dropped_pick": 0,
+                                        "report_text": 1}
     live = db.connect(tmp_path / "live.db")
     assert db.get_scan(live, seoul)["cost_usd"] == pytest.approx(1.9) and db.get_scan(live, seoul)["status"] == "done"
     rows = db.issues(live, seoul)
@@ -42,5 +43,16 @@ def test_a_survey_is_replaced_in_the_live_database_and_everything_else_there_sta
     assert [r["id"] for r in db.issues(live, visitor)] == taken
     assert db.item_run(live, run)["scan_id"] == seoul  # a visitor's item run on the survey stays
     assert db.report_text(live, seoul) == {"summary": "new"} and len(db.frames(live, seoul)) == 1
+    new = written[seoul]["ids"]["sidewalk_issue"]
+    assert sorted(new.values()) == [r["id"] for r in rows]
+    check = {"scan_id": seoul, "items": {"street_tree": {
+        "found": 2, "covered": 5, "matched_ids": [1, 3], "rejected_at_city_point": [2],
+        "pairs": [{"issue_id": 1, "dist_m": 4.0}, {"issue_id": 3, "dist_m": 6.0}], "missed": []}}}
+    moved = remap_city_check(check, new)["items"]["street_tree"]
+    assert moved["matched_ids"] == sorted([new[1], new[3]]) and moved["rejected_at_city_point"] == [new[2]]
+    assert [p["issue_id"] for p in moved["pairs"]] == [new[1], new[3]] and moved["found"] == 2
+    assert set(moved["matched_ids"]) <= {r["id"] for r in rows}  # every id names a finding of this survey
+    with pytest.raises(KeyError):
+        remap_city_check({"items": {"street_tree": {"matched_ids": [42]}}}, new)
     with pytest.raises(KeyError):
         merge_scans(tmp_path / "local.db", tmp_path / "live.db", [99])

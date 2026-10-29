@@ -4,7 +4,7 @@
   modal deploy deploy/modal_glimmer.py            # the server; prints its URL, which clients take as GLIMMER_URL
   GLIMMER_URL=<url> python -m eval.glimmer_replay --run RUN --scan N --out OUT.json --limit 1   # stage 0
 
-Run the first two with the Python that has `modal` (C:/Users/admin/anaconda3/python). MODAL_TOKEN_ID/SECRET and
+Run the first two with a Python that has the `modal` package installed. MODAL_TOKEN_ID/SECRET and
 MODEL_API_KEY are read from the shared .env (never printed, never written). The server's key is the same HMAC of
 MODEL_API_KEY as pipeline.second_opinion.glimmer_key(), computed here because this Python need not have the
 pipeline's packages; tests/deploy checks that both agree. One container at most and 120 s of idle before it stops

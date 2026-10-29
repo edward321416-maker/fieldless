@@ -127,7 +127,9 @@ def merge(run_dir: Path, scan_ids: list[int]) -> None:
     container keeps its own copy until it restarts: deploy again right after."""
     import sys
     sys.path.insert(0, str(ROOT))  # run as a script from deploy/: the repo's packages
-    from deploy.merge_scans import merge_scans
+    import json
+
+    from deploy.merge_scans import merge_scans, remap_city_check
 
     with tempfile.TemporaryDirectory() as tmp:
         live = Path(tmp) / "threshold.db"
@@ -139,11 +141,16 @@ def merge(run_dir: Path, scan_ids: list[int]) -> None:
             batch.put_file(live, "/threshold.db")
             for scan_id in scan_ids:
                 check = run_dir / f"city_check_scan{scan_id}.json"
-                if check.is_file():
-                    batch.put_file(check, f"/{check.name}")
+                if check.is_file():  # it names findings by id: the live database's ids now
+                    moved = Path(tmp) / check.name
+                    data = json.loads(check.read_text(encoding="utf-8"))
+                    ids = written[scan_id]["ids"]["sidewalk_issue"]
+                    moved.write_text(json.dumps(remap_city_check(data, ids), ensure_ascii=False), encoding="utf-8")
+                    batch.put_file(moved, f"/{check.name}")
                 for photo in (run_dir / "evidence").glob(f"scan{scan_id}_*.jpg"):
                     batch.put_file(photo, f"/evidence/{photo.name}")
-    print(f"merged {written} into the Volume; deploy again so the live container restores it")
+    print(f"merged {({k: v['counts'] for k, v in written.items()})} into the Volume; deploy again so the live "
+          "container restores it")
 
 
 if __name__ == "__main__":
