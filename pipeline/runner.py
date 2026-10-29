@@ -7,6 +7,7 @@ stage that stopped (spec 14). Every stage after scene is independent: one failin
 threads only make API requests; rows are written from the main thread.
 """
 import json
+import logging
 import multiprocessing
 import threading
 import time
@@ -84,6 +85,37 @@ class Scan:
         for f in sorted(self.frames, key=lambda f: f["idx"]):
             out.setdefault(f["clip"], []).append(f["idx"])
         return out
+
+
+SAVE_EVERY_USD = 0.05  # spend is written to the scan this often, so a killed run still counts toward the caps
+# (server scans since plan 2; command-line scans since 2026-10-29, when killed runs left $2.5 of calls unsaved)
+
+
+def spend_saver(db_path: Path, scan_id: int, saved_usd: float):
+    """A CostMeter hook that writes the scan's spend to the database each time it has grown by SAVE_EVERY_USD. It
+    opens its own connection (settle runs on the pipeline's request threads), never waits and never raises: while one
+    save runs, other settles skip, and a later settle carries a higher total."""
+    lock = threading.Lock()
+    last = [saved_usd]
+
+    def save(spent_usd: float) -> None:
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            if spent_usd - last[0] < SAVE_EVERY_USD:
+                return
+            conn = db.connect(db_path)
+            try:
+                db.update_scan(conn, scan_id, cost_usd=spent_usd)
+            finally:
+                conn.close()
+            last[0] = spent_usd
+        except Exception:
+            logging.getLogger(__name__).exception("could not save the spend of scan %s", scan_id)
+        finally:
+            lock.release()
+
+    return save
 
 
 class InWorkerProcess(RuntimeError):

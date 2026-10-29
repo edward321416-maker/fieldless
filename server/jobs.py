@@ -9,39 +9,9 @@ from pathlib import Path
 from assist import report
 from pipeline import db, second_opinion
 from pipeline.meta_api import MetaApi, error_text
-from pipeline.runner import Scan, meter_for, run_scan
+from pipeline.runner import SAVE_EVERY_USD, Scan, meter_for, run_scan, spend_saver  # noqa: F401
 
 log = logging.getLogger(__name__)
-
-SAVE_EVERY_USD = 0.05  # spend is written to the scan this often, so a killed run still counts toward the caps
-
-
-def spend_saver(db_path: Path, scan_id: int, saved_usd: float):
-    """A CostMeter hook that writes the scan's spend to the database each time it has grown by SAVE_EVERY_USD. It
-    opens its own connection (settle runs on the pipeline's request threads), never waits and never raises: while one
-    save runs, other settles skip, and a later settle carries a higher total."""
-    lock = threading.Lock()
-    last = [saved_usd]
-
-    def save(spent_usd: float) -> None:
-        if not lock.acquire(blocking=False):
-            return
-        try:
-            if spent_usd - last[0] < SAVE_EVERY_USD:
-                return
-            conn = db.connect(db_path)
-            try:
-                db.update_scan(conn, scan_id, cost_usd=spent_usd)
-            finally:
-                conn.close()
-            last[0] = spent_usd
-        except Exception:
-            log.exception("could not save the spend of scan %s", scan_id)
-        finally:
-            lock.release()
-
-    return save
-
 
 class ScanWorker:
     def __init__(self, db_path: Path, run_dir: Path, run=None, on_done=None, public_cap_usd: float | None = None,

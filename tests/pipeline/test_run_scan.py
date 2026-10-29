@@ -142,3 +142,40 @@ def test_a_second_scan_in_the_same_run_folder_stops_at_once():
         with pytest.raises(run_scan.ScanAlreadyRunning):
             run_scan.main(["--run", "busy", "--bbox", "126.97,37.55,126.99,37.57"])
     assert not (config.run_dir("busy") / "threshold.db").exists()  # stopped before anything was made
+
+
+def test_a_command_line_scan_saves_its_spend_as_it_goes(monkeypatch):
+    captured = []
+    monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))
+    run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "spend"])
+    (scan,) = captured
+
+    scan.api.meter.reserve(0.3)
+    scan.api.meter.settle(0.3, 0.3)  # a request that cost $0.30, as a killed run would leave it
+
+    conn = db.connect(config.run_dir("spend") / "threshold.db")
+    assert db.get_scan(conn, scan.scan_id)["cost_usd"] == pytest.approx(0.3)
+
+
+def test_photos_of_starts_a_new_scan_on_the_same_photos_without_collecting(monkeypatch):
+    captured = []
+    monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))
+    conn = db.connect(config.run_dir("same") / "threshold.db")
+    first = db.create_scan(conn, "mapillary", [-122.323, 47.613, -122.317, 47.6175], "US")
+    frames = [{"idx": i, "clip": 0, "image_id": f"9{i}", "sequence_id": "s", "lat": 47.614, "lng": -122.32,
+               "compass": 0.0, "captured_at": "2022-08-30T10:00:00Z", "creator": "a", "width": 2048, "height": 1152}
+              for i in range(3)]
+    db.add_frames(conn, first, frames)
+    db.update_scan(conn, first, image_count=3, captured_from="2022-08-30T10:00:00Z", captured_to="2022-08-30T10:00:00Z",
+                   sequence_ids=["s"])
+
+    run_scan.main(["--run", "same", "--photos-of", str(first)])
+
+    (scan,) = captured
+    new = db.get_scan(conn, scan.scan_id)
+    assert scan.scan_id != first and (new["bbox"], new["jurisdiction"], new["image_count"]) == (
+        [-122.323, 47.613, -122.317, 47.6175], "US", 3)
+    assert new["stage_status"] == {"collect": "done"}
+    assert [f["image_id"] for f in db.frames(conn, scan.scan_id)] == ["90", "91", "92"]
+    with pytest.raises(SystemExit):
+        run_scan.main(["--run", "same", "--photos-of", str(first), "--bbox", "1,2,3,4"])

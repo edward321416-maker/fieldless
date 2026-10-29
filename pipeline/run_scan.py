@@ -21,7 +21,7 @@ from pathlib import Path
 
 from pipeline import collect, config, db, second_opinion, sidewalk, survey_items
 from pipeline.meta_api import MetaApi
-from pipeline.runner import STAGES, Scan, meter_for, refuse_in_worker, run_scan
+from pipeline.runner import STAGES, Scan, meter_for, refuse_in_worker, run_scan, spend_saver
 
 
 def parse_bbox(text: str) -> list[float]:
@@ -89,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
                                                  "(pipeline/standards).")
     parser.add_argument("--bbox", type=parse_bbox)
     parser.add_argument("--resume", type=positive_int)
+    parser.add_argument("--photos-of", type=positive_int, metavar="SCAN_ID",
+                        help="a new scan of the same photos as this scan (its area, standard and walks): the collect "
+                             "stage is taken from it, so two code versions can be compared on one set of photos")
     parser.add_argument("--preview", action="store_true", help="count photos and estimate cost; no model calls")
     parser.add_argument("--standard", choices=["KR", "US"],
                         help="survey standard for a new scan (default: KR when the area is in Korea, else US)")
@@ -116,8 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         preview = collect.preview(args.bbox, budget, checks=checks)
         print(json.dumps(preview, ensure_ascii=False, indent=1))
         return 0
-    if (args.bbox is None) == (args.resume is None):
-        parser.error("give --bbox for a new scan or --resume SCAN_ID")
+    if sum(x is not None for x in (args.bbox, args.resume, args.photos_of)) != 1:
+        parser.error("give one of --bbox for a new scan, --photos-of SCAN_ID or --resume SCAN_ID")
     if args.rerun and args.resume is None:
         parser.error("--rerun needs --resume")
     if args.check and args.rerun != "defects":
@@ -142,12 +145,27 @@ def _scan(parser, args, run_dir: Path) -> int:
             if known.check(check_id) is None:
                 parser.error(f"{check_id!r} is not a check of the {known.code} standard "
                              f"({', '.join(c.id for c in known.checks) or 'none'})")
+    elif args.photos_of is not None:
+        try:
+            source = db.get_scan(conn, args.photos_of)
+        except KeyError:
+            parser.error(f"no scan {args.photos_of} in run {args.run}")
+        frames = db.frames(conn, args.photos_of)
+        if not frames:
+            parser.error(f"scan {args.photos_of} has no photos to reuse")
+        scan_id = db.create_scan(conn, "mapillary", source["bbox"], args.standard or source["jurisdiction"])
+        db.add_frames(conn, scan_id, frames)
+        db.update_scan(conn, scan_id, image_count=len(frames), captured_from=source["captured_from"],
+                       captured_to=source["captured_to"], sequence_ids=source["sequence_ids"])
+        db.set_stage(conn, scan_id, "collect", "done")  # the photos are those of scan photos_of, already downloaded
     else:
         scan_id = db.create_scan(conn, "mapillary", args.bbox, args.standard or survey_items.standard_for(args.bbox))
     if args.rerun:
         db.set_stage(conn, scan_id, args.rerun, "pending")
     scan = db.get_scan(conn, scan_id)
-    api = MetaApi(run_dir / "calls.jsonl", meter_for(conn, scan, args.cap_usd, daily_cap_usd=args.daily_cap_usd))
+    meter = meter_for(conn, scan, args.cap_usd, daily_cap_usd=args.daily_cap_usd)
+    meter.on_spend = spend_saver(run_dir / "threshold.db", scan_id, scan["cost_usd"])  # a killed run still counts
+    api = MetaApi(run_dir / "calls.jsonl", meter)
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,
                            tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir),
                            judge=second_opinion.glimmer_from_env(run_dir) if args.glimmer else None,
