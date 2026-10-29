@@ -2,6 +2,7 @@
 
   modal deploy deploy/modal_app.py              # from the repo root
   python deploy/modal_app.py --seed RUN_DIR     # copy a run's threshold.db and evidence/ to the data Volume
+  python deploy/modal_app.py --merge RUN_DIR --scan N   # put survey N into the live data, keeping the rest
 
 Both read MODAL_TOKEN_ID and MODAL_TOKEN_SECRET, and the server's keys, from the shared .env (the nearest one above
 the repo). Only the keys the server needs go into the Modal secret, and nothing is printed. IP_HASH_SALT is derived
@@ -120,7 +121,41 @@ def seed(run_dir: Path) -> None:
     print(f"seeded the Volume from {run_dir}")
 
 
+def merge(run_dir: Path, scan_ids: list[int]) -> None:
+    """Put these surveys of run_dir into the live database on the Volume, keeping everything else there (visitors'
+    surveys and item runs; deploy/merge_scans.py), with their evidence photos and city-record comparisons. The running
+    container keeps its own copy until it restarts: deploy again right after."""
+    import sys
+    sys.path.insert(0, str(ROOT))  # run as a script from deploy/: the repo's packages
+    from deploy.merge_scans import merge_scans
+
+    with tempfile.TemporaryDirectory() as tmp:
+        live = Path(tmp) / "threshold.db"
+        with open(live, "wb") as f:
+            for chunk in volume.read_file("/threshold.db"):
+                f.write(chunk)
+        written = merge_scans(run_dir / "threshold.db", live, scan_ids)
+        with volume.batch_upload(force=True) as batch:
+            batch.put_file(live, "/threshold.db")
+            for scan_id in scan_ids:
+                check = run_dir / f"city_check_scan{scan_id}.json"
+                if check.is_file():
+                    batch.put_file(check, f"/{check.name}")
+                for photo in (run_dir / "evidence").glob(f"scan{scan_id}_*.jpg"):
+                    batch.put_file(photo, f"/evidence/{photo.name}")
+    print(f"merged {written} into the Volume; deploy again so the live container restores it")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--seed", type=Path, required=True, help="run folder with threshold.db and evidence/")
-    seed(parser.parse_args().seed)
+    how = parser.add_mutually_exclusive_group(required=True)
+    how.add_argument("--seed", type=Path, help="run folder with threshold.db and evidence/: replaces the live data")
+    how.add_argument("--merge", type=Path, help="run folder whose --scan surveys go into the live data, the rest kept")
+    parser.add_argument("--scan", type=int, action="append", default=[], help="with --merge: a survey id (repeat)")
+    args = parser.parse_args()
+    if args.merge and not args.scan:
+        parser.error("--merge needs at least one --scan")
+    if args.merge:
+        merge(args.merge, args.scan)
+    else:
+        seed(args.seed)
