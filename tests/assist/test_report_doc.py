@@ -117,3 +117,21 @@ def test_names_are_capitalised_every_item_has_a_question_and_rejections_are_said
     text = html.escape(report_doc.summary_text(s))
     assert ("against the city&#x27;s lists, 1 find the lists do not have and 2 listed points the photos did not "
             "confirm") in text and "may need updating" not in text and "4.3 City records to check" in page
+
+
+def test_city_records_the_survey_did_not_find_are_listed_by_the_citys_own_ids():
+    data = survey_scan.load()
+    city = {**CITY, "items": {"streetlight_pole": {
+        **CITY["items"]["streetlight_pole"], "id_fields": ["SCLNR", "ASSET_ID"],
+        "missed": [{"lat": 47.6, "lng": -122.3, "city": {"SCLNR": f"00{n}NE", "ASSET_ID": str(1314000 + n)}}
+                   for n in range(12)]}}}
+    data["city_check"] = city
+    s = report.summary(data, STANDARD, area="Pike & Pine", now=NOW)
+
+    page = report_doc.document(s)
+
+    actions = page.split('id="actions"')[1].split('<section class="sec"')[0]
+    assert "<th scope=\"col\">SCLNR</th>" in actions and "<td>000NE</td>" in actions and "<td>1314009</td>" in actions
+    assert "<td>1314010</td>" not in actions  # the first ten only
+    assert f"2 more in survey_scan{s['scan_id']}_streetlight_pole_city_records_to_check.csv" in actions
+    assert "SCLNR" not in str(report.facts(s))  # Spark reads counts, never the city's record ids

@@ -144,6 +144,15 @@ def _walks(frames: list[dict]) -> list[list[tuple[float, float]]]:
     return list(out.values())
 
 
+def _missed(city_check: dict, item: str) -> dict:
+    """The city's records of an item that the photos showed but the survey did not find, by the city's own ids
+    (id_fields, e.g. a tree's UNITID), so staff can look each one up. Only the report lists them; Spark never reads
+    them (facts)."""
+    c = city_check["items"][item]
+    missed = [m.get("city") or {} for m in c.get("missed") or []]
+    return {"id_fields": list(c.get("id_fields") or sorted({k for m in missed for k in m})), "missed": missed}
+
+
 def summary(scan_data: dict, standard: Standard, area: str | None = None, now: datetime | None = None) -> dict:
     """Everything the report states, as data: per item counts by answer, label and review status, defects confirmed
     and not yet confirmed, photos, km and cost (the app's rules), processing and review seconds, photo dates; the
@@ -177,8 +186,8 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
               for row, _, feat in rows if row["review_status"] != "rejected"]
     actions = {"repairs": [e for e in ledger if e["defect"]],
                "site_visits": [e for e in ledger if e["review_status"] == "field_check" or e["answer"] == "unclear"],
-               "city": [{"item": i["item"], "title": i["title"], **i["city"]} for i in items
-                        if i["city"] and (i["city"]["not_seen"] or i["city"]["not_in_city"])]}
+               "city": [{"item": i["item"], "title": i["title"], **i["city"], **_missed(city_check, i["item"])}
+                        for i in items if i["city"] and (i["city"]["not_seen"] or i["city"]["not_in_city"])]}
     km = views.surveyed_km(frames)
     app = views.scan_json(scan, scan_data["entrances"], scan_data["issues"], km=km)
     dates = sorted(f["captured_at"] for f in frames if f.get("captured_at"))

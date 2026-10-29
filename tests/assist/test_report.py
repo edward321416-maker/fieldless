@@ -242,7 +242,7 @@ def test_summary_sorts_actions_into_repairs_site_visits_and_city_updates():
                                                                   ("curb_ramp_warning", "needs_review")]
     assert [(e["item"], e["answer"]) for e in visits] == [("streetlight_pole", "unclear")]
     assert city == [{"item": "streetlight_pole", "title": "streetlight pole", "found": 1, "covered": 3,
-                     "not_seen": 2, "not_in_city": 1}]
+                     "not_seen": 2, "not_in_city": 1, "id_fields": [], "missed": []}]
 
 
 def test_summary_keeps_each_walk_as_a_line_and_dates_the_report():

@@ -17,6 +17,7 @@ SCALE_BAR_H = 22
 SCALES_M = (10, 20, 50, 100, 200, 500, 1000, 2000)
 WALK_INK = "#475569"
 STATUS_ORDER = ("auto", "needs_review", "field_check", "verified", "rejected")
+MISSED_SHOWN = 10  # city records listed per item in 4.3; the rest are in the item's records-to-check CSV
 STATUS_WORDS = {"auto": "found by the models", "needs_review": "awaiting review", "field_check": "check on site",
                 "verified": "confirmed", "rejected": "rejected"}
 HOW_MADE = ("SAM 3.1 found each survey item in public Mapillary street photos, and Muse Spark judged each one on the "
@@ -269,6 +270,7 @@ def _actions(s: dict, notes: dict | None) -> str:
                    [[_h(_name(c["title"])), str(c["not_in_city"]), str(c["not_seen"])] for c in a["city"]])
             if a["city"] else ("<p>None.</p>" if s.get("city_check") else
                                "<p>No city record was checked against this survey.</p>"))
+    city += "".join(_missed(s, c) for c in a["city"] if c.get("missed"))
     titles = {i["item"]: _name(i["title"]) for i in s["items"]}
     prio = (notes or {}).get("priorities") or []
     priorities = ("<ol>" + "".join(f"<li><b>{_h(titles.get(p['item'], p['item']))}</b>: {_h(p['reason'])}</li>"
@@ -277,6 +279,18 @@ def _actions(s: dict, notes: dict | None) -> str:
     body = (f"<h3>4.1 Repairs</h3>{repairs}<h3>4.2 Site visits</h3>{visits}"
             f"<h3>4.3 City records to check</h3>{city}<h3>4.4 Priorities</h3>{priorities}")
     return _section("actions", body)
+
+
+def _missed(s: dict, c: dict) -> str:
+    """The city's records the photos showed but the survey did not find, by the city's own ids, for staff to look
+    up: the first MISSED_SHOWN, then where the rest are."""
+    fields = c["id_fields"]
+    rows = [[_h(m.get(f, "")) for f in fields] for m in c["missed"][:MISSED_SHOWN]]
+    more = len(c["missed"]) - MISSED_SHOWN
+    rest = (f'<p class="muted">{more} more in survey_scan{s["scan_id"]}_{_h(c["item"])}_city_records_to_check.csv.</p>'
+            if more > 0 else "")
+    return (f"<p><b>{_h(_name(c['title']))}</b>: city records the photos showed but the survey did not find</p>"
+            + _table(fields, rows) + rest)
 
 
 def _entry(s: dict, e: dict, photo_base: str) -> str:
