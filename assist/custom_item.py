@@ -160,7 +160,7 @@ def _draft(api, target: str, on_progress) -> tuple[dict | None, str]:
     if not valid:
         return None, "Muse Spark's draft was not usable: " + "; ".join(problems)
     item = {**valid[0], "id": f"agent_{_slug(target)}", "target": target.strip()}
-    on_progress(f'Muse Spark drafted the item: find "{item["find"]}", ask "{item["ask"]}"')
+    on_progress(f'Muse Spark drafted the item: find "{item["find"]}", ask "{agent._short(item["ask"], 90)}"')
     return item, ""
 
 
