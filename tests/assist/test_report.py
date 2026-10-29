@@ -119,6 +119,26 @@ def test_narrate_drops_only_the_paragraph_with_an_unknown_item_a_number_or_a_ban
     assert kept(notes) and problem in " ".join(notes["dropped"])
 
 
+@pytest.mark.parametrize("part, whole, words", [
+    (0, 5, "none"), (5, 5, "all"), (1, 8, "one"), (25, 39, "most"), (13, 29, "about half"), (2, 4, "about half"),
+    (8, 30, "some"), (4, 27, "a few"), (0, 0, "none")])
+def test_share_says_a_part_of_a_whole_in_words(part, whole, words):
+    assert report.share(part, whole) == words
+
+
+def test_facts_give_each_item_its_shares_in_words():
+    _, s = made()
+    pole = next(i for i in s["items"] if i["item"] == "streetlight_pole")
+    pole.update(found=26, by_answer={"yes": 23, "unclear": 3},
+                city={"found": 13, "covered": 29, "not_seen": 16, "not_in_city": 11})
+
+    items = {i["item"]: i for i in report.facts(s)["items"]}
+
+    assert items["streetlight_pole"]["in_words"] == {"unclear": "a few", "city_records_matched": "about half",
+                                                     "findings_not_on_city_list": "about half"}
+    assert items["entrance"]["in_words"] == {"unclear": "none"}
+
+
 def test_narrate_sends_no_photo_ids_names_or_area():
     _, s = made(area="Capitol Hill")
     seen = []

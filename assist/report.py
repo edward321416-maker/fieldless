@@ -66,16 +66,32 @@ NARRATE_SCHEMA = {
 }
 NARRATE_PROMPT = """You write the prose of a street survey report for a city official. The JSON below is the whole
 survey; use nothing else.
-- summary: 3 to 4 plain sentences: what was surveyed, what was found, and what needs action first.
+What the JSON holds: each item's "title" is what it records and "found" how many the survey recorded. "by_answer"
+counts the answers to the item's "question"; "unclear" means the photo could not settle it. "city", when present,
+compares the survey with the city's own list along the photographed streets: "covered" is the city's records there,
+"found" how many of them the survey matched, "not_seen" how many it did not match, and "not_in_city" how many of the
+survey's findings have no city record nearby. "in_words" gives each item's shares in words: of its findings, how
+many are unclear; of the city's records, how many the survey matched; of its findings, how many the list lacks. Use
+those words for shares. Never size how many were found ("a few poles", "most trees"): the report's table gives the
+counts beside your text.
+- summary: 3 to 4 sentences: what was surveyed, what was found, how it compares with the city's lists, and what
+  needs a visit first.
 - items: for each item in the JSON, in its order, one paragraph of 2 to 3 sentences on what was found and what to
-  check or repair. "item" is the item's exact "item" value. Where the item has a city list ("city"), say only where
-  the survey and the list differ; never say the list is wrong or out of date, since photos miss things and other
-  agencies keep their own lists.
+  check or repair. "item" is the item's exact "item" value. Where the item has a city list, say how much of the list
+  the survey matched and how many findings the list lacks, for example "The survey matched about half of the city's
+  recorded poles on these streets and found a few that are not on the list." Never write that records were "not
+  seen", and never say the list is wrong or out of date: photos miss things and other agencies keep their own lists.
 - priorities: up to {max_priorities} actions the city should take first. "item" is an exact "item" value; "reason" is
-  one sentence.
-Rules: never write a digit (no numbers, no dates); say "most", "a few", "one" or "none" instead. State facts only;
-never say "violation", "illegal", "compliant" or "accessible". Do not name the place or the survey, and do not write
-about costs or how this survey compares with other surveys.
+  one sentence that names the action (visit, look up, repair).
+Style: write as a surveyor writes for a city office: short, concrete sentences, one point each. Call things by their
+plain names ("poles", "street trees", "pay stations"), not by the wording of the question. List three or more things
+with commas and a single "and" ("poles, street trees and pay stations"); never join them with "and ... and". Start
+each item paragraph with what was found for that item, and do not repeat one sentence pattern across the paragraphs.
+Do not rank the items against each other by how many were found ("the largest group", "next after").
+Rules: never write a digit (no numbers, no dates); say "all", "most", "about half", "some", "a few", "one" or "none"
+instead.
+State facts only; never say "violation", "illegal", "compliant" or "accessible". Do not name the place or the
+survey, and do not write about costs or how this survey compares with other surveys.
 Return JSON only.
 
 {facts}"""
@@ -330,11 +346,35 @@ def to_markdown(s: dict, notes: dict | None = None) -> str:
 
 # --- Muse Spark paragraph --------------------------------------------------------------------------------------
 
+def share(part: int, whole: int) -> str:
+    """A part of a whole in the words the report may use, since Spark writes no digits."""
+    if part <= 0 or whole <= 0:
+        return "none"
+    if part >= whole:
+        return "all"
+    if part == 1:
+        return "one"
+    ratio = part / whole
+    return "most" if ratio >= 0.6 else "about half" if ratio >= 0.4 else "some" if ratio >= 0.2 else "a few"
+
+
+def _in_words(i: dict) -> dict:
+    """An item's shares in words, worked out by code: Spark, left to size counts itself, called 49 street trees "a
+    few" (scan 17, 2026-10-29)."""
+    words = {"unclear": share(i["by_answer"].get("unclear", 0), i["found"])}
+    if c := i.get("city"):
+        words["city_records_matched"] = share(c["found"], c["covered"])
+        words["findings_not_on_city_list"] = share(c["not_in_city"], i["found"])
+    return words
+
+
 def facts(s: dict) -> dict:
-    """What Spark may read: the counts, without the place, photo ids, links or coordinates."""
+    """What Spark may read: the counts and their shares in words, without the place, photo ids, links or
+    coordinates."""
     keep = ("standard", "photos", "photo_dates", "old_photos", "km", "totals")
-    items = [{k: i[k] for k in ("item", "title", "kind", "question", "found", "by_answer", "by_review",
-                                "defects_confirmed", "defects_unconfirmed", "city")} for i in s["items"]]
+    items = [{**{k: i[k] for k in ("item", "title", "kind", "question", "found", "by_answer", "by_review",
+                                   "defects_confirmed", "defects_unconfirmed", "city")}, "in_words": _in_words(i)}
+             for i in s["items"]]
     actions = {k: len(v) for k, v in s["actions"].items()}
     return {**{k: s[k] for k in keep}, "items": items, "actions": actions}
 
