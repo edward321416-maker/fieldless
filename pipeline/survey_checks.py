@@ -33,7 +33,14 @@ from pipeline.survey_items import Check
 SAMPLE_EVERY = 2
 MERGE_M = 8.0  # objects from different walks closer than this are the same object
 AUDIT_SHARE = 0.1  # of the judge's yes/no answers, Spark answers this share too (at least one)
-DROP_AUDIT_SHARE = 0.1  # of a defect check's dropped picks, this share goes to a person anyway (at least one)
+# Of a defect check's dropped picks, this share still became rows for a person to check (at least one). No person
+# reviews findings since 2026-10-29 (user decision), so none do: on tilted photos those sample rows showed flat
+# sidewalk as unclear curb ramps (scan 17 rows 570-572; the model had said each was not a curb ramp).
+DROP_AUDIT_SHARE = 0.0
+# A defect check's yes or no is about a detail of the object (a ramp's raised domes). On a box shorter than this (of
+# 1000) the detail is a few pixels, so the answer is unclear: scan 17 row 566 said "no domes" on a curb across the
+# street 40 high, and the second model disagreed.
+MIN_DETAIL_BOX = 70
 JUDGE_GIVE_UP = 3  # failures in a row after which the judge is not asked again in this check (a hung server)
 FOV = 70.0  # degrees across a photo, as the map and eval/city.py draw where a box looks
 EDGE = 10  # of 1000: a box this close to the photo's left, right or bottom edge is cut off there
@@ -297,8 +304,8 @@ def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
     """(review_status, reasons, current answer) for Spark's answer; None drops the pick. The target not being
     visible means SAM found something that is not the target (a driveway, a plain curb, a private bin): the ask
     sentence defines it so, and on the recording survey a person agreed on all 12 such curb ramps (2026-10-28). So the
-    pick is dropped instead of being sent to review; run_check keeps a record of it and sends a sample to a person.
-    For an inventory check a "no" is dropped too."""
+    pick is dropped instead of being sent to review; run_check keeps a record of it. For an inventory check a "no" is
+    dropped too. A defect check's answer on a box shorter than MIN_DETAIL_BOX is unclear."""
     if not answer["visible"]:
         return None
     if check.inventory:
@@ -310,6 +317,9 @@ def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
     current = answer["answer"]
     if current == "unclear":
         return "needs_review", ["unclear"], current
+    box = answer.get("box") or []
+    if len(box) == 4 and box[3] - box[1] < MIN_DETAIL_BOX:
+        return "needs_review", ["unclear", "too_small"], "unclear"
     if current == check.report_when:
         return "needs_review", ["possible_defect"], current
     return "auto", [], current

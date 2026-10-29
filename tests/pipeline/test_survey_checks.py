@@ -159,7 +159,20 @@ def test_run_check_drops_inventory_picks_that_are_not_the_target(tmp_path):
     assert rows[0]["issue_type"] == "streetlight" and set(rows[0]["model_outputs"]) == {"check", "find"}
 
 
-def test_a_defect_check_drops_what_is_not_there_keeps_a_record_and_sends_a_seeded_tenth_to_a_person(tmp_path):
+def test_a_defect_check_drops_what_is_not_there_and_keeps_a_record_but_shows_none_of_it(tmp_path):
+    by_idx = frames(24)
+    photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
+    found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
+    api = FakeApi(spark=lambda schema_name, parts: {**YES, "visible": False},
+                  sam=lambda prompt, media: found if media.name in {"0.jpg", "8.jpg", "16.jpg"} else "")
+    dropped = []
+    rows, missing = survey_checks.run_check(api, CHECK, {0: list(range(24))}, photos, by_idx, 1, audit_seed=4,
+                                            dropped=dropped)
+    assert rows == [] and len(dropped) == 3 and not any(d["audited"] for d in dropped)  # no person reviews
+
+
+def test_a_share_of_dropped_picks_can_still_go_to_a_person_seeded_by_the_scan(tmp_path, monkeypatch):
+    monkeypatch.setattr(survey_checks, "DROP_AUDIT_SHARE", 0.1)
     by_idx = frames(48)
     photos = {i: synthetic_photo(tmp_path / f"{i}.jpg", seed=i) for i in by_idx}
     found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
@@ -486,3 +499,14 @@ def test_two_rows_of_one_object_on_the_same_photo_become_one():
     kept = survey_checks.one_row_per_object(twice + side_by_side + other_photo)
     assert kept == [twice[1], *side_by_side, *other_photo]
     assert survey_checks.one_row_per_object([r(1, None, 0.5), r(1, None, 0.6)]) == [r(1, None, 0.5), r(1, None, 0.6)]
+
+
+
+@pytest.mark.parametrize("box, expected", [
+    ([335, 548, 568, 588], ("needs_review", ["unclear", "too_small"], "unclear")),  # scan 17 row 566: 40 high
+    ([110, 709, 670, 955], ("needs_review", ["possible_defect"], "no")),
+    ([], ("needs_review", ["possible_defect"], "no")),  # no box: the answer stands
+])
+def test_a_detail_judged_on_a_box_too_small_to_show_it_is_unclear(box, expected):
+    assert survey_checks.status(CHECK, {**NO, "box": box}) == expected
+    assert survey_checks.status(LIGHT, {**YES, "box": [0, 0, 10, 10]}) == ("auto", [], "yes")  # inventory: not a detail

@@ -358,7 +358,7 @@ def test_a_us_scan_checks_curb_ramps_one_row_per_ramp_with_evidence(setup):
     assert result["defects"] == 1 and result["unavailable"]["check_requests"] == 0
 
 
-def test_a_curb_ramp_the_model_cannot_see_is_dropped_kept_and_audited_by_a_person(setup):
+def test_a_curb_ramp_the_model_cannot_see_is_dropped_and_kept_as_a_record(setup):
     conn, _, make, _ = setup
     us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
     found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
@@ -371,9 +371,8 @@ def test_a_curb_ramp_the_model_cannot_see_is_dropped_kept_and_audited_by_a_perso
 
     assert runner.run_scan(on_photos(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan)))["status"] == "done"
     (pick,) = db.dropped(conn, us_scan)
-    assert (pick["issue_type"], pick["frame_idx"], pick["audited"]) == ("curb_ramp_warning", 2, True)  # 1 of 1
-    (row,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
-    assert (row["review_status"], row["review_reasons"]) == ("needs_review", ["dropped_audit"])
+    assert (pick["issue_type"], pick["frame_idx"], pick["audited"]) == ("curb_ramp_warning", 2, False)
+    assert [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"] == []  # no row to review
     db.set_stage(conn, us_scan, "defects", "pending")
     runner.run_scan(on_photos(make(FakeApi(spark=spark_ramp, sam=sam_ramp), us_scan)))
     assert len(db.dropped(conn, us_scan)) == 1  # a rerun replaces them, like the rows
@@ -488,7 +487,7 @@ class DisagreeingOpen:
         return {"visible": True, "answer": "yes", "box": [], "confidence": 0.6, "note": "domes"}
 
 
-def test_a_second_model_that_disagrees_adds_the_models_disagree_reason(setup):
+def test_a_second_model_that_disagrees_makes_the_possible_defect_unclear(setup):
     conn, _, make, _ = setup
     us_scan = db.create_scan(conn, "mapillary", SEATTLE, "US")
     found = text([line(0, [record("0", 0, 0, 40, 40, 160, 120, 0.9)])])
@@ -503,7 +502,7 @@ def test_a_second_model_that_disagrees_adds_the_models_disagree_reason(setup):
     scan.second_opinion = DisagreeingOpen()
     runner.run_scan(scan)
     (ramp,) = [i for i in db.issues(conn, us_scan) if i["issue_type"] == "curb_ramp_warning"]
-    assert ramp["review_reasons"] == ["possible_defect", "models_disagree"]
+    assert (ramp["object_label"], ramp["review_reasons"]) == ("unclear", ["unclear", "models_disagree"])
     assert ramp["model_outputs"]["second_opinion"]["agree"] is False
 
 

@@ -39,7 +39,7 @@ def test_apply_asks_only_on_reported_defects_and_marks_a_disagreement(tmp_path):
     rows = second_opinion.apply(model, CHECK, [row("no", 4), row("yes", 2), row("no", 6)], photos, workers=1)
     assert model.asked == ["4.jpg", "6.jpg"]  # the "yes" row is not a reported defect
     disagree, ok, agree = rows
-    assert disagree["review_reasons"] == ["possible_defect", "models_disagree"]
+    assert (disagree["object_label"], disagree["review_reasons"]) == ("unclear", ["unclear", "models_disagree"])
     assert disagree["model_outputs"]["second_opinion"] == {"model": second_opinion.MODEL, "answer": "yes",
                                                             "agree": False, "confidence": 0.7, "note": "domes",
                                                             "box": [1, 2, 3, 4]}

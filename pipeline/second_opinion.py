@@ -146,8 +146,9 @@ def glimmer_from_env(run_dir: Path) -> OpenModel | None:
 def apply(model, check: Check, rows: list[dict], photos: dict[int, Path], workers: int) -> list[dict]:
     """Ask the open model on every row whose answer is the check's report_when; record its answer and whether the two
     models agree. Anything but the same answer is a disagreement, so "unclear" (or a photo where the open model sees
-    nothing) also puts the row first for a person. A failed request, or a reply of the wrong shape, is recorded on
-    that row and changes nothing else."""
+    nothing) is one too. A disagreement makes the row unclear: no person settles it (2026-10-29), so a possible defect
+    is claimed only when both models say so. A failed request, or a reply of the wrong shape, is recorded on that row
+    and changes nothing else."""
     todo = [r for r in rows if r["object_label"] == check.report_when]
     name = getattr(model, "model", MODEL)
 
@@ -170,7 +171,9 @@ def apply(model, check: Check, rows: list[dict], photos: dict[int, Path], worker
                                                   "confidence": answer.get("confidence"),
                                                   "note": answer.get("note"), "box": answer.get("box")}
         if not agree:
-            row["review_reasons"] = [*row["review_reasons"], "models_disagree"]
+            row["object_label"] = "unclear"
+            row["review_reasons"] = [*(r for r in row["review_reasons"] if r != "possible_defect"), "unclear",
+                                     "models_disagree"]
     return rows
 
 
