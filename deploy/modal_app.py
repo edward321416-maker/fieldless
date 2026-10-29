@@ -33,7 +33,7 @@ SETTINGS = {
     "THRESHOLD_DATA": "/root/data",  # the container's own disk; BACKUP_DIR is the Volume
     "THRESHOLD_RUN": "demo",
     "BACKUP_DIR": "/backup",
-    "DEMO_SCANS": "16:Seattle (Capitol Hill);1:Seongsu",  # scan 16: the recording survey (2026-10-29)
+    "DEMO_SCANS": "17:Seattle (Capitol Hill);1:Seongsu",  # scan 17: the recording survey, scan 4's photos (2026-10-29)
     "SCANS_PER_IP_PER_DAY": "0",
     "PUBLIC_COST_CAP_USD": "40",
     "THRESHOLD_PARSE_PROCESSES": "1",  # decode masks in place: Modal's entry point, not ours, starts the container
