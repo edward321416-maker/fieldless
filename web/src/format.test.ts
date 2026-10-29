@@ -46,6 +46,7 @@ describe("format", () => {
   });
   it("explains review reasons in words", () => {
     expect(reasonText("possible_sill")).toContain("cannot be confirmed from photos");
+    expect(reasonText("too_small")).toBe("The marked part is too small in the photo to judge this detail");
     expect(reasonText("something_new")).toBe("something new");
   });
   it("formats dates, years, time and money", () => {
