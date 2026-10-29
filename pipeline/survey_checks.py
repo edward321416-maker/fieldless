@@ -42,6 +42,10 @@ JOIN_DEG = 10.0  # ... looking this close to the same way is the same object (SA
 CONTAIN = 0.8  # share of a box inside another's in every photo they share: parts of one object
 WALKS_M = 8.0  # objects of two walks whose photos are this close ...
 WALKS_DEG = 15.0  # ... and look this close to the same way are one object
+# Rows of one check on one photo whose answer boxes overlap this much (intersection over union) show one object.
+# Scan 17: SAM followed one signal pole as two objects and both got a row on the same photo (IoU 0.54); two poles
+# side by side on one photo overlapped 0.
+SAME_BOX_IOU = 0.5
 
 SCHEMA = {
     "type": "object",
@@ -329,11 +333,43 @@ def _outcome(decided) -> str:
     return "drop" if decided is None else decided[2]
 
 
+def _iou(a: list[int], b: list[int]) -> float:
+    across = max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - across
+    return across / union if union > 0 else 0.0
+
+
+def one_row_per_object(rows: list[dict]) -> list[dict]:
+    """Of rows on the same photo whose answer boxes overlap SAME_BOX_IOU or more, the most confident; the rest keep
+    their order."""
+    def box(r):
+        return ((r.get("model_outputs") or {}).get("check") or {}).get("box")
+
+    kept: list[dict] = []
+    for r in sorted(rows, key=lambda r: -(r.get("confidence") or 0.0)):
+        if box(r) and any(k["frame_idx"] == r["frame_idx"] and box(k) and _iou(box(r), box(k)) >= SAME_BOX_IOU
+                          for k in kept):
+            continue
+        kept.append(r)
+    return [r for r in rows if any(r is k for k in kept)]
+
+
 def run_check(api, check: Check, clips: dict[int, list[int]], photos: dict[int, Path], by_idx: dict[int, dict],
               workers: int, every: int = SAMPLE_EVERY, known: dict[int, int] | None = None, judge=None,
               audit_seed: int | None = None, audit_share: float = AUDIT_SHARE,
               dropped: list[dict] | None = None,
               video: tuple[dict[int, str | None], dict[int, Video]] | None = None) -> tuple[list[dict], dict]:
+    """_check_rows, one row per object (one_row_per_object)."""
+    rows, missing = _check_rows(api, check, clips, photos, by_idx, workers, every, known, judge, audit_seed,
+                                audit_share, dropped, video)
+    return one_row_per_object(rows), missing
+
+
+def _check_rows(api, check: Check, clips: dict[int, list[int]], photos: dict[int, Path], by_idx: dict[int, dict],
+                workers: int, every: int = SAMPLE_EVERY, known: dict[int, int] | None = None, judge=None,
+                audit_seed: int | None = None, audit_share: float = AUDIT_SHARE,
+                dropped: list[dict] | None = None,
+                video: tuple[dict[int, str | None], dict[int, Video]] | None = None) -> tuple[list[dict], dict]:
     """Rows for one check over every walk, and what could not be analysed: {"find": [photo idx], "ask": [photo idx]}.
     A check found by video takes SAM's answers on the videos from the caller, video = (texts, videos) as in
     video_picks, and "find" then lists the first photo of each video without an answer.

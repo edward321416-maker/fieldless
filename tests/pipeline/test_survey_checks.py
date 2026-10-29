@@ -473,3 +473,16 @@ def test_run_check_by_video_makes_one_row_per_followed_object_and_asks_about_its
     assert "at [375, 167, 562, 833]" in asked[0]
     with pytest.raises(ValueError, match="found by video"):
         survey_checks.run_check(api, RAMP_V, {0: list(range(8))}, photos, by_idx, workers=1)
+
+
+
+def test_two_rows_of_one_object_on_the_same_photo_become_one():
+    def r(idx, box, conf):
+        return {"frame_idx": idx, "confidence": conf, "model_outputs": {"check": {"box": box}}}
+
+    twice = [r(149, [337, 0, 380, 662], 0.8), r(149, [338, 0, 406, 746], 0.9)]  # scan 17's signal pole, IoU 0.54
+    side_by_side = [r(150, [100, 0, 140, 700], 0.9), r(150, [600, 0, 640, 700], 0.8)]
+    other_photo = [r(151, [337, 0, 380, 662], 0.7)]
+    kept = survey_checks.one_row_per_object(twice + side_by_side + other_photo)
+    assert kept == [twice[1], *side_by_side, *other_photo]
+    assert survey_checks.one_row_per_object([r(1, None, 0.5), r(1, None, 0.6)]) == [r(1, None, 0.5), r(1, None, 0.6)]
