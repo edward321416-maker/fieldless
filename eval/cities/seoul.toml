@@ -1,0 +1,15 @@
+# Seoul's own asset records, one layer per survey item (fields as in eval/cities/seattle.toml).
+# The layer is made from Seoul Open Data Plaza OA-23040, "서울시 가로수 위치 정보", with
+#   python -m eval.seoul_trees TREES.xlsx
+# Seoul's list names no tree by a number, so a record is named by its district, road, species and lot address, the
+# fields a district office looks a tree up by. We found no city-wide list of street lights with positions
+# (2026-10-29: two districts publish theirs, and their streets have almost no pedestrian photos).
+
+city = "Seoul"
+root = "seoul"
+
+[items.street_tree]
+layer = "assets/trees.geojson"
+name = "Seoul street trees"
+inventory = true
+id_fields = ["자치구", "노선", "수종", "지번 주소"]

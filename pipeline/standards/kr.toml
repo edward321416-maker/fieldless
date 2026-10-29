@@ -11,3 +11,16 @@ fixed = ["bollard", "pole"]
 
 [tactile_defects]
 enabled = true
+
+# Street trees, as in us.toml, so a Seoul survey can be checked against Seoul's own street-tree list
+# (eval/cities/seoul.toml).
+[[check]]
+id = "street_tree"
+map_icon = "tree"
+question = "Is this tree planted in the sidewalk or the planting strip?"
+inventory = true
+find = "street tree"
+target = "street tree"
+ask = "Is this tree planted in the sidewalk or in the planting strip between the sidewalk and the street? Answer no for a tree in a private yard, behind a fence or clearly on private land. If you cannot tell where it is planted, answer unclear."
+label_yes = "Street tree"
+group_m = 8  # as in us.toml

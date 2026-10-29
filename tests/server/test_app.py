@@ -320,8 +320,8 @@ def test_a_preview_is_priced_and_budgeted_for_the_checks_of_its_areas_standard(t
     client = TestClient(create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(), preview=fake))
     client.post("/api/preview", json={"bbox": [-122.3230, 47.6130, -122.3170, 47.6175]})
     client.post("/api/preview", json={"bbox": BBOX})
-    us = len(survey_items.load("US").checks)
-    assert seen == [(config.photo_budget(checks=us), us), (config.photo_budget(), 0)]
+    us, kr = (len(survey_items.load(code).checks) for code in ("US", "KR"))
+    assert seen == [(config.photo_budget(checks=us), us), (config.photo_budget(checks=kr), kr)]
 
 
 def test_a_new_scan_gets_the_standard_of_its_area(make):

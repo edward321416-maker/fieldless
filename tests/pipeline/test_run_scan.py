@@ -11,9 +11,9 @@ def test_preview_is_priced_for_the_standard_and_the_given_cap(monkeypatch, capsy
                         lambda bbox, max_photos, checks=0: seen.append((max_photos, checks)) or {"photos": 1})
     assert run_scan.main(["--preview", "--bbox", "-122.323,47.613,-122.317,47.6175", "--cap-usd", "6"]) == 0
     assert run_scan.main(["--preview", "--bbox", "-122.323,47.613,-122.317,47.6175", "--standard", "KR"]) == 0
-    us = len(run_scan.survey_items.load("US").checks)
+    us, kr = (len(run_scan.survey_items.load(code).checks) for code in ("US", "KR"))
     assert seen == [(run_scan.config.photo_budget(400, checks=us, cap_usd=6.0), us),
-                    (run_scan.config.photo_budget(400), 0)]
+                    (run_scan.config.photo_budget(400, checks=kr), kr)]
 
 
 def test_preview_prints_the_estimate_without_spending(monkeypatch, capsys):

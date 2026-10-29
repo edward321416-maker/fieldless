@@ -213,7 +213,8 @@ def test_a_scan_without_a_standard_is_korean():
     scan = {"id": 1, "status": "done", "stage_status": {}, "bbox": [0, 0, 1, 1], "image_count": 1,
             "captured_from": None, "captured_to": None, "cost_usd": 0.0, "processing_seconds": 0.0,
             "review_seconds": 0.0, "error": None}
-    assert views.scan_json(scan, [], [])["standard"] == "KR" and views.scan_json(scan, [], [])["checks"] == []
+    out = views.scan_json(scan, [], [])
+    assert out["standard"] == "KR" and [c["id"] for c in out["checks"]] == ["street_tree"]
 
 
 

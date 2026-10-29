@@ -106,7 +106,7 @@ def test_check_ids_must_not_repeat():
 
 def test_the_shipped_standards_load():
     kr, us = survey_items.load("KR"), survey_items.load("us")
-    assert kr.tactile_defects and kr.checks == ()
+    assert kr.tactile_defects and [c.id for c in kr.checks] == ["street_tree"] and kr.checks[0].inventory
     assert kr.path.surface == "yellow tactile paving" and kr.path.fixed == ("bollard", "pole")
     assert kr.path.objects == ("electric scooter", "bicycle")
     assert not us.tactile_defects and us.path.surface == "sidewalk" and us.path.fixed == ()
