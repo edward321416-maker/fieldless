@@ -189,3 +189,30 @@ def test_report_text_reads_none_from_a_database_made_before_the_table(tmp_path):
     ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     assert db.report_text(ro, 1) is None  # a read-only copy of an older database has no report_text table
     ro.close()
+
+
+def test_an_item_run_keeps_its_progress_and_json_fields(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 1, 1], "US")
+    run_id = db.create_item_run(conn, scan_id, "fire hydrant", client_ip_hash="h")
+    db.add_progress(conn, run_id, "Muse Spark wrote a draft")
+    db.add_progress(conn, run_id, "SAM 'fire hydrant': found 5 of 6")
+    db.update_item_run(conn, run_id, status="labels_needed", label_photos=[3, 7], state={"step": 2},
+                       check_def={"id": "agent_fire_hydrant"}, rows=[{"id": "item1-1"}])
+    run = db.item_run(conn, run_id)
+    assert run["progress"] == ["Muse Spark wrote a draft", "SAM 'fire hydrant': found 5 of 6"]
+    assert (run["status"], run["label_photos"], run["state"], run["labels"]) == ("labels_needed", [3, 7],
+                                                                                {"step": 2}, None)
+    assert run["check_def"]["id"] == "agent_fire_hydrant" and run["rows"] == [{"id": "item1-1"}]
+    assert [r["id"] for r in db.item_runs(conn, scan_id)] == [run_id] and db.item_runs(conn, scan_id + 1) == []
+    with pytest.raises(KeyError):
+        db.item_run(conn, run_id + 1)
+
+
+def test_item_runs_count_toward_the_daily_and_visitor_spend(conn):
+    scan_id = db.create_scan(conn, "mapillary", [0, 0, 1, 1], "US")
+    db.update_scan(conn, scan_id, cost_usd=1.5, client_ip_hash="h")
+    db.update_item_run(conn, db.create_item_run(conn, scan_id, "bike rack", client_ip_hash="h"), cost_usd=0.25)
+    db.update_item_run(conn, db.create_item_run(conn, scan_id, "bench"), cost_usd=0.5)  # a CLI run: not a visitor's
+    assert db.daily_cost(conn, db.now()[:10]) == pytest.approx(2.25)
+    assert db.daily_cost(conn, "2000-01-01") == 0
+    assert db.public_cost(conn) == pytest.approx(1.75)

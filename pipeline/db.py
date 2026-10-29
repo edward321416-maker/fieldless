@@ -39,6 +39,24 @@ CREATE TABLE IF NOT EXISTS dropped_pick (
     model_outputs TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS item_run (
+    id INTEGER PRIMARY KEY,
+    scan_id INTEGER NOT NULL REFERENCES scan(id) ON DELETE CASCADE,
+    target TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    progress TEXT NOT NULL DEFAULT '[]',
+    label_photos TEXT NOT NULL DEFAULT '[]',
+    state TEXT,
+    labels TEXT,
+    check_def TEXT,
+    test TEXT,
+    rows TEXT NOT NULL DEFAULT '[]',
+    cost_usd REAL NOT NULL DEFAULT 0,
+    client_ip_hash TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS report_text (
     scan_id INTEGER PRIMARY KEY REFERENCES scan(id) ON DELETE CASCADE,
     text TEXT NOT NULL,
@@ -114,7 +132,8 @@ CREATE INDEX IF NOT EXISTS entrance_scan ON entrance(scan_id);
 CREATE INDEX IF NOT EXISTS issue_scan ON sidewalk_issue(scan_id);
 """
 
-JSON_COLUMNS = {"bbox", "sequence_ids", "stage_status", "review_reasons", "evidence", "model_outputs", "corrections"}
+JSON_COLUMNS = {"bbox", "sequence_ids", "stage_status", "review_reasons", "evidence", "model_outputs", "corrections",
+                "progress", "label_photos", "state", "labels", "check_def", "test", "rows"}
 BOOL_COLUMNS = {"stairs_detected", "sill_possible", "has_ramp", "has_handrail", "audited"}
 ROW_TABLES = {"frame", "entrance", "sidewalk_issue"}
 
@@ -211,14 +230,16 @@ def set_stage(conn, scan_id: int, stage: str, status: str) -> None:
 
 
 def public_cost(conn) -> float:
-    """Spend of the scans visitors started on the server (they carry an address hash; CLI scans do not)."""
-    row = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM scan WHERE client_ip_hash IS NOT NULL").fetchone()
-    return float(row[0])
+    """Spend of the scans and item runs visitors started on the server (they carry an address hash; CLI runs do
+    not)."""
+    return sum(float(conn.execute(f"SELECT COALESCE(SUM(cost_usd), 0) FROM {table} WHERE client_ip_hash IS NOT NULL")
+                     .fetchone()[0]) for table in ("scan", "item_run"))
 
 
 def daily_cost(conn, day: str) -> float:
-    row = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM scan WHERE created_at LIKE ?", (f"{day}%",)).fetchone()
-    return float(row[0])
+    """Spend of the scans and item runs created on day (UTC, YYYY-MM-DD)."""
+    return sum(float(conn.execute(f"SELECT COALESCE(SUM(cost_usd), 0) FROM {table} WHERE created_at LIKE ?",
+                                  (f"{day}%",)).fetchone()[0]) for table in ("scan", "item_run"))
 
 
 def add_frames(conn, scan_id: int, frames: list[dict]) -> None:
@@ -312,6 +333,44 @@ def report_text(conn, scan_id: int) -> dict | None:
     except sqlite3.OperationalError:
         return None
     return json.loads(row[0]) if row else None
+
+
+# --- item runs: a survey item the agent wrote and ran on a finished scan's photos (plan 12) ---------------------
+
+ITEM_RUN_ACTIVE = ("queued", "running")
+
+
+def create_item_run(conn, scan_id: int, target: str, client_ip_hash: str | None = None) -> int:
+    stamp = now()
+    return _insert(conn, "item_run", {"scan_id": scan_id, "target": target, "client_ip_hash": client_ip_hash,
+                                      "created_at": stamp, "updated_at": stamp})
+
+
+def item_run(conn, run_id: int) -> dict:
+    row = conn.execute("SELECT * FROM item_run WHERE id = ?", (run_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"item run {run_id} not found")
+    return _decode(row)
+
+
+def update_item_run(conn, run_id: int, **fields) -> None:
+    _update(conn, "item_run", run_id, {**fields, "updated_at": now()})
+
+
+def add_progress(conn, run_id: int, line: str) -> None:
+    """Append one line of the agent's progress; the screen polls it while the run goes."""
+    update_item_run(conn, run_id, progress=[*item_run(conn, run_id)["progress"], line])
+
+
+def item_runs(conn, scan_id: int | None = None) -> list[dict]:
+    """A scan's item runs (every run when scan_id is None), oldest first. Empty for a database that predates the
+    table (a read-only copy)."""
+    try:
+        rows = (conn.execute("SELECT * FROM item_run ORDER BY id").fetchall() if scan_id is None else
+                conn.execute("SELECT * FROM item_run WHERE scan_id = ? ORDER BY id", (scan_id,)).fetchall())
+    except sqlite3.OperationalError:
+        return []
+    return [_decode(r) for r in rows]
 
 
 def frame_compass(conn, scan_id: int, idx: int) -> float | None:
