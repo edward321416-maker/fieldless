@@ -284,3 +284,9 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
   background: #f5f3ff; border: 1px solid #ddd6fe; }
 .agent-done p { margin: 0; }
 .agent-line { font-size: 0.8rem; color: #5b21b6; }
+/* sharing what is on screen (E) */
+.results-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.share-button { min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff;
+  font-weight: 600; color: var(--accent); white-space: nowrap; }
+.agent-done-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+

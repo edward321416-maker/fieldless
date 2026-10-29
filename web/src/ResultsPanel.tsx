@@ -3,6 +3,7 @@ import { filesUrl, reportUrl, STATIC_DEMO } from "./api";
 import { BENCHMARKS } from "./benchmarks";
 import { isFinished, yearsSpan } from "./format";
 import { colourOf, itemName, type Finding } from "./items";
+import ShareButton from "./ShareButton";
 import { checkLine, cityLine, headline, itemNote } from "./summary";
 import type { Scan } from "./types";
 
@@ -33,7 +34,10 @@ export default function ResultsPanel(props: Props) {
     <section className="panel-section results" aria-labelledby="results-title">
       <button type="button" className="link-button back-intro" onClick={props.onIntro}>← What Fieldless does</button>
       {props.name && <p className="eyebrow">Example survey</p>}
-      <h2 id="results-title">{props.name ?? `Survey ${scan.id}`}</h2>
+      <div className="results-title-row">
+        <h2 id="results-title">{props.name ?? `Survey ${scan.id}`}</h2>
+        <ShareButton />
+      </div>
       <p className="sub">{scan.image_count} public street photos, taken {yearsSpan(scan.captured_from, scan.captured_to)}</p>
 
       <div className="headline-one">

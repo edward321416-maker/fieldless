@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { dollars } from "./format";
 import { capital } from "./items";
+import ShareButton from "./ShareButton";
 import type { ItemRun, ItemRunSummary } from "./types";
 
 interface Props {
@@ -124,7 +125,10 @@ function Done({ run, onClose }: { run: ItemRun; onClose: () => void }) {
         </p>
       )}
       {t?.city && <p className="hint small">{t.city.found} of {t.city.covered} in {t.city.layer}</p>}
-      <button type="button" className="link-button inline" onClick={onClose}>Take it off the map</button>
+      <div className="agent-done-actions">
+        <ShareButton label="Share this survey with its new item" />
+        <button type="button" className="link-button inline" onClick={onClose}>Take it off the map</button>
+      </div>
     </div>
   );
 }

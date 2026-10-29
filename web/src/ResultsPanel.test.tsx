@@ -42,6 +42,7 @@ describe("the finished survey", () => {
     expect(html).toContain("21 the models were unsure of are waiting for a person.");
     expect(html).toContain("Download for a GIS");
     expect(html).toContain('href="/api/scans/4/report" target="_blank"');
+    expect(html).toContain(">Share</button>");
   });
   it("offers the report only when the server has it", () => {
     const without = renderToStaticMarkup(
