@@ -91,10 +91,11 @@ SAVE_EVERY_USD = 0.05  # spend is written to the scan this often, so a killed ru
 # (server scans since plan 2; command-line scans since 2026-10-29, when killed runs left $2.5 of calls unsaved)
 
 
-def spend_saver(db_path: Path, scan_id: int, saved_usd: float):
-    """A CostMeter hook that writes the scan's spend to the database each time it has grown by SAVE_EVERY_USD. It
-    opens its own connection (settle runs on the pipeline's request threads), never waits and never raises: while one
-    save runs, other settles skip, and a later settle carries a higher total."""
+def spend_saver(db_path: Path, scan_id: int, saved_usd: float, update=db.update_scan):
+    """A CostMeter hook that writes the scan's spend to the database each time it has grown by SAVE_EVERY_USD (an
+    item run's with update=db.update_item_run and its id). It opens its own connection (settle runs on the pipeline's
+    request threads), never waits and never raises: while one save runs, other settles skip, and a later settle
+    carries a higher total."""
     lock = threading.Lock()
     last = [saved_usd]
 
@@ -106,7 +107,7 @@ def spend_saver(db_path: Path, scan_id: int, saved_usd: float):
                 return
             conn = db.connect(db_path)
             try:
-                db.update_scan(conn, scan_id, cost_usd=spent_usd)
+                update(conn, scan_id, cost_usd=spent_usd)
             finally:
                 conn.close()
             last[0] = spent_usd
