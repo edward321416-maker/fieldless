@@ -1,4 +1,11 @@
-from pipeline import db
+import dataclasses
+
+import pytest
+
+from pipeline import db, item_runs
+from pipeline.cost import CostCapReached
+from pipeline.survey_items import Check
+from server import jobs
 from server.jobs import ScanWorker
 
 BBOX = [126.9842, 37.5623, 126.9858, 37.5632]
@@ -180,3 +187,123 @@ def test_a_finished_scan_gets_its_report_sentences_and_a_failure_only_logs(caplo
 
     worker._write_report_text(conn, scan_id, FakeApi(spark=broken))  # does not raise
     assert db.report_text(conn, scan_id) == NOTES and "report text failed" in caplog.text
+
+
+# --- item runs (plan 12) ------------------------------------------------------------------------------------------
+
+HYDRANT = Check(id="agent_fire_hydrant", find="fire hydrant", target="fire hydrant", ask="Is it a fire hydrant?",
+                report_when="yes", label_yes="Fire hydrant", label_no="Not a fire hydrant",
+                label_unclear="Fire hydrant unclear", inventory=True, group_m=15.0)
+
+
+class FakeItems:
+    """Stands in for assist.custom_item: asks a person about photos 3 and 7, then is ready."""
+
+    def __init__(self, start=None):
+        self.calls = []
+        self._start = start
+
+    def start(self, api, photos, target, on_progress):
+        self.calls.append(("start", target, sorted(photos.paths)))
+        if self._start:
+            return self._start(api)
+        on_progress("Muse Spark wrote a draft")
+        return {"status": "labels_needed", "photos": [3, 7], "state": {"phrases": ["fire hydrant"]}}
+
+    def resume(self, api, photos, state, labels, on_progress):
+        self.calls.append(("resume", state, labels))
+        on_progress("SAM 'fire hydrant': found 1 of 1")
+        return {"status": "ready", "check": HYDRANT, "test": {"labels": "person", "found": [1, 1]}}
+
+    def city_check(self, photos, check, rows):
+        self.calls.append(("city", check.id, len(rows)))
+        return {"layer": "Hydrants", "found": 1, "covered": 2}
+
+
+@pytest.fixture
+def item_env(tmp_path, monkeypatch):
+    path = tmp_path / "t.db"
+    conn = db.connect(path)
+    scan_id = db.create_scan(conn, "mapillary", BBOX, "US")
+    db.update_scan(conn, scan_id, status="done")
+    photos = item_runs.ScanPhotos(scan_id, BBOX, "US", [{"idx": i, "clip": 0} for i in range(9)],
+                                  {i: tmp_path / f"{i}.jpg" for i in range(9)})
+    monkeypatch.setattr(item_runs, "scan_photos", lambda conn, scan_id: photos)
+    monkeypatch.setattr(jobs, "MetaApi", lambda log, meter: dataclasses.make_dataclass("Api", ["meter"])(meter))
+
+    def run_on_scan(api, photos, check, run_dir, run_id, on_progress):
+        on_progress("Surveying all 9 photos of the scan for fire hydrant")
+        api.meter.spent_usd += 0.2
+        return [{"id": f"item{run_id}-1", "item_run": run_id, "issue_type": check.id, "frame_idx": 3}]
+
+    monkeypatch.setattr(item_runs, "run_item_on_scan", run_on_scan)
+    yield path, conn, scan_id
+    conn.close()
+
+
+def test_an_item_run_waits_for_a_persons_answers_then_runs_on_the_scan(tmp_path, item_env):
+    path, conn, scan_id = item_env
+    items, done = FakeItems(), []
+    worker = ScanWorker(path, tmp_path, run=lambda s: None, items=items, on_done=done.append)
+    worker.start()
+    run_id = db.create_item_run(conn, scan_id, "fire hydrant")
+    worker.submit_item(run_id)
+    worker.join()
+    run = db.item_run(conn, run_id)
+    assert (run["status"], run["label_photos"], run["state"]) == ("labels_needed", [3, 7],
+                                                                  {"phrases": ["fire hydrant"]})
+
+    db.update_item_run(conn, run_id, labels={"3": "yes", "7": "no"}, status="queued")
+    worker.submit_item(run_id)
+    worker.join()
+    worker.stop()
+    run = db.item_run(conn, run_id)
+    assert run["status"] == "done" and run["error"] is None
+    assert run["check_def"]["id"] == "agent_fire_hydrant" and run["rows"][0]["id"] == f"item{run_id}-1"
+    assert run["test"] == {"labels": "person", "found": [1, 1], "city": {"layer": "Hydrants", "found": 1, "covered": 2}}
+    assert run["progress"] == ["Muse Spark wrote a draft", "SAM 'fire hydrant': found 1 of 1",
+                               "Surveying all 9 photos of the scan for fire hydrant"]
+    assert run["cost_usd"] == pytest.approx(0.2)
+    assert items.calls[1] == ("resume", {"phrases": ["fire hydrant"]}, {3: "yes", 7: "no"})
+    assert done == [scan_id, scan_id]  # the store saves after each step
+    assert db.issues(conn, scan_id) == []
+
+
+def test_an_item_run_that_fails_its_test_or_its_cap_says_why(tmp_path, item_env):
+    path, conn, scan_id = item_env
+
+    def no_wording(api):
+        return {"status": "failed", "reason": "No reliable wording found", "test": {"found": [1, 5]}}
+
+    def over_cap(api):
+        api.meter.spent_usd = 1.0
+        raise CostCapReached("cap")
+
+    for start, error in ((no_wording, "No reliable wording found"),
+                         (over_cap, "The run stopped at its spending limit ($1.00)")):
+        worker = ScanWorker(path, tmp_path, run=lambda s: None, items=FakeItems(start))
+        worker.start()
+        run_id = db.create_item_run(conn, scan_id, "fire hydrant")
+        worker.submit_item(run_id)
+        worker.join()
+        worker.stop()
+        run = db.item_run(conn, run_id)
+        assert (run["status"], run["error"]) == ("failed", error)
+    assert run["cost_usd"] == pytest.approx(1.0)
+
+
+def test_an_item_run_without_photos_fails_and_a_restart_fails_running_runs_and_requeues_queued_ones(
+        tmp_path, item_env, monkeypatch):
+    path, conn, scan_id = item_env
+    cut = db.create_item_run(conn, scan_id, "bench")
+    db.update_item_run(conn, cut, status="running")
+    waiting = db.create_item_run(conn, scan_id, "bike rack")
+    monkeypatch.setattr(item_runs, "scan_photos",
+                        lambda conn, scan_id: item_runs.ScanPhotos(scan_id, BBOX, "US", [], {}))
+    worker = ScanWorker(path, tmp_path, run=lambda s: None, items=FakeItems())
+    worker.start()
+    worker.join()
+    worker.stop()
+    assert db.item_run(conn, cut)["status"] == "failed" and "restart" in db.item_run(conn, cut)["error"]
+    assert (db.item_run(conn, waiting)["status"], db.item_run(conn, waiting)["error"]) == (
+        "failed", "The survey's photos could not be downloaded from Mapillary")
