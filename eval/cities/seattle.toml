@@ -47,3 +47,17 @@ truth_field = "DETWARN_EXISTS"
 truth_yes = "Y"
 truth_no = "N"
 id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
+
+# Assets Seattle publishes that are not survey items yet: an item the agent writes in the app for one of these is
+# tested on the city's own positions instead of a person's answers (docs/specs/2026-10-29-agent-items-design.md 1).
+[extra.bike_rack]
+names = ["bike rack", "bicycle rack", "bicycle parking rack", "bike parking"]
+layer = "assets/bikeracks.geojson"
+name = "SDOT bike racks"
+id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
+
+[extra.street_sign]
+names = ["street sign", "traffic sign", "road sign"]
+layer = "assets/signs.geojson"
+name = "SDOT signs"
+id_fields = ["COMPKEY", "UNITID", "SIGNTYPE"]

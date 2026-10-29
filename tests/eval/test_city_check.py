@@ -89,3 +89,14 @@ def test_the_seattle_file_names_each_layers_record_fields():
     assert city["items"]["utility_pole"]["id_fields"] == ["SCLNR", "ASSET_ID"]
     assert city["items"]["curb_ramp_warning"]["truth_no"] == "N"
     assert all(cfg["id_fields"] for cfg in city["items"].values())
+
+
+def test_a_target_the_city_publishes_finds_its_layer_by_any_of_its_names():
+    city = city_check.load_city("seattle")
+    rack = city_check.extra_layer(city, "Bike Racks")
+    assert rack["id"] == "bike_rack" and rack["layer"] == "assets/bikeracks.geojson"
+    assert rack["id_fields"] == ["COMPKEY", "UNITID", "UNITDESC"] and rack["root"] == "seattle"
+    assert rack["name"] == "SDOT bike racks"
+    assert city_check.extra_layer(city, "bicycle parking rack")["id"] == "bike_rack"
+    assert city_check.extra_layer(city, "public bench") is None
+    assert city_check.extra_layer(city, "") is None

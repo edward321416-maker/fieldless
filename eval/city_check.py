@@ -28,6 +28,26 @@ def load_city(name: str) -> dict:
     return tomllib.loads((CITIES / f"{name}.toml").read_text(encoding="utf-8"))
 
 
+def _singular(text: str) -> str:
+    words = text.lower().split()
+    if words and words[-1].endswith("s"):
+        words[-1] = words[-1][:-1]
+    return " ".join(words)
+
+
+def extra_layer(city: dict, target: str) -> dict | None:
+    """The city's layer for an asset that is not a survey item yet ([extra] in the city's file), if the target names
+    it: compared lower case and singular, so "Bike Racks" finds "bike rack"."""
+    want = _singular(target.strip())
+    if not want:
+        return None
+    for key, cfg in (city.get("extra") or {}).items():
+        if want in {_singular(n) for n in cfg["names"]}:
+            return {"id": key, "layer": cfg["layer"], "name": cfg["name"], "id_fields": list(cfg["id_fields"]),
+                    "root": city["root"]}
+    return None
+
+
 SEATTLE = load_city("seattle")["items"]  # the layers data/seattle/city_eval_all.sh scores, relative to data/seattle
 
 
