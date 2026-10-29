@@ -68,7 +68,8 @@ def seed():
 
 def test_health_and_config(make):
     client, _ = make()
-    assert client.get("/api/health").json() == {"ok": True, "forwarded_for_entries": 0}
+    health = client.get("/api/health").json()
+    assert health["ok"] is True and health["forwarded_for_entries"] == 0 and health["mask_decoding"]
     assert client.get("/api/health", headers={"x-forwarded-for": "1.2.3.4, 5.6.7.8"}).json()["forwarded_for_entries"] == 2
     assert client.get("/api/config").json() == {"invite_required": False, "max_bbox_deg2": 0.0001,
                                                 "coverage_tiles": True, "report": True}

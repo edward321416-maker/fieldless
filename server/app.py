@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from assist import report
-from pipeline import collect, config, db, mapillary, survey_items
+from pipeline import collect, config, db, mapillary, sam_output, survey_items
 from pipeline.runner import RESUME_MIN_USD
 from server import files, limits, review, views
 from server.jobs import ScanWorker
@@ -133,9 +133,9 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     @app.get("/api/health")
     def health(request: Request):
         # How many X-Forwarded-For entries reach the server (a count, no addresses): checked once per host to set
-        # PROXY_HOPS.
+        # PROXY_HOPS. mask_decoding says whether SAM masks are decoded in worker processes on this host.
         forwarded = [p for p in (request.headers.get("x-forwarded-for") or "").split(",") if p.strip()]
-        return {"ok": True, "forwarded_for_entries": len(forwarded)}
+        return {"ok": True, "forwarded_for_entries": len(forwarded), "mask_decoding": sam_output.decoding()}
 
     @app.get("/api/config")
     def get_config():

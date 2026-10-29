@@ -21,7 +21,7 @@ import numpy as np
 
 CONF = 0.5  # D1: the confidence cut behind every gate number
 MAX_BOXES = 16  # SAM accepts at most 16 prompted objects
-# Processes that decode masks; THRESHOLD_PARSE_PROCESSES overrides (the live container has 2 CPUs).
+# Processes that decode masks; THRESHOLD_PARSE_PROCESSES overrides (the live container sets its own number).
 PARSE_PROCESSES = int(os.environ.get("THRESHOLD_PARSE_PROCESSES") or max(1, min(8, (os.cpu_count() or 2) - 1)))
 POOL_MIN_CHARS = 20_000  # a smaller answer is decoded in place: sending it to a process costs more than it saves
 # The record grammar of meta_sam_parser (_segmentation.py): a line is a frame header <Nf> (optional ;fields)
@@ -146,14 +146,35 @@ def _shutdown() -> None:
 atexit.register(_shutdown)
 
 
+def _start_method() -> str:
+    """forkserver where the platform has it (Linux: the live server), else spawn (Windows). Workers then start from a
+    clean process that has loaded this module (_new_pool), never by forking a process whose threads hold locks."""
+    return "forkserver" if "forkserver" in multiprocessing.get_all_start_methods() else "spawn"
+
+
 def _pool_safe() -> bool:
     """Whether worker processes may be started: only when this program was started as a module (python -m ...).
-    A Windows worker re-runs the main script; a script run by path (`python script.py`) would run all over again in
-    every worker (2026-10-29: a scan started in each of 8 workers)."""
+    Each worker imports the program's main module again, with spawn and with forkserver alike (checked on Linux,
+    2026-10-29): a script run by path (`python script.py`) would run all over again in every worker (2026-10-29: a
+    scan started in each of 8 workers), while a module's `if __name__ == "__main__":` part does not run there."""
     if multiprocessing.parent_process() is not None:
         return False  # a worker never starts workers of its own
     main = sys.modules.get("__main__")
     return getattr(main, "__spec__", None) is not None
+
+
+def _new_pool() -> ProcessPoolExecutor:
+    ctx = multiprocessing.get_context(_start_method())
+    if ctx.get_start_method() == "forkserver":
+        ctx.set_forkserver_preload([__name__])  # each worker starts with the decoder loaded
+    return ProcessPoolExecutor(max_workers=PARSE_PROCESSES, mp_context=ctx)
+
+
+def decoding() -> str:
+    """How masks are decoded in this process, for the server's start-up log."""
+    if PARSE_PROCESSES <= 1 or not _pool_safe():
+        return "in place"
+    return f"in {PARSE_PROCESSES} {_start_method()} worker processes"
 
 
 def parse_away(text: str, video: bool) -> list[Seg]:
@@ -165,7 +186,7 @@ def parse_away(text: str, video: bool) -> list[Seg]:
         return parse(text, video)
     with _pool_lock:
         if _pool is None:
-            _pool = ProcessPoolExecutor(max_workers=PARSE_PROCESSES)
+            _pool = _new_pool()
         pool = _pool
     try:
         return pool.submit(parse, text, video).result()

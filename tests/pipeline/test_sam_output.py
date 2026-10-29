@@ -117,8 +117,9 @@ def test_masks_are_decoded_in_place_when_the_program_was_started_as_a_script(mon
     monkeypatch.setattr(sam_output, "PARSE_PROCESSES", 2)
     monkeypatch.setattr(sam_output, "POOL_MIN_CHARS", 0)
     script = types.ModuleType("__main__")
-    script.__spec__ = None  # python script.py: a worker would run the script again
+    script.__spec__ = None  # python script.py: a spawned worker would run the script again
     monkeypatch.setitem(sys.modules, "__main__", script)
+    monkeypatch.setattr(sam_output, "_start_method", lambda: "spawn")  # Windows
 
     def no_pool(*a, **k):
         raise AssertionError("no worker process may start")
@@ -128,3 +129,32 @@ def test_masks_are_decoded_in_place_when_the_program_was_started_as_a_script(mon
     answer = text([line(0, [record("1", 10, 20, 50, 60, 100, 100, 0.9)])])
     (seg,) = sam_output.parse_away(answer, video=False)
     assert seg.box == (10, 20, 50, 60) and seg.mask is not None
+
+
+def test_a_script_never_starts_workers_with_forkserver_either(monkeypatch):
+    import types
+    from pipeline import sam_output
+    script = types.ModuleType("__main__")
+    script.__spec__ = None  # each forkserver worker imports the main module too (checked on Linux)
+    monkeypatch.setitem(sys.modules, "__main__", script)
+    monkeypatch.setattr(sam_output, "_start_method", lambda: "forkserver")
+    monkeypatch.setattr(sam_output, "PARSE_PROCESSES", 3)
+    assert not sam_output._pool_safe() and sam_output.decoding() == "in place"
+
+
+def test_a_forkserver_pool_starts_with_the_decoder_loaded(monkeypatch):
+    from pipeline import sam_output
+    monkeypatch.setattr(sam_output, "_start_method", lambda: "forkserver")
+    preloaded = []
+
+    class Context:
+        def get_start_method(self):
+            return "forkserver"
+
+        def set_forkserver_preload(self, modules):
+            preloaded.extend(modules)
+
+    monkeypatch.setattr(sam_output.multiprocessing, "get_context", lambda method: Context())
+    monkeypatch.setattr(sam_output, "ProcessPoolExecutor", lambda **k: k)
+    assert sam_output._new_pool()["mp_context"].get_start_method() == "forkserver"
+    assert preloaded == ["pipeline.sam_output"]
