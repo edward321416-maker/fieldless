@@ -57,6 +57,24 @@ describe("the finished survey", () => {
   });
 });
 
+describe("an item the agent added", () => {
+  it("says so on its row and counts the city's list from its own run", () => {
+    const withAgent = { ...scan, items: [...scan.items, { id: "agent_bike_rack", target: "bike rack", map_icon: "",
+      kind: "check", inventory: true, added_by: "agent" }] } as unknown as Scan;
+    const racks = [finding(90, "agent_bike_rack"), finding(91, "agent_bike_rack")];
+    const html = renderToStaticMarkup(
+      <ResultsPanel scan={withAgent} name={null} findings={[...findings, ...racks]} hidden={new Set()}
+        onToggle={() => undefined} onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined}
+        hasReport={false} agentCity={{ agent_bike_rack: { found: 14, covered: 22 } }}>
+        <p>add-item panel</p>
+      </ResultsPanel>);
+    expect(html).toContain("Bike rack");
+    expect(html).toContain("Added by the agent · not in the survey standard yet");
+    expect(html).toContain("14 of 22 in the city&#x27;s list");
+    expect(html.indexOf("add-item panel")).toBeLessThan(html.indexOf("Download for a GIS"));
+  });
+});
+
 describe("one item's findings", () => {
   const trees = findings.filter((f) => f.item === "street_tree");
   const html = renderToStaticMarkup(

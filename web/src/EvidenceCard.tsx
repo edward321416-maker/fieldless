@@ -51,7 +51,8 @@ export default function EvidenceCard(props: Props) {
   const [saved, setSaved] = useState<{ previous: Finding } | null>(null);
   const [steps, setSteps] = useState(0);
   const { question, choices } = choicesFor(p);
-  const reviewable = !STATIC_DEMO && ["needs_review", "auto"].includes(f.status);
+  // an agent item's rows belong to its run, which has no review (docs/specs/2026-10-29-agent-items-design.md 2)
+  const reviewable = !STATIC_DEMO && ["needs_review", "auto"].includes(f.status) && !(p.kind === "issue" && p.item.item_run);
 
   useEffect(() => {
     shownAt.current = performance.now();
@@ -150,7 +151,8 @@ export default function EvidenceCard(props: Props) {
   const facing = f.heading !== null ? `facing ${compassWord(f.heading)}` : "";
   const where = aside(f.heading, bearing);
   const check = p.kind === "issue" ? p.item.check : null;
-  const match = p.kind === "issue" && props.city?.items[f.item]?.matched_ids.includes(p.item.id);
+  const match = p.kind === "issue" && typeof p.item.id === "number"
+    && props.city?.items[f.item]?.matched_ids.includes(p.item.id);
   const evidence = p.item.evidence;
   const title = p.kind === "entrance" ? `${p.item.name || "Unnamed entrance"}: ${p.item.label.text}` : p.item.label.text;
 

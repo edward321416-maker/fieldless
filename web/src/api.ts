@@ -1,5 +1,6 @@
 import type {
-  Bbox, DemoArea, Entrance, EntranceReview, Issue, IssueReview, Preview, Scan, ServerConfig, Walk,
+  Bbox, DemoArea, Entrance, EntranceReview, Issue, IssueReview, ItemRun, ItemRunSummary, Preview, Scan, ServerConfig,
+  Walk,
 } from "./types";
 
 export class ApiError extends Error {
@@ -62,9 +63,16 @@ export const api = {
   scan: (id: number) => request<Scan>(`/api/scans/${id}`),
   entrances: (id: number) => request<Entrance[]>(`/api/scans/${id}/entrances`),
   issues: (id: number) => request<Issue[]>(`/api/scans/${id}/issues`),
-  reviewEntrance: (id: number, body: EntranceReview) => request<Entrance>(`/api/entrances/${id}/review`, post(body)),
-  reviewIssue: (id: number, body: IssueReview) => request<Issue>(`/api/issues/${id}/review`, post(body)),
+  reviewEntrance: (id: number | string, body: EntranceReview) => request<Entrance>(`/api/entrances/${id}/review`, post(body)),
+  reviewIssue: (id: number | string, body: IssueReview) => request<Issue>(`/api/issues/${id}/review`, post(body)),
   walks: (id: number) => request<Walk[]>(`/api/scans/${id}/walks`),
-  undoEntrance: (id: number) => request<Entrance>(`/api/entrances/${id}/review/undo`, post({})),
-  undoIssue: (id: number) => request<Issue>(`/api/issues/${id}/review/undo`, post({})),
+  // items the agent writes in the app (docs/specs/2026-10-29-agent-items-design.md)
+  itemRun: (id: number) => request<ItemRun>(`/api/items/${id}`),
+  scanItems: (scanId: number) => request<ItemRunSummary[]>(`/api/scans/${scanId}/items`),
+  startItem: (scanId: number, target: string, inviteCode: string) =>
+    request<{ id: number }>(`/api/scans/${scanId}/items`, post({ target, invite_code: inviteCode || null })),
+  sendLabels: (id: number, labels: Record<number, "yes" | "no" | "unclear">) =>
+    request<unknown>(`/api/items/${id}/labels`, post({ labels })),
+  undoEntrance: (id: number | string) => request<Entrance>(`/api/entrances/${id}/review/undo`, post({})),
+  undoIssue: (id: number | string) => request<Issue>(`/api/issues/${id}/review/undo`, post({})),
 };

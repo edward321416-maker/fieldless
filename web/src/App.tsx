@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, STATIC_DEMO } from "./api";
 import { contentBounds } from "./bbox";
+import AddItemPanel from "./AddItemPanel";
 import AreaPanel from "./AreaPanel";
 import CoverageGuide from "./CoverageGuide";
 import Attribution from "./Attribution";
 import DemoNotice from "./DemoNotice";
 import IntroPanel, { IntroMapKey, IntroPhoto, type Example } from "./IntroPanel";
 import { startsWithIntro } from "./intro";
+import { isActive, itemFromHash, withRun } from "./itemRun";
 import EvidenceCard from "./EvidenceCard";
 import FindingList from "./FindingList";
 import { isFinished } from "./format";
@@ -15,7 +17,7 @@ import MapView from "./MapView";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
 import { reviewProgress } from "./summary";
-import type { Bbox, DemoArea, Entrance, Issue, Picked, Scan, ServerConfig, Walk } from "./types";
+import type { Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, Walk } from "./types";
 
 const POLL_MS = 3000;
 
@@ -40,6 +42,11 @@ export default function App() {
   const [walks, setWalks] = useState<Walk[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [openItem, setOpenItem] = useState<string | null>(null); // an item's findings, listed in the panel
+  // An item the agent writes in the app: its run, from the address, and the survey's finished runs (examples).
+  const [itemRunId, setItemRunId] = useState<number | null>(() => itemFromHash(window.location.hash));
+  const [run, setRun] = useState<ItemRun | null>(null);
+  const [runTick, setRunTick] = useState(0); // a new look at the run, after a person's answers are sent
+  const [itemRuns, setItemRuns] = useState<ItemRunSummary[]>([]);
   const [streets, setStreets] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<Picked | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -72,8 +79,35 @@ export default function App() {
 
   // The address names the survey on screen, so a link to it opens there; the introduction keeps it bare.
   useEffect(() => {
-    if (scanId !== null && !intro) window.location.hash = `scan=${scanId}`;
-  }, [scanId, intro]);
+    if (scanId !== null && !intro) window.location.hash = `scan=${scanId}${itemRunId !== null ? `&item=${itemRunId}` : ""}`;
+  }, [scanId, intro, itemRunId]);
+
+  // Follow the item run while it is queued or running; a person's answers or the end stop the polling.
+  useEffect(() => {
+    if (itemRunId === null) {
+      setRun(null);
+      return;
+    }
+    let stopped = false;
+    let timer: number | undefined;
+    const tick = async () => {
+      try {
+        const r = await api.itemRun(itemRunId);
+        if (stopped) return;
+        setRun(r);
+        if (isActive(r)) timer = window.setTimeout(tick, POLL_MS);
+      } catch (e) {
+        if (stopped) return;
+        if (e instanceof ApiError && e.status === 404) setItemRunId(null);
+        else timer = window.setTimeout(tick, POLL_MS);
+      }
+    };
+    tick();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [itemRunId, runTick]);
 
   // Poll the survey until it finishes. A failed poll is retried; only a missing survey (404) stops it.
   useEffect(() => {
@@ -113,6 +147,9 @@ export default function App() {
         setIssues(i);
       })
       .catch((e: Error) => !cancelled && setError(e.message));
+    if (config?.items) {
+      api.scanItems(scan.id).then((r) => !cancelled && setItemRuns(r)).catch(() => !cancelled && setItemRuns([]));
+    }
     api.walks(scan.id)
       .then((w) => {
         if (cancelled) return;
@@ -124,7 +161,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [scan?.id, finished]);
+  }, [scan?.id, finished, config?.items]);
 
   // Bring the evidence card or the review panel into view when it opens (on a phone it sits below the map).
   useEffect(() => {
@@ -142,6 +179,8 @@ export default function App() {
     setOpenItem(null);
     setError(null);
     if (id === scanId) return; // already open: keep its results on screen
+    setItemRunId(null);
+    setItemRuns([]);
     setEntrances([]);
     setIssues([]);
     setWalks([]);
@@ -154,7 +193,11 @@ export default function App() {
     setPicked(p);
   }
 
-  const items = scan?.items ?? [];
+  // A finished run's item and rows join the survey's (itemRun.withRun); its own survey only.
+  const joined = useMemo(() => withRun(scan?.items ?? [], issues, run && scan && run.scan_id === scan.id ? run : null),
+    [scan?.items, issues, run, scan?.id]);
+  const items = joined.items;
+  const shownScan = useMemo(() => (scan ? { ...scan, items } : null), [scan, items]);
   const demoName = scan ? demos.find((d) => d.scan_id === scan.id)?.name ?? null : null;
 
   function goIntro() {
@@ -162,6 +205,7 @@ export default function App() {
     setPicked(null);
     setReviewing(false);
     setOpenItem(null);
+    setItemRunId(null);
     setNewSurvey(false);
     setSelecting(false);
     if (demos.length > 0) openScan(demos[0].scan_id);
@@ -176,12 +220,12 @@ export default function App() {
   }
   // In the panel's order: item by item, as the standard lists them (the map's colours follow the same order).
   const findings = useMemo(() => {
-    const all = findingsOf(issues, entrances);
-    const order = new Map((scan?.items ?? []).map((it, i) => [it.id, i]));
+    const all = findingsOf(joined.issues, entrances);
+    const order = new Map(items.map((it, i) => [it.id, i]));
     return all.map((f, i) => ({ f, i }))
       .sort((a, b) => (order.get(a.f.item) ?? 99) - (order.get(b.f.item) ?? 99) || a.i - b.i)
       .map(({ f }) => f);
-  }, [issues, entrances, scan?.items]);
+  }, [joined.issues, entrances, items]);
   // The introduction's photos: per item, its first finding with a photo; over the map, the first finding the models
   // were sure of with a box (the panel's order, so no item is chosen by name).
   const examples: Example[] = useMemo(() => items.flatMap((it) => {
@@ -343,12 +387,12 @@ export default function App() {
         )}
         {/* One thing at a time: a finding's card, else an item's findings, else the survey (cleanup design 2). */}
         {scan && finished && !newSurvey && !intro && !selected && openItem && (
-          <FindingList scan={scan} item={openItem} findings={findings.filter((f) => f.item === openItem)}
+          <FindingList scan={shownScan!} item={openItem} findings={findings.filter((f) => f.item === openItem)}
             streets={streets} selectedKey={null} onPick={(f) => pick(f.picked)} onBack={() => setOpenItem(null)} />
         )}
         {scan && finished && !newSurvey && !intro && !selected && !openItem && (
           <ResultsPanel
-            scan={scan}
+            scan={shownScan!}
             name={demos.find((d) => d.scan_id === scan.id)?.name ?? null}
             findings={findings}
             hidden={hidden}
@@ -357,7 +401,29 @@ export default function App() {
             onReview={startReview}
             onIntro={goIntro}
             hasReport={!!config?.report}
-          />
+            agentCity={run?.status === "done" && run.item && run.test?.city
+              ? { [run.item.id]: run.test.city } : undefined}
+          >
+            {config?.items && (
+              <AddItemPanel canMake={!!config.make_items && !STATIC_DEMO}
+                run={run && run.scan_id === scan.id ? run : null} examples={itemRuns}
+                onStart={async (target, code) => {
+                  const { id } = await api.startItem(scan.id, target, code);
+                  setItemRunId(id);
+                  setRunTick((t) => t + 1);
+                }}
+                onLabels={async (labels) => {
+                  if (!run) return;
+                  await api.sendLabels(run.id, labels);
+                  setRunTick((t) => t + 1);
+                }}
+                onOpen={(id) => {
+                  setItemRunId(id);
+                  setRunTick((t) => t + 1);
+                }}
+                onClose={() => setItemRunId(null)} />
+            )}
+          </ResultsPanel>
         )}
         {STATIC_DEMO && <DemoNotice />}
         <Attribution />

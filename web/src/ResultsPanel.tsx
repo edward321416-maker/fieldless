@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { filesUrl, reportUrl, STATIC_DEMO } from "./api";
 import { BENCHMARKS } from "./benchmarks";
 import { isFinished, yearsSpan } from "./format";
@@ -15,6 +16,8 @@ interface Props {
   onReview: () => void;
   onIntro: () => void; // back to what Fieldless does
   hasReport: boolean; // the server has the survey's results report (/api/config report)
+  agentCity?: Record<string, { found: number; covered: number }>; // an agent item's rows against the city's list
+  children?: ReactNode; // the add-item panel, above the files
 }
 
 // A finished survey (docs/specs/2026-10-29-cleanup-design.md 4): one number on top, one row per item that is also the
@@ -56,8 +59,9 @@ export default function ResultsPanel(props: Props) {
           const mine = findings.filter((f) => f.item === it.id);
           const name = itemName(it.id, items);
           const on = !props.hidden.has(it.id);
+          const agentCity = props.agentCity?.[it.id];
           const note = itemNote({
-            city: cityLine(city?.items[it.id], !!city)?.text ?? null,
+            city: agentCity ? cityLine(agentCity, true)?.text ?? null : cityLine(city?.items[it.id], !!city)?.text ?? null,
             confirmed: mine.filter((f) => f.badge === "defect" && f.status === "verified").length,
             possible: mine.filter((f) => f.badge === "defect" && f.status !== "verified").length,
             site: mine.filter((f) => f.badge === "site").length,
@@ -72,6 +76,9 @@ export default function ResultsPanel(props: Props) {
               <button type="button" className="item-open" onClick={() => props.onOpenItem(it.id)}>
                 <span className="item-text">
                   <span className="item-name">{name}</span>
+                  {it.added_by === "agent" && (
+                    <span className="agent-line">Added by the agent · not in the survey standard yet</span>
+                  )}
                   {note && <span className="item-note">{note}</span>}
                 </span>
                 <span className="item-count">{mine.length}</span>
@@ -88,6 +95,8 @@ export default function ResultsPanel(props: Props) {
           <button type="button" onClick={props.onReview}>Review</button>
         )}
       </div>
+
+      {props.children}
 
       {isFinished(scan) && (
         <div className="download">

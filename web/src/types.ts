@@ -6,6 +6,8 @@ export interface ServerConfig {
   invite_required: boolean;
   max_bbox_deg2: number;
   coverage_tiles?: boolean; // the server passes Mapillary's coverage tiles on (/api/mapillary/tiles); not the static demo
+  items?: boolean; // the server keeps items the agent wrote in the app (plan 12)
+  make_items?: boolean; // and makes new ones, with an invite code
   report?: boolean; // a finished survey has its results report for the city (docs/specs/2026-10-29-survey-report-design.md)
 }
 
@@ -57,6 +59,62 @@ export interface ItemMeta {
   map_icon: string; // a shape of the web icon set; empty: the target's first letter
   kind: "check" | "stage";
   inventory: boolean;
+  added_by?: "agent"; // written by the agent in the app, not in the survey standard yet
+}
+
+// An item the agent wrote in the app, as /api/items/{id} gives it once done (server.views.item_run_json).
+export interface AgentItem extends ItemMeta {
+  added_by: "agent";
+  find: string; // the phrase SAM 3.1 looks for
+  question: string;
+  label_yes: string;
+  label_no: string;
+  yes: number;
+  no: number;
+  unclear: number;
+}
+
+export interface ItemTest {
+  labels: "city" | "person"; // where the answers it was tested on came from
+  layer: string | null; // the city's layer, when the city's positions gave the answers
+  phrase: string;
+  ask: string;
+  calls: number;
+  found: [number, number]; // photos showing it where SAM found the phrase, of all photos showing it
+  kept?: [number, number]; // photos showing it the item keeps, of all
+  false?: [number, number]; // photos without it the item keeps wrongly, of all
+  city?: { layer: string; found: number; covered: number }; // its rows against the city's records in view
+}
+
+export interface ItemRunPhoto {
+  idx: number;
+  url: string;
+  image_id: string;
+  creator: string | null;
+  captured_at: string | null;
+  link: string;
+}
+
+export interface ItemRun {
+  id: number;
+  scan_id: number;
+  target: string;
+  status: "queued" | "running" | "labels_needed" | "done" | "failed";
+  progress: string[]; // what happened, a sentence a step
+  photos: ItemRunPhoto[]; // the photos a person is asked about, while labels_needed
+  item: AgentItem | null;
+  issues: Issue[];
+  cost_usd: number;
+  error: string | null;
+  test: ItemTest | null;
+  created_at: string;
+}
+
+export interface ItemRunSummary {
+  id: number;
+  target: string;
+  status: string;
+  created_at: string;
 }
 
 // The offline comparison with the city's own records (eval, city_check_scan<N>.json), demo surveys only.
@@ -139,7 +197,8 @@ export interface Entrance {
 export type IssueType = "missing_blocks" | "cover_cut" | "fixed_obstruction" | "obstruction";
 
 export interface Issue {
-  id: number;
+  id: number | string; // a scan's own row is a number; an agent item's is "item<run>-<n>"
+  item_run?: number; // the run of the agent's item this row belongs to
   lat: number;
   lng: number;
   heading: number | null; // the photo's compass direction
