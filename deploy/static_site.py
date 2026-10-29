@@ -66,7 +66,10 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
     paths = ["/api/config", "/api/demo"]
     for scan_id, _ in scans:
         paths += [f"/api/scans/{scan_id}", f"/api/scans/{scan_id}/entrances", f"/api/scans/{scan_id}/issues",
-                  f"/api/scans/{scan_id}/walks", f"/api/scans/{scan_id}/files.zip", f"/api/scans/{scan_id}/report"]
+                  f"/api/scans/{scan_id}/walks", f"/api/scans/{scan_id}/files.zip", f"/api/scans/{scan_id}/report",
+                  f"/api/scans/{scan_id}/items"]
+        # the survey items the agent made on this scan (plan 12), opened with #scan=<id>&item=<run>
+        paths += [f"/api/items/{r['id']}" for r in client.get(f"/api/scans/{scan_id}/items").json()]
     evidence = config.run_dir(run) / "evidence"
     written = []
     for path in paths:
@@ -89,7 +92,13 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
         written.append(path)
-        for row in body if isinstance(body, list) else []:
+        if isinstance(body, list):
+            rows = body
+        elif path.startswith("/api/items/"):
+            rows = body.get("issues") or []  # an agent item's rows
+        else:
+            rows = []
+        for row in rows:
             if row.get("evidence"):
                 name = row["evidence"]["url"].rsplit("/", 1)[1]
                 (out / "api" / "evidence").mkdir(parents=True, exist_ok=True)

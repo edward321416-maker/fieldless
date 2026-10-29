@@ -28,7 +28,8 @@ import modal
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = "/root/app"
-SERVER_KEYS = ("MODEL_API_KEY", "MAPILLARY_TOKEN", "BASETEN_API_KEY")
+# ITEM_INVITE_CODE, when the .env has one, opens "make a survey item" (plan 12); without it the app shows the example
+SERVER_KEYS = ("MODEL_API_KEY", "MAPILLARY_TOKEN", "BASETEN_API_KEY", "ITEM_INVITE_CODE")
 SETTINGS = {
     "THRESHOLD_DATA": "/root/data",  # the container's own disk; BACKUP_DIR is the Volume
     "THRESHOLD_RUN": "demo",
