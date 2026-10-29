@@ -158,3 +158,21 @@ def test_a_forkserver_pool_starts_with_the_decoder_loaded(monkeypatch):
     monkeypatch.setattr(sam_output, "ProcessPoolExecutor", lambda **k: k)
     assert sam_output._new_pool()["mp_context"].get_start_method() == "forkserver"
     assert preloaded == ["pipeline.sam_output"]
+
+
+def test_masks_are_decoded_here_when_worker_processes_cannot_start(monkeypatch):
+    from pipeline import sam_output
+    monkeypatch.setattr(sam_output, "PARSE_PROCESSES", 2)
+    monkeypatch.setattr(sam_output, "POOL_MIN_CHARS", 0)
+    monkeypatch.setattr(sam_output, "_pool_safe", lambda: True)
+
+    class NoWorkers:
+        def submit(self, *a, **k):
+            raise OSError("cannot start the fork server")
+
+    monkeypatch.setattr(sam_output, "_new_pool", NoWorkers)
+    monkeypatch.setattr(sam_output, "_pool", None)
+    answer = text([line(0, [record("1", 10, 20, 50, 60, 100, 100, 0.9)])])
+    (seg,) = sam_output.parse_away(answer, video=False)
+    assert seg.box == (10, 20, 50, 60) and seg.mask is not None
+    assert sam_output._pool is None  # a new pool is tried next time

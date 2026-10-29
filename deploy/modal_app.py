@@ -36,10 +36,11 @@ SETTINGS = {
     "DEMO_SCANS": "17:Seattle (Capitol Hill);1:Seongsu",  # scan 17: the recording survey, scan 4's photos (2026-10-29)
     "SCANS_PER_IP_PER_DAY": "0",
     "PUBLIC_COST_CAP_USD": "40",
-    # Three processes decode SAM masks (pipeline/sam_output.py), within the CPU limit below. In place, a live survey
-    # took 8.1 s a photo against 2.3 s locally (scan 18, 2026-10-29); three forkserver workers on four CPUs decoded
-    # 24 saved answers in 12.7 s against 38.3 s (Linux check). /api/health says which way this host decodes.
-    "THRESHOLD_PARSE_PROCESSES": "3",
+    # Six processes decode SAM masks (pipeline/sam_output.py), within the CPU limit below. Decoding in place, a live
+    # survey took 8.1 s a photo against 2.3 s locally (scan 18, 2026-10-29). In a Modal container 24 saved answers
+    # took 80.6 s in place, 28.7 s with three workers on four CPUs and 14.9 s with six on eight (same segments).
+    # /api/health says which way this host decodes.
+    "THRESHOLD_PARSE_PROCESSES": "6",
     "PYTHONUNBUFFERED": "1",
     "PYTHONPATH": APP_DIR,
 }
@@ -91,7 +92,7 @@ secret = modal.Secret.from_dict(_server_secret() if modal.is_local() else {})
 
 
 @app.function(image=image, secrets=[secret], volumes={"/backup": volume}, min_containers=1, max_containers=1,
-              cpu=(0.25, 4.0), memory=(1024, 4096), timeout=600)  # above 0.25 CPU is billed only while used
+              cpu=(0.25, 8.0), memory=(1024, 4096), timeout=600)  # above 0.25 CPU is billed only while used
 @modal.concurrent(max_inputs=50)
 @modal.asgi_app()
 def web():

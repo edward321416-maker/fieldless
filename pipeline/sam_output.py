@@ -6,13 +6,13 @@ meta_sam_parser is pure Python: a 58 KB answer takes about 1 s to read and 1 s m
 sidewalk request went from 7.6 s to 24.5 s). So boxes are read with the grammar's own regular expressions
 (boxes()), and answers whose masks are needed are decoded in other processes (parse_away())."""
 import atexit
+import logging
 import multiprocessing
 import os
 import re
 import sys
 import threading
 from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 
 import cv2
@@ -180,7 +180,7 @@ def decoding() -> str:
 def parse_away(text: str, video: bool) -> list[Seg]:
     """parse() with masks, in another process when the answer is large, so decoding never holds this process's GIL
     while other requests stream. Errors are raised as parse() raises them; a pool that broke is replaced and the
-    answer is decoded here instead. Decoded here as well when workers are not safe to start (_pool_safe)."""
+    answer is decoded here instead, as it is when workers cannot start. Decoded here as well when workers are not safe to start (_pool_safe)."""
     global _pool
     if PARSE_PROCESSES <= 1 or len(text) < POOL_MIN_CHARS or not _pool_safe():
         return parse(text, video)
@@ -190,7 +190,10 @@ def parse_away(text: str, video: bool) -> list[Seg]:
         pool = _pool
     try:
         return pool.submit(parse, text, video).result()
-    except BrokenProcessPool:
+    except ValueError:
+        raise  # the answer is malformed: parse() says so in a worker as it would here
+    except Exception as exc:  # BrokenProcessPool, or workers that could not start: decode here, a new pool next time
+        logging.getLogger(__name__).warning("mask decoding falls back to this process: %r", exc)
         with _pool_lock:
             if _pool is pool:
                 _pool = None
