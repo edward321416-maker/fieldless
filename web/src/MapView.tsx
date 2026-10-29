@@ -260,8 +260,10 @@ export default function MapView(props: Props) {
         tiles: [`${window.location.origin}/api/mapillary/tiles/{z}/{x}/{y}`] });
       map.addLayer({ id: "coverage", type: "line", source: "coverage", "source-layer": "sequence",
         filter: ["!=", ["get", "is_pano"], true], layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#05CB63", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 16, 3],
-          "line-opacity": 0.9 } }, "walks");
+        // Thin and light, so the surveyed walk and the findings stay on top (10/29 judge walk: at 3 px and 0.9 the
+        // coverage covered the introduction's map).
+        paint: { "line-color": "#05CB63", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.75, 16, 1.75],
+          "line-opacity": 0.55 } }, "walks");
     }
     if (map.getLayer("coverage")) map.setLayoutProperty("coverage", "visibility", props.showCoverage ? "visible" : "none");
     if (props.newSurvey && map.getZoom() > 15) map.easeTo({ zoom: 15, duration: 600 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BENCHMARKS } from "./benchmarks";
-import { checkLine, cityLine, headline, itemNote, reviewProgress, thumbPosition, unsureCount } from "./summary";
+import { checkLine, cityLine, clearBox, headline, itemNote, reviewProgress, thumbPosition, unsureCount } from "./summary";
 import type { Scan } from "./types";
 
 const counts = { defects: 2, obstructions: 0, entrances: 11, entrances_with_steps: 0, needs_review: 0,
@@ -53,5 +53,14 @@ describe("the results panel", () => {
     expect(thumbPosition([873, 0, 1000, 567])).toBe("93.7% 28.4%");
     expect(thumbPosition(null)).toBe("50% 50%");
     expect(thumbPosition([])).toBe("50% 50%");
+  });
+  it("calls a box clear when it is tall (40% of the photo or more), near the middle, and not a strip across or along the bottom", () => {
+    expect(clearBox([420, 180, 520, 760])).toBe(true); // a pole
+    expect(clearBox([40, 810, 960, 1000])).toBe(false); // a curb ramp across the photo's bottom
+    expect(clearBox([300, 500, 900, 600])).toBe(false); // too short to see
+    expect(clearBox([708, 139, 781, 405])).toBe(false); // a pole far away
+    expect(clearBox([300, 400, 500, 995])).toBe(false); // cut off at the bottom edge
+    expect(clearBox([830, 30, 880, 400])).toBe(false); // thin against the right edge
+    expect(clearBox(null)).toBe(false);
   });
 });

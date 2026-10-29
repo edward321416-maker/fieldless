@@ -59,6 +59,16 @@ export function reviewProgress(c: Scan["counts"]): { done: number; total: number
   return { done: total - c.needs_review, total };
 }
 
+// A box that reads at a glance in a small photo: at least 40% of its height, near the middle, not a strip across the
+// photo or along its bottom edge (the introduction's photo, 10/29 judge walk: a curb ramp's box spanned the bottom of
+// the photo, and the next picks, poles, sat small or thin against the right edge).
+export function clearBox(box: number[] | null): boolean {
+  if (!box || box.length < 4) return false;
+  const [x1, y1, x2, y2] = box;
+  const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+  return y2 - y1 >= 400 && x2 - x1 <= 600 && y2 < 990 && cx >= 200 && cx <= 800 && cy >= 200 && cy <= 800;
+}
+
 // A thumbnail's object-position, centred on the model's box (boxes are in thousandths of the photo).
 export function thumbPosition(box: number[] | null): string {
   if (!box || box.length < 4) return "50% 50%";

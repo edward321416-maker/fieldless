@@ -16,7 +16,7 @@ import { findingsOf, itemName, keyOf, type Finding } from "./items";
 import MapView from "./MapView";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
-import { reviewProgress } from "./summary";
+import { clearBox, reviewProgress } from "./summary";
 import type { Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, Walk } from "./types";
 
 const POLL_MS = 3000;
@@ -227,13 +227,15 @@ export default function App() {
       .map(({ f }) => f);
   }, [joined.issues, entrances, items]);
   // The introduction's photos: per item, its first finding with a photo; over the map, the first finding the models
-  // were sure of with a box (the panel's order, so no item is chosen by name).
+  // were sure of whose box reads at a glance (the panel's order and the box's shape, so no item is chosen by name).
   const examples: Example[] = useMemo(() => items.flatMap((it) => {
     const f = findings.find((x) => x.item === it.id && x.picked.item.evidence);
     return f ? [{ item: it.id, url: f.picked.item.evidence!.url, box: f.box }] : [];
   }), [items, findings]);
-  const introPhoto = useMemo(() => findings.find((f) => f.status === "auto" && f.box && f.box.length === 4
-    && f.picked.item.evidence) ?? null, [findings]);
+  const introPhoto = useMemo(() => {
+    const sure = findings.filter((f) => f.status === "auto" && f.box && f.box.length === 4 && f.picked.item.evidence);
+    return sure.find((f) => clearBox(f.box)) ?? sure[0] ?? null;
+  }, [findings]);
   const selected: Finding | null = picked ? findings.find((f) => f.key === keyOf(picked)) ?? null : null;
   // "Utility or streetlight pole · 3 of 20 · position approximate": the marker's name tag (ui-redesign 3.3).
   const selectedLabel = useMemo(() => {
