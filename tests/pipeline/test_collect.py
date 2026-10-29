@@ -35,12 +35,13 @@ def test_thin_keeps_close_photos_where_the_walker_turns():
     assert collect._turn(350.0, 5.0) == 15.0 and collect._turn(None, 90.0) == 0.0
 
 
-def test_overlap_share():
-    a = street(10, 5.0, "a")
-    assert collect.overlap_share(a, a) == 1.0
-    assert collect.overlap_share(a, []) == 0.0
-    far = street(10, 5.0, "b", lng=127.01)  # about 880 m east
-    assert collect.overlap_share(far, a) == 0.0
+def test_view_cells_are_the_ground_ahead_of_a_photo():
+    north = collect.view_cells([rec(0, 0.0)], 37.5)
+    south = collect.view_cells([{**rec(0, 0.0), "compass": 180.0}], 37.5)
+    assert north and not north & south  # ahead and behind are different ground
+    assert collect.view_cells([{**rec(0, 0.0), "compass": None}], 37.5) == set()
+    ys = sorted({y for _, y in north})
+    assert (ys[-1] - ys[0]) * collect.VIEW_CELL_M <= collect.VIEW_REACH_M  # no further than the reach
 
 
 def test_plan_clips_skips_repeats_and_short_sequences_and_respects_the_budget():
@@ -49,8 +50,31 @@ def test_plan_clips_skips_repeats_and_short_sequences_and_respects_the_budget():
     short = street(5, 5.0, "x", lng=127.01)
     b = street(30, 5.0, "b", lng=127.02)
     clips = collect.plan_clips([a, repeat, short, b], max_photos=45)
-    assert [c[0]["sequence"] for c in clips] == ["a", "b"]
-    assert [len(c) for c in clips] == [30, 15]
+    assert [c[0]["sequence"] for c in clips] == ["a", "b"]  # rank order
+    assert sorted(len(c) for c in clips) == [15, 30]  # the one taken second is cut to the budget
+
+
+def test_plan_clips_takes_new_ground_from_any_walk_before_walking_the_same_street_again():
+    a = street(40, 5.0, "a")  # 200 m north
+    again = street(40, 5.0, "r")  # the same 200 m, walked again; ranked above the other street
+    other = street(40, 5.0, "c", lng=127.01)  # another street
+    clips = collect.plan_clips([a, again, other], max_photos=80)
+    assert [(c[0]["sequence"], len(c)) for c in clips] == [("a", 40), ("c", 40)]
+
+
+def test_plan_clips_joins_the_chosen_photos_of_one_walk_that_follow_each_other():
+    clips = collect.plan_clips([street(130, 5.0, "a")], max_photos=400)
+    assert [[f["id"] for f in c] for c in clips] == [[f"a{i}" for i in range(130)]]  # windows of 60, one clip
+
+
+def test_plan_clips_starts_a_section_where_the_new_ground_starts():
+    a = street(40, 5.0, "a")
+    b = street(60, 5.0, "b")  # its first 100 m re-walk a's first 100 m; its last 200 m are new
+    for f in b:
+        f["lat"] += 100 * M
+    clips = collect.plan_clips([a, b], max_photos=400)
+    taken_b = [f["id"] for c in clips if c[0]["sequence"] == "b" for f in c]
+    assert taken_b and "b0" not in taken_b and "b59" in taken_b  # b's part on a's ground is left out
 
 
 def test_preview_counts_without_downloading(monkeypatch):

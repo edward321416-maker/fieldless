@@ -1,9 +1,11 @@
-"""Stage 0a (spec 7.1): choose the photo sequences of an area, thin them by distance, and download the photos.
+"""Stage 0a (spec 7.1): choose the photos of an area from its walks, thin them by distance, and download them.
 
-Sequences with the most pedestrian, non-panorama photos taken since 2020 inside the area come first. A sequence
-that mostly re-walks a street already chosen is skipped, so the higher-ranked walk of a street wins. D1: the
-Myeongdong sequence had a photo every 0.5 m, so photos are thinned to one every MIN_GAP_M.
+Sequences with the most pedestrian, non-panorama photos taken since 2020 inside the area are ranked first. D1: the
+Myeongdong sequence had a photo every 0.5 m, so photos are thinned to one every MIN_GAP_M. The walks are then cut
+into sections, and the sections that bring the most ground into view that no chosen section shows yet are taken
+first (plan_clips, docs/specs/2026-10-29-walk-sections-design.md).
 """
+import math
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -18,8 +20,15 @@ MIN_GAP_M = 2.0
 MIN_TURN_DEG = 15.0  # a close photo is kept when the walker turns: corners and crossings carry warning pads
 MIN_SEQUENCE_PHOTOS = 10
 MAX_CANDIDATES = 40  # sequences fetched whole to be ranked (Capitol Hill has about 20)
-OVERLAP_RADIUS_M = 10.0
-MAX_OVERLAP_SHARE = 0.5
+# A section is up to one video chunk (scene.CHUNK): SAM bills a video request at least config.SAM_MIN_FRAMES frames,
+# so a section is valued per billed frame. In Capitol Hill, 181 photos chosen this way brought 158 of the city's
+# points of five items into view against 112 for whole walks in rank order, and 1.17 km against 0.89 (2026-10-29,
+# Mapillary metadata only; the city's points scored the choice, they never made it).
+SECTION_PHOTOS = 60
+SECTION_STEP = 10  # a window starts every this many photos, so a section can begin where the new ground begins
+VIEW_CELL_M = 4.0  # the ground is counted in squares this big
+VIEW_REACH_M = 20.0  # and seen up to this far: eval/city.py's COVER_M
+VIEW_FOV_DEG = 70.0  # inside this angle around the compass: eval/city.py's FOV
 DOWNLOAD_WORKERS = 8
 
 
@@ -51,28 +60,67 @@ def thin(frames: list[dict], min_gap_m: float = MIN_GAP_M, min_turn_deg: float =
     return kept
 
 
-def overlap_share(frames: list[dict], chosen: list[dict]) -> float:
-    """Share of frames within OVERLAP_RADIUS_M of some chosen frame."""
-    if not frames or not chosen:
-        return 0.0
-    near = sum(1 for f in frames
-               if any(geo.haversine_m(f["lat"], f["lng"], c["lat"], c["lng"]) <= OVERLAP_RADIUS_M for c in chosen))
-    return near / len(frames)
+def view_cells(frames: list[dict], lat0: float) -> set[tuple[int, int]]:
+    """The VIEW_CELL_M squares of ground the photos look at: within VIEW_REACH_M and VIEW_FOV_DEG of the compass. A
+    photo without a compass looks at nothing. lat0 fixes the grid's scale for the area."""
+    across = 111_320 * math.cos(math.radians(lat0)) / VIEW_CELL_M  # cells per degree of longitude
+    along = 111_320 / VIEW_CELL_M
+    cells = set()
+    for f in frames:
+        if f.get("compass") is None or f.get("lat") is None or f.get("lng") is None:
+            continue
+        for metres in range(2, int(VIEW_REACH_M) + 1, 2):
+            for turn in range(-int(VIEW_FOV_DEG / 2), int(VIEW_FOV_DEG / 2) + 1, 7):
+                lat, lng = geo.offset_point(f["lat"], f["lng"], f["compass"] + turn, metres)
+                cells.add((math.floor(lng * across), math.floor(lat * along)))
+    return cells
 
 
 def plan_clips(sequences: Iterable[list[dict]], max_photos: int) -> list[list[dict]]:
-    """Sequences in rank order -> clips to process, within max_photos in total."""
+    """Sequences in rank order -> clips to process, within max_photos in total.
+
+    Windows of SECTION_PHOTOS run along every walk, one starting every SECTION_STEP photos. The window whose photos not
+    yet chosen bring the most ground into view that no chosen photo shows, per frame SAM would bill for them, is taken
+    next (rank breaks ties), until the budget is spent or no window shows anything new; the last one is cut to what
+    the budget has left. The chosen photos of a walk that follow each other make one clip; clips keep the walks' rank
+    order. Sequences shorter than MIN_SEQUENCE_PHOTOS are left out."""
+    walks = [frames for frames in sequences if len(frames) >= MIN_SEQUENCE_PHOTOS]
+    if not walks:
+        return []
+    lat0 = walks[0][0]["lat"]
+    ground = [[view_cells([f], lat0) for f in frames] for frames in walks]
+    windows = [(rank, range(start, min(start + SECTION_PHOTOS, len(frames))))
+               for rank, frames in enumerate(walks) for start in range(0, len(frames), SECTION_STEP)
+               if min(start + SECTION_PHOTOS, len(frames)) - start >= MIN_SEQUENCE_PHOTOS]
+    chosen: list[set[int]] = [set() for _ in walks]
+    seen: set[tuple[int, int]] = set()
+    used = 0
+    while max_photos - used >= MIN_SEQUENCE_PHOTOS:
+        best, best_worth = None, 0.0
+        for rank, window in windows:
+            new = [i for i in window if i not in chosen[rank]]
+            if not new:
+                continue
+            worth = len(set().union(*(ground[rank][i] for i in new)) - seen) / max(len(new), config.SAM_MIN_FRAMES)
+            if worth > best_worth:  # strictly: an equal window of a lower rank does not replace it
+                best, best_worth = (rank, new), worth
+        if best is None:
+            break  # every window left re-walks ground already in view
+        rank, new = best
+        new = new[:max_photos - used]
+        chosen[rank].update(new)
+        used += len(new)
+        seen.update(*(ground[rank][i] for i in new))
     clips: list[list[dict]] = []
-    chosen: list[dict] = []
-    for frames in sequences:
-        budget = max_photos - len(chosen)
-        if budget < MIN_SEQUENCE_PHOTOS:
-            break
-        if len(frames) < MIN_SEQUENCE_PHOTOS or overlap_share(frames, chosen) > MAX_OVERLAP_SHARE:
-            continue
-        clip = frames[:budget]
-        clips.append(clip)
-        chosen += clip
+    for rank, idxs in enumerate(chosen):
+        run: list[int] = []
+        for i in sorted(idxs):
+            if run and i != run[-1] + 1:
+                clips.append([walks[rank][j] for j in run])
+                run = []
+            run.append(i)
+        if run:
+            clips.append([walks[rank][j] for j in run])
     return clips
 
 
