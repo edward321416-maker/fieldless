@@ -57,6 +57,11 @@ def image_part(path: Path) -> dict:
     return {"type": "input_image", "image_url": f"data:image/jpeg;base64,{b64}"}
 
 
+def jpeg_part(data: bytes) -> dict:
+    """An image part from JPEG bytes in memory (a crop made for one question)."""
+    return {"type": "input_image", "image_url": f"data:image/jpeg;base64,{base64.b64encode(data).decode('ascii')}"}
+
+
 def file_part(file_id: str) -> dict:
     return {"type": "input_file", "file_id": file_id}
 

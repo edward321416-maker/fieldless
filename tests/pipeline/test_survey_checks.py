@@ -510,3 +510,34 @@ def test_two_rows_of_one_object_on_the_same_photo_become_one():
 def test_a_detail_judged_on_a_box_too_small_to_show_it_is_unclear(box, expected):
     assert survey_checks.status(CHECK, {**NO, "box": box}) == expected
     assert survey_checks.status(LIGHT, {**YES, "box": [0, 0, 10, 10]}) == ("auto", [], "yes")  # inventory: not a detail
+
+
+
+def test_a_marked_object_spark_calls_unclear_is_asked_again_enlarged(tmp_path):
+    photo = synthetic_photo(tmp_path / "p.jpg", size=(400, 300), seed=3)
+    assert survey_checks.zoom_crop(photo, [100, 100, 200, 300])[:2] == b"\xff\xd8"  # a JPEG
+    asked = []
+
+    def spark(schema_name, parts):
+        images = sum(p["type"] == "input_image" for p in parts)
+        asked.append(images)
+        if images == 1:
+            return {**NO, "answer": "unclear", "box": [10, 500, 60, 540], "note": "too far"}
+        return {**NO, "box": [10, 500, 60, 540], "note": "no domes, enlarged"}
+
+    by_idx = frames(1)
+    by_idx[0].update(width=400, height=300)
+    video = survey_checks.Video((0,), (400, 300), 0)
+    text = "<0f>1<|box;x1=40;y1=150;x2=80;y2=170;w=400;h=300;c=0.9|>\n"
+    rows, _ = survey_checks.run_check(FakeApi(spark=spark), dataclasses.replace(CHECK, find_by="video"), {0: [0]},
+                                      {0: photo}, by_idx, 1, video=({0: text}, {0: video}))
+    assert asked == [1, 2]  # the first answer was unclear: the second question carries the enlarged box
+    (row,) = rows
+    assert (row["object_label"], row["review_reasons"]) == ("no", ["possible_defect"])  # small box: judged enlarged
+    said = row["model_outputs"]["check"]
+    assert said["zoomed"] is True and said["first"] == {"answer": "unclear", "note": "too far"}
+
+    asked.clear()
+    rows, _ = survey_checks.run_check(FakeApi(spark=lambda s, parts: asked.append(1) or YES), CHECK, {0: [0]},
+                                      {0: photo}, by_idx, 1)
+    assert asked == []  # found by photos: no marked box, so nothing to enlarge

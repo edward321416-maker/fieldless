@@ -23,9 +23,11 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
+
 from pipeline import config, geo, media
 from pipeline.cost import CostCapReached
-from pipeline.meta_api import error_text, image_part, text_part
+from pipeline.meta_api import error_text, image_part, jpeg_part, text_part
 from pipeline.parallel import run_parallel
 from pipeline.sam_output import check_frames, confident, parse
 from pipeline.survey_items import Check
@@ -41,6 +43,13 @@ DROP_AUDIT_SHARE = 0.0
 # 1000) the detail is a few pixels, so the answer is unclear: scan 17 row 566 said "no domes" on a curb across the
 # street 40 high, and the second model disagreed.
 MIN_DETAIL_BOX = 70
+# A marked object Spark calls unclear is asked once more with the marked area enlarged to this many pixels on its long
+# side, as a second image. Small objects are where these models fail, and they still look at the right place
+# (Zhang et al., ICLR 2025). On scan 17 (2026-10-29): of 3 unclear poles, 2 became yes and a floodlight was dropped;
+# of 6 unclear curb ramps, 2 matched the city's records once enlarged and 1 did not (a "no" the second model must
+# agree with, second_opinion.apply). docs/research-photo-analysis-2026-10-29.md.
+ZOOM_SIDE = 1024
+ZOOM_NOTE = "\nThe second image is the marked box enlarged, for detail."
 JUDGE_GIVE_UP = 3  # failures in a row after which the judge is not asked again in this check (a hung server)
 FOV = 70.0  # degrees across a photo, as the map and eval/city.py draw where a box looks
 EDGE = 10  # of 1000: a box this close to the photo's left, right or bottom edge is cut off there
@@ -79,6 +88,23 @@ Answer as JSON:
 
 MARKED = """ An object finder marked a possible {target} at {box} ([x1, y1, x2, y2] on a 0-1000 scale of the image).
 Answer about the object in that box."""
+
+
+def zoom_crop(photo: Path, box: list[int]) -> bytes:
+    """The marked box (0-1000) with as much again around it, at least 160 px, enlarged to ZOOM_SIDE as JPEG bytes."""
+    img = cv2.imread(str(photo))
+    if img is None:
+        raise ValueError(f"cannot read {photo}")
+    h, w = img.shape[:2]
+    x1, y1, x2, y2 = box[0] * w // 1000, box[1] * h // 1000, box[2] * w // 1000, box[3] * h // 1000
+    cx, cy, half = (x1 + x2) // 2, (y1 + y2) // 2, max(x2 - x1, y2 - y1, 160)
+    crop = img[max(0, cy - half):min(h, cy + half), max(0, cx - half):min(w, cx + half)]
+    scale = ZOOM_SIDE / max(crop.shape[:2])
+    crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    ok, data = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    if not ok:
+        raise ValueError("could not encode the crop")
+    return data.tobytes()
 
 
 def prompt(check: Check, box: list[int] | None = None) -> str:
@@ -308,6 +334,7 @@ def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
     dropped too. A defect check's answer on a box shorter than MIN_DETAIL_BOX is unclear."""
     if not answer["visible"]:
         return None
+    zoomed = bool(answer.get("zoomed"))  # asked again on the enlarged box: its size no longer limits the answer
     if check.inventory:
         if answer["answer"] == "no":
             return None
@@ -318,7 +345,7 @@ def status(check: Check, answer: dict) -> tuple[str, list[str], str] | None:
     if current == "unclear":
         return "needs_review", ["unclear"], current
     box = answer.get("box") or []
-    if len(box) == 4 and box[3] - box[1] < MIN_DETAIL_BOX:
+    if not zoomed and len(box) == 4 and box[3] - box[1] < MIN_DETAIL_BOX:
         return "needs_review", ["unclear", "too_small"], "unclear"
     if current == check.report_when:
         return "needs_review", ["possible_defect"], current
@@ -424,10 +451,15 @@ def _check_rows(api, check: Check, clips: dict[int, list[int]], photos: dict[int
 
     def spark(p):
         try:
-            answer = api.spark_json([image_part(photos[p["idx"]]), text_part(prompt(check, p.get("box")))],
-                                    "survey_check", SCHEMA)
+            photo, box = photos[p["idx"]], p.get("box")
+            answer = api.spark_json([image_part(photo), text_part(prompt(check, box))], "survey_check", SCHEMA)
             if not _valid(answer):
                 raise ValueError(f"unexpected answer: {str(answer)[:200]}")
+            if box and answer["visible"] and answer["answer"] == "unclear":
+                closer = api.spark_json([image_part(photo), jpeg_part(zoom_crop(photo, box)),
+                                         text_part(prompt(check, box) + ZOOM_NOTE)], "survey_check", SCHEMA)
+                if _valid(closer):
+                    answer = {**closer, "zoomed": True, "first": {k: answer.get(k) for k in ("answer", "note")}}
             return {**answer, "model": config.SPARK_MODEL} if judge is not None else answer
         except CostCapReached:
             raise
