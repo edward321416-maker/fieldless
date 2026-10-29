@@ -145,7 +145,9 @@ def check_json(row: dict, std: survey_items.Standard) -> dict | None:
             "note": said.get("note") or None,  # the model's own one-line reason, shown as it wrote it
             "answer": row.get("object_label") or "unclear", "report_when": check.report_when,
             "label_yes": check.label_yes, "label_no": check.label_no, "inventory": check.inventory,
-            "model": model_name(answered_by)}
+            "model": model_name(answered_by),
+            # asked again with the marked box enlarged (survey_checks.ZOOM_SIDE), and what it said first
+            "zoomed": bool(said.get("zoomed")), "first": said.get("first")}
 
 
 def second_json(row: dict) -> dict | None:

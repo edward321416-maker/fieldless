@@ -148,7 +148,7 @@ def test_issue_json_carries_the_check_and_whether_it_is_a_defect():
     assert out["check"] == {"id": "curb_ramp_warning", "find": "curb cut", "target": "curb ramp",
                             "question": US.checks[0].ask, "answer": "no", "report_when": "no", "label_yes": "Curb ramp with detectable warning",
                             "label_no": "Curb ramp without detectable warning", "inventory": False,
-                            "model": "Muse Spark", "note": None}
+                            "model": "Muse Spark", "note": None, "zoomed": False, "first": None}
     assert views.issue_json(ramp("yes"), NOW, US)["defect"] is False
     assert views.issue_json(issue(), NOW)["check"] is None and views.issue_json(issue(), NOW)["defect"] is False
     assert views.issue_json(issue(), NOW)["second_opinion"] is None
@@ -257,3 +257,14 @@ def test_a_scan_from_before_drops_were_recorded_says_so_instead_of_zero():
     new = {"created_at": "2026-10-29T01:00:00Z"}
     assert views.dropped_count(old, 0) is None and views.dropped_count(old, 3) == 3
     assert views.dropped_count(new, 0) == 0
+
+
+def test_a_check_row_says_when_it_was_asked_again_enlarged_and_what_it_said_first():
+    std = survey_items.load("US")
+    ramp = {"issue_type": "curb_ramp_warning", "object_label": "yes",
+            "model_outputs": {"check": {"answer": "yes", "zoomed": True,
+                                        "first": {"answer": "unclear", "note": "too far to see domes"}}}}
+    shown = views.check_json(ramp, std)
+    assert (shown["zoomed"], shown["first"]) == (True, {"answer": "unclear", "note": "too far to see domes"})
+    plain = views.check_json({**ramp, "model_outputs": {"check": {"answer": "yes"}}}, std)
+    assert (plain["zoomed"], plain["first"]) == (False, None)
