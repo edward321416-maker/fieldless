@@ -20,6 +20,9 @@ from pipeline.cost import CostMeter, sam_image_cost, sam_video_cost, spark_cost
 
 ATTEMPTS = 5  # rate limits, 5xx and transport errors
 UPLOAD_TIMEOUT_S = 90  # a 30 MB video goes up in about 15 s; one stuck upload once waited the 300 s client timeout
+# A SAM photo answer takes 2-25 s. One stalled stream waited the 300 s client timeout and held up the sidewalk
+# stage for five minutes (scan 16, 2026-10-29); it is retried after this many seconds instead.
+SAM_IMAGE_TIMEOUT_S = 90
 MAX_CONSECUTIVE_FAILURES = 5  # this many failed requests in a row stop the run
 
 
@@ -203,13 +206,14 @@ class MetaApi:
         return self.spark_json([text_part(prompt), file_part(file_id)], schema_name, schema,
                                estimate_usd=config.SPARK_VIDEO_ESTIMATE_USD)
 
-    def _stream(self, prompt: str, media: dict) -> str:
+    def _stream(self, prompt: str, media: dict, timeout: float | None = None) -> str:
         chunks: list[str] = []
         completed = False
         with self.client.responses.stream(
             model=config.SAM_MODEL,
             input=[{"type": "message", "role": "user", "content": [text_part(prompt), media]}],
             metadata={"include_confidence": "true"},
+            **({"timeout": timeout} if timeout else {}),
         ) as stream:
             for event in stream:
                 if event.type == "response.output_text.delta":
@@ -227,7 +231,7 @@ class MetaApi:
         media = image_part(image)
 
         def attempt():
-            text = self._stream(prompt, media)
+            text = self._stream(prompt, media, timeout=SAM_IMAGE_TIMEOUT_S)
             return text, cost, {"chars": len(text), "images": 1}
 
         return self._request("sam", cost, attempt, fail_cost_usd=cost, prompt=prompt[:120])

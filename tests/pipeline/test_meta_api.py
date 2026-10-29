@@ -118,6 +118,7 @@ def test_sam_image_joins_deltas_and_is_billed_per_image(tmp_path):
     client = FakeClient(streams=[[delta("<0f>"), delta("x"), completed()]])
     api = make_api(tmp_path, client)
     assert api.sam_image("stairs", photo(tmp_path)) == "<0f>x"
+    assert client.streamed[-1]["timeout"] == ma.SAM_IMAGE_TIMEOUT_S  # a stalled photo stream is retried, not waited on
     sent = client.streamed[0]
     assert sent["model"] == "sam-3.1"
     assert sent["metadata"] == {"include_confidence": "true"}
