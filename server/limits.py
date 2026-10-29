@@ -86,7 +86,8 @@ def check_bbox(bbox: list[float], max_deg2: float) -> list[float]:
 
 def check_invite(given: str | None, expected: str | None, what: str = "Starting a survey") -> None:
     if expected and not (given and hmac.compare_digest(given.encode(), expected.encode())):
-        raise LimitError(403, f"{what} needs an invite code")
+        # a code that was typed but is wrong says so: "needs an invite code" read as if none had been sent (10/29)
+        raise LimitError(403, "That invite code is not the right one" if given else f"{what} needs an invite code")
 
 
 def check_daily_scans(conn, hashed: str, limit: int, now: datetime | None = None) -> None:

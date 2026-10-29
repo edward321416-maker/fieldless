@@ -573,7 +573,9 @@ def test_making_an_item_needs_the_servers_item_code_a_finished_scan_and_a_free_w
     client, worker = make(item_invite_code="hydrant")
     assert client.get("/api/config").json()["make_items"] is True
     wrong = client.post(f"/api/scans/{scan_id}/items", json={"target": "fire hydrant", "invite_code": "x"})
-    assert wrong.status_code == 403 and wrong.json()["detail"] == "Making a survey item needs an invite code"
+    assert wrong.status_code == 403 and wrong.json()["detail"] == "That invite code is not the right one"
+    none = client.post(f"/api/scans/{scan_id}/items", json={"target": "fire hydrant"})
+    assert none.status_code == 403 and none.json()["detail"] == "Making a survey item needs an invite code"
     assert client.post(f"/api/scans/{scan_id}/items", json={"target": "x", "invite_code": "hydrant"}).status_code == 422
     _, running = item_scan(status="running")
     assert client.post(f"/api/scans/{running}/items",

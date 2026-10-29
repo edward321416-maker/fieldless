@@ -263,6 +263,8 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15); }
   .panel::before { content: ""; display: block; width: 40px; height: 4px; margin: 8px auto 0; border-radius: 2px; background: #d1d5db; }
   .example-picker select { margin-left: 0; max-width: 60vw; }
+  /* touch targets of the top bar at 44 px (U9; the 10/29 final check measured 35-40 px) */
+  .new-survey, .brand-link, .example-picker select { min-height: 44px; }
 }
 
 /* an item the agent writes in the app (docs/specs/2026-10-29-agent-items-design.md) */
@@ -271,7 +273,7 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
   padding: 6px 0; border: none; background: none; text-align: left; font-weight: 600; color: var(--accent); }
 .add-item-body { display: flex; flex-direction: column; gap: 10px; padding: 8px 0 4px; }
 .add-item-form { display: flex; flex-direction: column; gap: 8px; }
-.add-item-form input { min-height: 40px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.add-item-form input { min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
 .add-item-form button { min-height: 44px; font-weight: 600; }
 .add-item-target { margin: 0 !important; font-size: 1.15rem !important; }
 .example-runs { display: flex; flex-direction: column; gap: 4px; margin: 0; }
