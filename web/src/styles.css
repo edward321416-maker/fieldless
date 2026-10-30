@@ -327,3 +327,74 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .stage-bar span { display: block; height: 100%; background: var(--accent); }
 .stage-models { font-size: 0.82rem; color: var(--muted); }
 
+/* the overview: a first visit's full-width page, every part of a survey before the map (Overview.tsx) */
+.app.overview-mode { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: 100vh; height: 100dvh; }
+.overview-page { grid-column: 1 / -1; min-height: 0; overflow-y: auto; }
+.overview-page:focus { outline: none; }
+/* one centred column, the notice and the credits included */
+.overview-page > * { max-width: 1040px; margin-left: auto; margin-right: auto; padding-left: 16px; padding-right: 16px; }
+.overview-page > .attribution { padding-bottom: 24px; }
+.overview { display: flex; flex-direction: column; gap: 40px; padding-top: 32px; padding-bottom: 24px; }
+.overview h2 { margin: 0; font-size: 2rem; line-height: 1.2; }
+.overview h3 { margin: 0 0 12px; font-size: 1.25rem; }
+.overview h4 { margin: 0; font-size: 1.05rem; }
+.overview p { margin: 0; }
+.overview-opening { display: flex; flex-direction: column; gap: 14px; max-width: 640px; }
+.overview-lead { font-size: 1.05rem; line-height: 1.5; color: #374151; }
+.overview-headline { font-size: 0.95rem; color: #374151; font-variant-numeric: tabular-nums; }
+.overview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.overview-actions button, .overview-run button { min-height: 44px; padding: 8px 16px; font-weight: 600; }
+.overview-foot { font-size: 0.85rem; color: var(--muted); }
+/* every card: one border, radius and padding */
+.overview-card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: #fff; }
+.overview-card-title { font-size: 0.85rem; font-weight: 700; color: var(--muted); }
+.overview-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.overview-part > .hint { margin-top: 8px; }
+/* one pass, every item: the same card for each */
+.overview-items { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.overview-item { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; color: #374151; }
+.overview-item img, .overview-no-photo { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  border-radius: 6px; background: #e5e7eb; }
+.overview-item-name { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-weight: 600; color: var(--ink); }
+.overview-item-count { font-variant-numeric: tabular-nums; }
+.overview-item-city { font-size: 0.85rem; color: var(--muted); }
+/* how the pieces fit: three boxes, the models, three outcomes, back to the city */
+.flow { display: flex; flex-direction: column; }
+.flow-row { list-style: none; margin: 0; padding: 0; display: flex; gap: 12px; }
+.flow-row > li { flex: 1 1 0; min-width: 0; }
+.flow-box { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 0.9rem; color: #374151; }
+.flow-box strong { color: var(--ink); }
+.flow-lists { font-size: 0.85rem; color: var(--muted); }
+.flow-arrow { position: relative; display: block; flex: none; width: 2px; height: 28px; margin: 0 auto 6px; background: var(--muted); }
+.flow-arrow::after { content: ""; position: absolute; left: -5px; bottom: -7px; border: 6px solid transparent;
+  border-top: 7px solid var(--muted); border-bottom-width: 0; }
+.flow-models { padding: 12px 16px; border: 1px solid var(--accent); border-radius: 8px; background: #eff6ff;
+  color: var(--ink); font-weight: 600; text-align: center; }
+.flow-count { font-size: 1.75rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.flow-label { font-weight: 600; color: var(--ink); }
+/* the outcome's shape, as the map's city-records lens draws it: filled, a ring, a small grey dot */
+.flow-shape { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #374151; }
+.flow-in { background: #374151; }
+.flow-new { background: #fff; border-width: 3px; }
+.flow-missed { width: 10px; height: 10px; margin: 2px; background: #9ca3af; }
+.flow-none { color: #374151; text-align: center; }
+.flow-back { font-size: 0.9rem; color: #374151; text-align: center; }
+/* checked, not assumed; the agent's items; the two cities */
+.overview-checks, .overview-runs, .overview-cities { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.overview-check, .overview-run { display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; color: #374151; }
+.overview-big { font-size: 1.75rem; line-height: 1.15; color: var(--ink); font-variant-numeric: tabular-nums; }
+.overview-run button { align-self: flex-start; margin-top: 4px; }
+.phrase-tries { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 6px; }
+.phrase-tries li + li::before { content: "→"; content: "→" / ""; margin-right: 6px; color: var(--muted); }
+.phrase-chosen strong { color: var(--ink); }
+.overview-cities li { display: flex; }
+.overview-city { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 44px;
+  text-align: left; font-size: 0.9rem; color: #374151; }
+.overview-city:hover { border-color: var(--accent); background: #f8fafc; }
+.overview-city-name { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
+@media (max-width: 640px) {
+  .overview { gap: 32px; padding-top: 24px; }
+  .overview h2 { font-size: 1.6rem; }
+  .flow-row { flex-direction: column; }
+}
+
