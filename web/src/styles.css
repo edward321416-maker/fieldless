@@ -372,11 +372,11 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
   color: var(--ink); font-weight: 600; text-align: center; }
 .flow-count { font-size: 1.75rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .flow-label { font-weight: 600; color: var(--ink); }
-/* the outcome's shape, as the map's city-records lens draws it: filled, a ring, a small grey dot */
+/* the outcome's shape, as the map's city-records lens draws it: filled, a ring, a small faint dot with no ring */
 .flow-shape { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #374151; }
 .flow-in { background: #374151; }
 .flow-new { background: #fff; border-width: 3px; }
-.flow-missed { width: 10px; height: 10px; margin: 2px; background: #9ca3af; }
+.flow-missed { width: 10px; height: 10px; margin: 2px; background: #374151; border: none; opacity: 0.5; }
 .flow-none { color: #374151; text-align: center; }
 .flow-back { font-size: 0.9rem; color: #374151; text-align: center; }
 /* checked, not assumed; the agent's items; the two cities */
