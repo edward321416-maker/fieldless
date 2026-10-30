@@ -97,6 +97,7 @@ All numbers are measured by us with the code in `eval/` (city check, precision) 
 
 - Coverage depends on Mapillary. Seattle's pedestrian photos in the demo area are from 2022–2023; Seoul's from 2023–2025.
 - How much a scan finds depends on which walk its photos come from. Two walks of the same Capitol Hill blocks found 13 of 29 and 0 of 24 of the city's poles.
+- Some Mapillary walks are stored turned on their side, and their metadata does not say so. Fieldless does not detect this yet, and such photos yield fewer finds (in one Capitol Hill test, one walk of four: 53 of 181 photos).
 - A photo cannot settle slopes, widths or sub-inch lips; distant corners come back "unclear".
 - Accuracy labels for the demo areas were made from the photos by the AI coding assistant, or come from city inventories that can be older or newer than the photos.
 - The speed comparison uses published field-survey figures, which cover more items than Fieldless does today.
