@@ -411,20 +411,20 @@ export default function App() {
         selecting={selecting}
         newSurvey={newSurvey}
         coverage={!!config?.coverage_tiles}
-        showCoverage={intro || newSurvey}
-        bbox={intro ? scan?.bbox ?? null : bbox}
-        areaLabel={intro && demoName ? `Example survey area · ${demoName}` : null}
+        showCoverage={newSurvey}
+        bbox={bbox}
+        areaLabel={null}
         fitTo={fitTo}
-        findings={intro || newSurvey ? [] : findings}
+        findings={newSurvey ? [] : findings}
         items={items}
         hidden={hidden}
-        focusItem={intro || newSurvey || onRecords ? null : openItem}
+        focusItem={newSurvey || onRecords ? null : openItem}
         lens={showLens ? lens : "findings"}
         cityStates={cityStateMap}
         records={onRecords ? records : []}
         padLeft={0}
         walks={newSurvey ? previewWalks : walks}
-        selected={intro || newSurvey ? null : selected}
+        selected={newSurvey ? null : selected}
         selectedLabel={selectedLabel}
         onSelect={onSelect}
         onPick={(f) => pick(f.picked)}
@@ -442,14 +442,14 @@ export default function App() {
           <CoverageGuide coverage={!!config?.coverage_tiles} demos={demos}
             onGo={(b) => setFitTo([b[0], b[1], b[2], b[3]])} />
         )}
-        {selected && !newSurvey && !intro && (
+        {selected && !newSurvey && (
           <PhotoWindow finding={selected} items={items} onClose={() => setPicked(null)} />
         )}
       </MapView>
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
         {error && <p className="error" role="alert">{error}</p>}
         <div ref={detailRef}>
-          {selected && !newSurvey && !intro && (
+          {selected && !newSurvey && (
             <EvidenceCard finding={selected} list={cardList} queue={reviewing} items={items} backLabel={backLabel}
               progress={reviewing && scan ? reviewProgress(scan.counts) : undefined}
               checks={scan?.checks ?? []} photoOnMap={wide && !!selected.picked.item.evidence}
@@ -463,7 +463,7 @@ export default function App() {
           {shownRecord && <CityRecordCard record={shownRecord} items={items} onClose={() => setRecord(null)} />}
         </div>
         {/* What is being looked at comes first; a new survey is one button away (docs/ui-rules.md U6). */}
-        {!STATIC_DEMO && !intro && (newSurvey || !scan || !finished) && (
+        {!STATIC_DEMO && (newSurvey || !scan || !finished) && (
           <AreaPanel
             bbox={bbox}
             selecting={selecting}
@@ -481,11 +481,11 @@ export default function App() {
         )}
         {/* One thing at a time: a finding's card, else a city record's, else an item's findings, else the survey
             (cleanup design 2). */}
-        {scan && finished && !newSurvey && !intro && !selected && !shownRecord && openItem && (
+        {scan && finished && !newSurvey && !selected && !shownRecord && openItem && (
           <FindingList scan={shownScan!} item={openItem} findings={findings.filter((f) => f.item === openItem)}
             streets={streets} selectedKey={null} onPick={(f) => pick(f.picked)} onBack={() => setOpenItem(null)} />
         )}
-        {scan && finished && !newSurvey && !intro && !selected && !shownRecord && !openItem && (
+        {scan && finished && !newSurvey && !selected && !shownRecord && !openItem && (
           <ResultsPanel
             scan={shownScan!}
             name={demos.find((d) => d.scan_id === scan.id)?.name ?? null}
