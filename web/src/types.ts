@@ -129,7 +129,12 @@ export interface CityCheck {
   method: string;
   method_url: string;
   items: Record<string, { layer: string; found: number; covered: number; matched_ids: number[];
-    rejected_at_city_point: number[] }>;
+    rejected_at_city_point: number[];
+    id_fields?: string[]; // the fields the city names one record by, e.g. ["COMPKEY", "UNITID"]
+    // findings paired with a city record: in a photo's view or beyond it, and the record's id fields
+    pairs?: { issue_id: number; in_view: boolean; dist_m: number; city: Record<string, string | number | null> }[];
+    // the city's records in a photo's view that no finding was paired with
+    missed?: { lat: number; lng: number; city: Record<string, string | number | null> }[] }>;
 }
 
 export interface Walk {
