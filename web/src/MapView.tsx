@@ -4,8 +4,10 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection } from "geojson";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { bboxFromCorners, bboxPolygon, viewToBbox } from "./bbox";
+import type { CityState, MissedRecord } from "./cityMatch";
 import { destination, distanceToLineM, targetBearing, viewWedge, type LngLat } from "./geo";
 import { colourOf, DEFECT_RED, itemName, SITE_ORANGE, STATUS_SENTENCE, type Finding } from "./items";
+import type { Lens } from "./LensSwitch";
 import { markerCanvas, markerName, RATIO } from "./markerArt";
 import { namedRoads, streetText } from "./streets";
 import type { Bbox, ItemMeta, Walk } from "./types";
@@ -30,6 +32,10 @@ const DIMMED = "#CBD5E1"; // the dots of the items not opened
 // A dot's border says whether a person has something to do, in the badge's colours (U3).
 const DOT_STROKE = ["match", ["get", "badge"], "defect", DEFECT_RED, "site", SITE_ORANGE, "review", "#374151", "#ffffff"] as
   unknown as maplibregl.ExpressionSpecification;
+const DOT_STROKE_WIDTH: maplibregl.ExpressionSpecification = ["case", ["==", ["get", "badge"], "none"], 1.5, 2];
+// The city-records lens: the colour still says which item, the shape says the pairing with the city's records.
+const NOT_IN_LIST: maplibregl.ExpressionSpecification = ["==", ["get", "city"], "not_in_list"];
+const NO_CITY_LIST: maplibregl.ExpressionSpecification = ["==", ["get", "city"], "none"];
 
 interface Props {
   selecting: boolean;
@@ -43,12 +49,16 @@ interface Props {
   items: ItemMeta[];
   hidden: Set<string>;
   focusItem: string | null; // an item opened in the panel: its findings in colour, the others grey
+  lens: Lens; // "findings" (default look) or "records"
+  cityStates: Record<string, CityState>; // a finding's pairing with the city's records, by finding key
+  records: MissedRecord[]; // the city's records in view the survey did not find
   padLeft: number; // what covers the map's left on a wide screen when fitting (the introduction's photo)
   walks: Walk[];
   selected: Finding | null;
   selectedLabel: string;
   onSelect: (bbox: Bbox) => void;
   onPick: (f: Finding) => void;
+  onPickRecord: (r: MissedRecord) => void;
   onReady: (getView: () => Bbox) => void;
   onStreets: (names: Record<string, string>) => void;
   children?: ReactNode; // drawn over the map (the selected finding's photo)
@@ -100,6 +110,32 @@ function nearestWalk(f: Finding | null, walks: Walk[]): number | null {
   return best && best.m < 30 ? best.clip : null;
 }
 
+// The findings lens, today's map: dots far out and icon markers from ICON_ZOOM on; an opened item's dots keep their
+// colour and the others go grey (docs/ui-rules.md U4); a dot's border says whether a person has something to do.
+function findingsLook(map: maplibregl.Map, focus: string | null) {
+  map.setLayoutProperty("records-dot", "visibility", "none");
+  map.setLayoutProperty("findings", "visibility", "visible");
+  map.setLayerZoomRange("findings-dot", 0, ICON_ZOOM);
+  map.setPaintProperty("findings-dot", "circle-color",
+    focus ? ["case", ["==", ["get", "item"], focus], ["get", "colour"], DIMMED] : ["get", "colour"]);
+  map.setPaintProperty("findings-dot", "circle-stroke-color",
+    focus ? ["case", ["==", ["get", "item"], focus], DOT_STROKE, "#ffffff"] : DOT_STROKE);
+  map.setPaintProperty("findings-dot", "circle-stroke-width", DOT_STROKE_WIDTH);
+}
+
+// The city-records lens: dots at every zoom, as an icon has no room for the state. A finding paired with a city
+// record is filled, one paired with none is a hollow ring, one of an item without a city list is grey; the city's
+// records in a photo's view that no finding was paired with are small light dots ringed in the item's colour.
+function recordsLook(map: maplibregl.Map) {
+  map.setLayoutProperty("records-dot", "visibility", "visible");
+  map.setLayoutProperty("findings", "visibility", "none");
+  map.setLayerZoomRange("findings-dot", 0, 24);
+  map.setPaintProperty("findings-dot", "circle-color",
+    ["case", NOT_IN_LIST, "#ffffff", NO_CITY_LIST, DIMMED, ["get", "colour"]]);
+  map.setPaintProperty("findings-dot", "circle-stroke-color", ["case", NOT_IN_LIST, ["get", "colour"], "#ffffff"]);
+  map.setPaintProperty("findings-dot", "circle-stroke-width", ["case", NOT_IN_LIST, 3, 1.5]);
+}
+
 export default function MapView(props: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -120,10 +156,15 @@ export default function MapView(props: Props) {
       map.addSource("area", { type: "geojson", data: areaData(latest.current.bbox) });
       map.addSource("selection", { type: "geojson", data: EMPTY });
       map.addSource("findings", { type: "geojson", data: EMPTY });
+      map.addSource("records", { type: "geojson", data: EMPTY });
       map.addLayer({ id: "walks", type: "line", source: "walks", layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": "#475569", "line-width": 4, "line-opacity": 0.7 } });
       map.addLayer({ id: "walk-picked", type: "line", source: "walks", filter: ["==", ["get", "clip"], -1],
         layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ACCENT, "line-width": 4 } });
+      // Under the findings, so a finding is never covered by a record the survey did not find (the records lens).
+      map.addLayer({ id: "records-dot", type: "circle", source: "records", layout: { visibility: "none" },
+        paint: { "circle-radius": 4.5, "circle-color": "#F3F4F6", "circle-stroke-color": ["get", "colour"],
+          "circle-stroke-width": 2, "circle-opacity": 0.85, "circle-stroke-opacity": 0.85 } });
       map.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": ACCENT, "fill-opacity": 0.08 } });
       map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": ACCENT, "line-width": 2 } });
       map.addLayer({ id: "sel-wedge", type: "fill", source: "selection", filter: ["==", ["get", "part"], "wedge"],
@@ -134,7 +175,7 @@ export default function MapView(props: Props) {
       map.addLayer({ id: "findings-dot", type: "circle", source: "findings", maxzoom: ICON_ZOOM,
         layout: { "circle-sort-key": ["get", "order"] },
         paint: { "circle-radius": 5, "circle-color": ["get", "colour"], "circle-stroke-color": DOT_STROKE,
-          "circle-stroke-width": ["case", ["==", ["get", "badge"], "none"], 1.5, 2] } });
+          "circle-stroke-width": DOT_STROKE_WIDTH } });
       map.addLayer({ id: "findings", type: "symbol", source: "findings", minzoom: ICON_ZOOM,
         layout: { "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true,
           "symbol-sort-key": ["get", "order"] } });
@@ -174,6 +215,28 @@ export default function MapView(props: Props) {
       el.querySelector("strong")!.textContent = text; // text, never HTML: names come from the data
     });
     map.on("mouseleave", FINDING_LAYERS, () => {
+      map.getCanvas().style.cursor = "";
+      hover.remove();
+    });
+    // A city record the survey did not find (the records lens). A finding drawn over it takes the click and the tip.
+    const findingAt = (p: maplibregl.Point) => map.queryRenderedFeatures(p, { layers: ["findings-dot"] }).length > 0;
+    const recordOf = (e: maplibregl.MapLayerMouseEvent) => {
+      const key = e.features?.[0]?.properties?.key as string | undefined;
+      return findingAt(e.point) ? undefined : latest.current.records.find((r) => r.key === key);
+    };
+    map.on("click", "records-dot", (e) => {
+      const r = recordOf(e);
+      if (r) latest.current.onPickRecord(r);
+    });
+    map.on("mousemove", "records-dot", (e) => {
+      const r = recordOf(e);
+      if (!r) return;
+      map.getCanvas().style.cursor = "pointer";
+      hover.setLngLat([r.lng, r.lat]).setHTML("<strong></strong>").addTo(map);
+      hover.getElement().querySelector("strong")!.textContent =
+        `${itemName(r.item, latest.current.items)} · in the city's list, not found`; // text, never HTML
+    });
+    map.on("mouseleave", "records-dot", () => {
       map.getCanvas().style.cursor = "";
       hover.remove();
     });
@@ -298,13 +361,24 @@ export default function MapView(props: Props) {
       type: "FeatureCollection",
       features: shown.map((f) => point([f.lng, f.lat], {
         key: f.key, item: f.item, icon: markerName(f.item, f.badge), order: f.badge ? 1 : 0, // badges draw on top
-        colour: colourOf(f.item, props.items), badge: f.badge ?? "none",
+        colour: colourOf(f.item, props.items), badge: f.badge ?? "none", city: props.cityStates[f.key] ?? "none",
       })),
     });
     streetsRef.current = Object.fromEntries(Object.entries(streetsRef.current)
       .filter(([k]) => props.findings.some((f) => f.key === k)));
     nameStreets(map);
-  }, [props.findings, props.hidden, props.items, loaded]);
+  }, [props.findings, props.hidden, props.items, props.cityStates, loaded]);
+
+  // The city's records in a photo's view that no finding was paired with, in their item's colour (the records lens);
+  // an item hidden in the panel hides its records too.
+  useEffect(() => {
+    if (!loaded) return;
+    (mapRef.current?.getSource("records") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: props.records.filter((r) => !props.hidden.has(r.item)).map((r) => point([r.lng, r.lat],
+        { key: r.key, item: r.item, colour: colourOf(r.item, props.items) })),
+    });
+  }, [props.records, props.hidden, props.items, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -316,16 +390,14 @@ export default function MapView(props: Props) {
     });
   }, [props.walks, loaded]);
 
-  // An item opened in the panel: its dots keep their colour, the others go grey (docs/ui-rules.md U4).
+  // What the map shows: the findings, with an item opened in the panel in colour and the others grey, or the
+  // findings against the city's records.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
-    const focus = props.focusItem;
-    map.setPaintProperty("findings-dot", "circle-color",
-      focus ? ["case", ["==", ["get", "item"], focus], ["get", "colour"], DIMMED] : ["get", "colour"]);
-    map.setPaintProperty("findings-dot", "circle-stroke-color",
-      focus ? ["case", ["==", ["get", "item"], focus], DOT_STROKE, "#ffffff"] : DOT_STROKE);
-  }, [props.focusItem, loaded]);
+    if (props.lens === "records") recordsLook(map);
+    else findingsLook(map, props.focusItem);
+  }, [props.lens, props.focusItem, loaded]);
 
   // Opacity: a selected finding dims all the others; an opened item dims the other items' icons.
   useEffect(() => {
