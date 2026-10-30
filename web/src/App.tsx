@@ -3,6 +3,7 @@ import { api, ApiError, STATIC_DEMO } from "./api";
 import { contentBounds } from "./bbox";
 import AddItemPanel from "./AddItemPanel";
 import AreaPanel from "./AreaPanel";
+import type { CallStats } from "./callStats";
 import { cityCounts, cityStates, missedRecords, type MissedRecord } from "./cityMatch";
 import CityRecordCard from "./CityRecordCard";
 import CoverageGuide from "./CoverageGuide";
@@ -14,6 +15,7 @@ import { isActive, itemFromHash, withRun } from "./itemRun";
 import EvidenceCard from "./EvidenceCard";
 import FindingList from "./FindingList";
 import { isFinished } from "./format";
+import HowMade from "./HowMade";
 import { findingsOf, itemName, keyOf, type Finding } from "./items";
 import LensSwitch, { type Lens } from "./LensSwitch";
 import MapView from "./MapView";
@@ -54,6 +56,7 @@ export default function App() {
   const [run, setRun] = useState<ItemRun | null>(null);
   const [runTick, setRunTick] = useState(0); // a new look at the run, after a person's answers are sent
   const [itemRuns, setItemRuns] = useState<ItemRunSummary[]>([]);
+  const [callStats, setCallStats] = useState<CallStats | null>(null); // which model did what, when the server keeps it
   const [streets, setStreets] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<Picked | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -157,6 +160,7 @@ export default function App() {
     if (config?.items) {
       api.scanItems(scan.id).then((r) => !cancelled && setItemRuns(r)).catch(() => !cancelled && setItemRuns([]));
     }
+    api.calls(scan.id).then((c) => !cancelled && setCallStats(c)).catch(() => !cancelled && setCallStats(null));
     api.walks(scan.id)
       .then((w) => {
         if (cancelled) return;
@@ -191,6 +195,7 @@ export default function App() {
     if (id === scanId) return; // already open: keep its results on screen
     setItemRunId(null);
     setItemRuns([]);
+    setCallStats(null);
     setEntrances([]);
     setIssues([]);
     setWalks([]);
@@ -442,6 +447,7 @@ export default function App() {
             lens={showLens ? lens : "findings"}
             cityCounts={counts}
           >
+            {callStats && callStats.scan_id === scan.id && <HowMade stats={callStats} />}
             {config?.items && (
               <AddItemPanel canMake={!!config.make_items && !STATIC_DEMO}
                 run={run && run.scan_id === scan.id ? run : null} examples={itemRuns}

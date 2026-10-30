@@ -1,3 +1,4 @@
+import type { CallStats } from "./callStats";
 import type {
   Bbox, DemoArea, Entrance, EntranceReview, Issue, IssueReview, ItemRun, ItemRunSummary, Preview, Scan, ServerConfig,
   Walk,
@@ -69,6 +70,8 @@ export const api = {
   // items the agent writes in the app (docs/specs/2026-10-29-agent-items-design.md)
   itemRun: (id: number) => request<ItemRun>(`/api/items/${id}`),
   scanItems: (scanId: number) => request<ItemRunSummary[]>(`/api/scans/${scanId}/items`),
+  // which model did what in a survey, stage by stage; a 404 when the server keeps no call record for it
+  calls: (scanId: number) => request<CallStats>(`/api/scans/${scanId}/calls`),
   startItem: (scanId: number, target: string, inviteCode: string) =>
     request<{ id: number }>(`/api/scans/${scanId}/items`, post({ target, invite_code: inviteCode || null })),
   undoEntrance: (id: number | string) => request<Entrance>(`/api/entrances/${id}/review/undo`, post({})),

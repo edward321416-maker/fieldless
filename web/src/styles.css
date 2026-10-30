@@ -317,4 +317,13 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .record-ids dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .record-card p { line-height: 1.45; }
 .record-card button { min-height: 44px; font-weight: 600; }
+/* how a survey was made: per stage, which model did it, how often and for how much */
+.how-made h3 { margin-top: 4px; }
+.stage-rows { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.stage-head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.9rem; }
+.stage-label { font-weight: 600; }
+.stage-cost { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stage-bar { height: 6px; margin: 3px 0; border-radius: 3px; background: #e5e7eb; overflow: hidden; }
+.stage-bar span { display: block; height: 100%; background: var(--accent); }
+.stage-models { font-size: 0.82rem; color: var(--muted); }
 
