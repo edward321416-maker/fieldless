@@ -6,7 +6,7 @@ One survey covers street assets (utility and streetlight poles, street trees, pu
 
 **Try it:** [live app](https://edward321416--fieldless-web.us-east.modal.run) (open a finished survey, or start your own; spend is capped) · [read-only demo](https://huggingface.co/spaces/BBONG1201/fieldless) (the same surveys, static) · [the Seattle survey with the item Muse Spark added](https://edward321416--fieldless-web.us-east.modal.run/#scan=17&item=4)
 
-![A Seattle survey in Fieldless: 181 public street photos, $4.48 per km, each item checked against the city's own list](docs/images/survey.png)
+![The Seattle survey on the city-records view: $4.48 per km; filled dots are on the city's own lists, rings are finds the lists lack, faint dots are the city's records in the photos that the survey did not find](docs/images/records-lens.png)
 
 ## Why
 
@@ -51,6 +51,14 @@ area (bbox) → Mapillary photos → scene scan → survey items → evidence �
 
 Every stage saves its state, so a stopped scan resumes. Each scan has a cost cap, enforced in code.
 
+### What the app shows
+
+- **Overview.** A first visit opens on one page that walks through a finished survey: its cost per km beside a published walking survey, every item with a photo, how the survey rules, the city's records and the photos meet, what backs the numbers, the items Muse Spark wrote in the app, and both cities.
+- **City records.** On the results map, "City records" draws each finding by how it pairs with the city's own list: filled if it is on the list, a ring if the list lacks it, and a faint dot for each city record in the photos' view that the survey did not find. Clicking a faint dot shows the city's ids for that record, to look up or visit.
+- **How this survey was made.** Each finished demo survey lists its stages, the Meta model that did each, its calls and its cost (`/api/scans/{id}/calls`).
+
+![The overview: how the survey rules, the city's records and the street photos meet, and what backs the numbers](docs/images/overview-flow.png)
+
 ## New survey items, written and tested by Muse Spark
 
 **In the app.** Under a finished survey, "Add a survey item" takes a target, for example "bike rack". Muse Spark then works as an agent, and the panel shows each step as it happens:
@@ -75,6 +83,8 @@ For "bike rack" on the Seattle survey, it settled on the phrase "metal bike hold
 | **Muse Spark** | Watches photo sequences as video, judges each item in a fixed JSON format with a box and a reason, writes and tests new survey items as an agent that calls SAM 3.1 as a tool, reads a rule PDF, and writes the report's text |
 | **Muse Spark Open** (open weights, on Baseten) | Gives the answers a new item is tested against, and a second opinion on every possible defect |
 | **Muse Glimmer** (open weights) | Served by us on one Modal H100 with vLLM (`deploy/modal_glimmer.py`, scales to zero). Takes the street-asset checks in large runs (`--glimmer`); Spark covers its unclear answers and audits 10%. On a busy GPU a check costs about $0.00075 against $0.012 on Muse Spark (measured, 300 checks at 32 in flight). Re-judging a Seattle scan, it matched 12 of 29 of the city's poles where Spark matched 13 of 31 (the points in view differ by run); litter cans and pay stations came out the same, and 6 of 7 Spark audits agreed. In a small survey it is slower and no cheaper, because starting the GPU takes four to six minutes, so the live site uses Muse Spark |
+
+In the recorded Seattle survey, SAM 3.1 answered 643 calls, Muse Spark 171 and Muse Spark Open 1, for $4.21 in all: the item checks alone were 282 SAM 3.1 calls and 144 Muse Spark calls ($2.48).
 
 ## Results (measured)
 
