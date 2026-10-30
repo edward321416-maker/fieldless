@@ -17,7 +17,9 @@ log = logging.getLogger(__name__)
 
 DB_NAME = "threshold.db"
 GPU_LOG = "calls_glimmer.jsonl"  # Muse Glimmer's calls: kept so the server's GPU total survives a restart
-CITY_CHECKS = "city_check_scan*.json"  # the offline comparisons with a city's records (eval), shown with a scan
+# offline files shown with a scan: the comparison with a city's records (eval) and the call record
+# (pipeline/call_stats.py)
+SCAN_FILES = ("city_check_scan*.json", "call_stats_scan*.json")
 SAVE_DELAY_S = 20.0  # reviews come in bursts; one upload covers a burst
 
 
@@ -43,7 +45,7 @@ class DatasetStore:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         try:
             self._download(self.repo_id, repo_type="dataset", local_dir=self.run_dir,
-                           allow_patterns=[DB_NAME, GPU_LOG, CITY_CHECKS, "evidence/*"])
+                           allow_patterns=[DB_NAME, GPU_LOG, *SCAN_FILES, "evidence/*"])
         except Exception:
             log.exception("could not restore data from %s", self.repo_id)
             return False
@@ -66,7 +68,7 @@ class DatasetStore:
                 shutil.copytree(evidence, staging / "evidence")
             if (self.run_dir / GPU_LOG).exists():
                 shutil.copy2(self.run_dir / GPU_LOG, staging / GPU_LOG)
-            for check in self.run_dir.glob(CITY_CHECKS):
+            for check in (f for pattern in SCAN_FILES for f in self.run_dir.glob(pattern)):
                 shutil.copy2(check, staging / check.name)
             self._api.upload_folder(repo_id=self.repo_id, repo_type="dataset", folder_path=staging,
                                     commit_message="Save survey data")
@@ -105,7 +107,7 @@ class FolderBackup:
             shutil.copytree(self.backup_dir / "evidence", local / "evidence", dirs_exist_ok=True)
         if (self.backup_dir / GPU_LOG).exists():
             shutil.copy2(self.backup_dir / GPU_LOG, local / GPU_LOG)
-        for check in self.backup_dir.glob(CITY_CHECKS):
+        for check in (f for pattern in SCAN_FILES for f in self.backup_dir.glob(pattern)):
             shutil.copy2(check, local / check.name)
 
     def upload_folder(self, *, repo_id, repo_type, folder_path, commit_message):
@@ -115,7 +117,7 @@ class FolderBackup:
             shutil.copytree(folder / "evidence", self.backup_dir / "evidence", dirs_exist_ok=True)
         if (folder / GPU_LOG).exists():
             shutil.copy2(folder / GPU_LOG, self.backup_dir / GPU_LOG)
-        for check in folder.glob(CITY_CHECKS):
+        for check in (f for pattern in SCAN_FILES for f in folder.glob(pattern)):
             shutil.copy2(check, self.backup_dir / check.name)
         part = self.backup_dir / f"{DB_NAME}.part"
         shutil.copy2(folder / DB_NAME, part)

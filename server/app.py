@@ -293,6 +293,19 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             raise HTTPException(404, "no such photo")
         return Response(path.read_bytes(), media_type="image/jpeg")  # whole, as get_evidence explains
 
+    @app.get("/api/scans/{scan_id}/calls")
+    def get_scan_calls(scan_id: int):
+        """How the survey used the models, stage by stage (pipeline/call_stats.py), when a record was made for it."""
+        path = run_dir / f"call_stats_scan{scan_id}.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+        except (OSError, ValueError):
+            log.exception("could not read %s", path)
+            data = None
+        if not isinstance(data, dict):
+            raise HTTPException(404, "no call record for this survey")
+        return data
+
     def city_check(scan_id: int) -> dict | None:
         """The offline comparison with the city's records (eval, docs/specs/2026-10-28-ui-redesign-design.md 4.1),
         if one was made for this scan. A file that cannot be read is left out, not an error for the visitor."""

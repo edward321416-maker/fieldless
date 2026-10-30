@@ -70,6 +70,8 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
                   f"/api/scans/{scan_id}/items"]
         # the survey items the agent made on this scan (plan 12), opened with #scan=<id>&item=<run>
         paths += [f"/api/items/{r['id']}" for r in client.get(f"/api/scans/{scan_id}/items").json()]
+        if client.get(f"/api/scans/{scan_id}/calls").status_code == 200:  # its call record, when one was made
+            paths.append(f"/api/scans/{scan_id}/calls")
     evidence = config.run_dir(run) / "evidence"
     written = []
     for path in paths:

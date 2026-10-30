@@ -22,6 +22,23 @@ def test_the_static_site_exports_each_surveys_report_page(tmp_path):
     assert "Street Survey Report" in page.read_text(encoding="utf-8")
     site_config = json.loads((out / "api" / "config.json").read_text(encoding="utf-8"))
     assert site_config["report"] is True and site_config["coverage_tiles"] is False
+    assert f"/api/scans/{scan_id}/calls" not in written  # no call record was made for this survey
+
+
+def test_the_static_site_exports_a_surveys_call_record_when_one_was_made(tmp_path):
+    scan_id = survey_scan.build("demo-calls")
+    conn = db.connect(config.run_dir("demo-calls") / "threshold.db")
+    db.update_scan(conn, scan_id, status="done")
+    conn.close()
+    evidence = config.run_dir("demo-calls") / "evidence"
+    evidence.mkdir(parents=True, exist_ok=True)
+    (evidence / f"scan{scan_id}_issue1.jpg").write_bytes(b"jpg")
+    record = {"scan_id": scan_id, "stages": [], "total": {"calls": 0}}
+    (config.run_dir("demo-calls") / f"call_stats_scan{scan_id}.json").write_text(json.dumps(record), encoding="utf-8")
+
+    static_site.export_api("demo-calls", [(scan_id, "Pike & Pine")], tmp_path / "site")
+
+    assert json.loads((tmp_path / "site" / "api" / "scans" / str(scan_id) / "calls.json").read_text()) == record
 
 
 

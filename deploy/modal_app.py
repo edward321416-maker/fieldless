@@ -114,8 +114,9 @@ def seed(run_dir: Path) -> None:
             src.close()
         with volume.batch_upload(force=True) as batch:
             batch.put_file(snapshot, "/threshold.db")
-            for check in run_dir.glob("city_check_scan*.json"):  # the offline city-record comparisons (eval)
-                batch.put_file(check, f"/{check.name}")
+            for pattern in ("city_check_scan*.json", "call_stats_scan*.json"):  # offline files shown with a scan
+                for check in run_dir.glob(pattern):
+                    batch.put_file(check, f"/{check.name}")
             if (run_dir / "evidence").is_dir():
                 batch.put_directory(run_dir / "evidence", "/evidence")
     print(f"seeded the Volume from {run_dir}")
@@ -147,6 +148,9 @@ def merge(run_dir: Path, scan_ids: list[int]) -> None:
                     ids = written[scan_id]["ids"]["sidewalk_issue"]
                     moved.write_text(json.dumps(remap_city_check(data, ids), ensure_ascii=False), encoding="utf-8")
                     batch.put_file(moved, f"/{check.name}")
+                calls = run_dir / f"call_stats_scan{scan_id}.json"  # names no row: copied as it is
+                if calls.is_file():
+                    batch.put_file(calls, f"/{calls.name}")
                 for photo in (run_dir / "evidence").glob(f"scan{scan_id}_*.jpg"):
                     batch.put_file(photo, f"/evidence/{photo.name}")
     print(f"merged {({k: v['counts'] for k, v in written.items()})} into the Volume; deploy again so the live "

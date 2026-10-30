@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -660,4 +662,17 @@ def test_a_finished_item_shows_its_rows_as_the_scans_own_and_leaves_the_scan_as_
     assert item["test"]["city"] == {"layer": "Hydrants", "found": 1, "covered": 2}
     assert [r["id"] for r in client.get(f"/api/scans/{scan_id}/items").json()] == [run_id]  # finished runs only
     assert client.get(f"/api/scans/{scan_id}").json() == before
+    conn.close()
+
+
+
+def test_a_surveys_call_record_is_served_when_one_was_made(make):
+    conn, scan_id = item_scan()
+    client, _ = make()
+    assert client.get(f"/api/scans/{scan_id}/calls").status_code == 404
+    record = {"scan_id": scan_id, "stages": [{"stage": "items", "model": "Muse Spark", "calls": 3}], "total": {"calls": 3}}
+    (config.run_dir("server") / f"call_stats_scan{scan_id}.json").write_text(json.dumps(record), encoding="utf-8")
+    assert client.get(f"/api/scans/{scan_id}/calls").json() == record
+    (config.run_dir("server") / f"call_stats_scan{scan_id}.json").write_text("{broken", encoding="utf-8")
+    assert client.get(f"/api/scans/{scan_id}/calls").status_code == 404
     conn.close()
