@@ -291,4 +291,30 @@ kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px soli
 .share-button { min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff;
   font-weight: 600; color: var(--accent); white-space: nowrap; }
 .agent-done-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+/* the survey against the city's records: the switch over the map, the legend of its shapes, a record's card */
+.lens-switch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2; display: flex; gap: 2px;
+  padding: 2px; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15); }
+.lens-switch button { min-height: 36px; padding: 0 12px; border: none; border-radius: 6px; background: #fff;
+  color: var(--ink); font-weight: 600; white-space: nowrap; }
+.lens-switch button:hover { background: #f3f4f6; }
+.lens-switch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.lens-switch button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 800px) {
+  .lens-switch button { min-height: 44px; }
+}
+.lens-legend { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: #f9fafb; }
+.lens-legend ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;
+  font-size: 0.85rem; color: #374151; }
+.lens-legend li { display: flex; align-items: center; gap: 8px; }
+.lens-legend p { margin: 6px 0 0; }
+.shape { flex: none; display: inline-block; width: 14px; height: 14px; border-radius: 50%; }
+.shape-in { background: #6b7280; border: 1.5px solid #fff; box-shadow: 0 0 0 1px #6b7280; }
+.shape-not { background: #fff; border: 3px solid #6b7280; }
+.shape-missed { width: 12px; height: 12px; margin: 0 1px; background: #f3f4f6; border: 2px solid #374151; }
+.record-dot { background: #f3f4f6; }
+.record-ids { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 8px 0; }
+.record-ids dt { color: var(--muted); }
+.record-ids dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.record-card p { line-height: 1.45; }
+.record-card button { min-height: 44px; font-weight: 600; }
 

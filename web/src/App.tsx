@@ -3,6 +3,8 @@ import { api, ApiError, STATIC_DEMO } from "./api";
 import { contentBounds } from "./bbox";
 import AddItemPanel from "./AddItemPanel";
 import AreaPanel from "./AreaPanel";
+import { cityCounts, cityStates, missedRecords, type MissedRecord } from "./cityMatch";
+import CityRecordCard from "./CityRecordCard";
 import CoverageGuide from "./CoverageGuide";
 import Attribution from "./Attribution";
 import DemoNotice from "./DemoNotice";
@@ -13,6 +15,7 @@ import EvidenceCard from "./EvidenceCard";
 import FindingList from "./FindingList";
 import { isFinished } from "./format";
 import { findingsOf, itemName, keyOf, type Finding } from "./items";
+import LensSwitch, { type Lens } from "./LensSwitch";
 import MapView from "./MapView";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
@@ -42,6 +45,10 @@ export default function App() {
   const [walks, setWalks] = useState<Walk[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [openItem, setOpenItem] = useState<string | null>(null); // an item's findings, listed in the panel
+  // A survey with a city check: the map shows its findings, or the same findings against the city's records, where
+  // a record the survey did not find opens its card.
+  const [lens, setLens] = useState<Lens>("findings");
+  const [record, setRecord] = useState<MissedRecord | null>(null);
   // An item the agent writes in the app: its run, from the address, and the survey's finished runs (examples).
   const [itemRunId, setItemRunId] = useState<number | null>(() => itemFromHash(window.location.hash));
   const [run, setRun] = useState<ItemRun | null>(null);
@@ -163,10 +170,11 @@ export default function App() {
     };
   }, [scan?.id, finished, config?.items]);
 
-  // Bring the evidence card or the review panel into view when it opens (on a phone it sits below the map).
+  // Bring the evidence card, the review panel or a city record's card into view when it opens (on a phone it sits
+  // below the map).
   useEffect(() => {
-    if (picked || reviewing) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [picked?.kind, picked?.item.id, reviewing]);
+    if (picked || reviewing || record) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [picked?.kind, picked?.item.id, reviewing, record?.key]);
 
   const onSelect = useCallback((b: Bbox) => {
     setBbox(b);
@@ -177,6 +185,8 @@ export default function App() {
     setPicked(null);
     setReviewing(false);
     setOpenItem(null);
+    setLens("findings");
+    setRecord(null);
     setError(null);
     if (id === scanId) return; // already open: keep its results on screen
     setItemRunId(null);
@@ -190,6 +200,7 @@ export default function App() {
 
   function pick(p: Picked) {
     setReviewing(false);
+    setRecord(null);
     setPicked(p);
   }
 
@@ -205,6 +216,8 @@ export default function App() {
     setPicked(null);
     setReviewing(false);
     setOpenItem(null);
+    setLens("findings");
+    setRecord(null);
     setItemRunId(null);
     setNewSurvey(false);
     setSelecting(false);
@@ -243,6 +256,15 @@ export default function App() {
     const same = findings.filter((f) => f.item === selected.item);
     return `${itemName(selected.item, items)} · ${same.indexOf(selected) + 1} of ${same.length} · position approximate`;
   }, [selected, findings, items]);
+  // The survey against the city's own records (cityMatch): each finding's pairing, the records in a photo's view no
+  // finding was paired with, and the counts per item. The switch shows on a finished survey's results only, and
+  // gives way to a finding's card.
+  const cityStateMap = useMemo(() => cityStates(scan?.city_check, issues), [scan?.city_check, issues]);
+  const records = useMemo(() => missedRecords(scan?.city_check), [scan?.city_check]);
+  const counts = useMemo(() => cityCounts(scan?.city_check, issues), [scan?.city_check, issues]);
+  const showLens = !!scan?.city_check && finished && !intro && !newSurvey && !selected;
+  const onRecords = showLens && lens === "records";
+  const shownRecord = onRecords ? record : null; // its dot is on the map
   const toggleItem = (item: string) =>
     setHidden((h) => {
       const next = new Set(h);
@@ -328,16 +350,26 @@ export default function App() {
         findings={intro || newSurvey ? [] : findings}
         items={items}
         hidden={hidden}
-        focusItem={intro || newSurvey ? null : openItem}
+        focusItem={intro || newSurvey || onRecords ? null : openItem}
+        lens={showLens ? lens : "findings"}
+        cityStates={cityStateMap}
+        records={onRecords ? records : []}
         padLeft={intro ? 370 : 0}
         walks={newSurvey ? previewWalks : walks}
         selected={intro || newSurvey ? null : selected}
         selectedLabel={selectedLabel}
         onSelect={onSelect}
         onPick={(f) => pick(f.picked)}
+        onPickRecord={setRecord}
         onReady={(fn) => (getView.current = fn)}
         onStreets={setStreets}
       >
+        {showLens && (
+          <LensSwitch lens={lens} onChange={(l) => {
+            setLens(l);
+            setRecord(null);
+          }} />
+        )}
         {intro && <IntroMapKey coverage={!!config?.coverage_tiles} />}
         {intro && wide && introPhoto && scan && <IntroPhoto finding={introPhoto} items={items} photos={scan.image_count} />}
         {newSurvey && (
@@ -369,6 +401,7 @@ export default function App() {
                 setReviewing(false);
               }} />
           )}
+          {shownRecord && <CityRecordCard record={shownRecord} items={items} onClose={() => setRecord(null)} />}
         </div>
         {/* What is being looked at comes first; a new survey is one button away (docs/ui-rules.md U6). */}
         {!STATIC_DEMO && !intro && (newSurvey || !scan || !finished) && (
@@ -387,12 +420,13 @@ export default function App() {
             onPreview={(p) => setPreviewWalks((p?.walks ?? []).map((points, clip) => ({ clip, points })))}
           />
         )}
-        {/* One thing at a time: a finding's card, else an item's findings, else the survey (cleanup design 2). */}
-        {scan && finished && !newSurvey && !intro && !selected && openItem && (
+        {/* One thing at a time: a finding's card, else a city record's, else an item's findings, else the survey
+            (cleanup design 2). */}
+        {scan && finished && !newSurvey && !intro && !selected && !shownRecord && openItem && (
           <FindingList scan={shownScan!} item={openItem} findings={findings.filter((f) => f.item === openItem)}
             streets={streets} selectedKey={null} onPick={(f) => pick(f.picked)} onBack={() => setOpenItem(null)} />
         )}
-        {scan && finished && !newSurvey && !intro && !selected && !openItem && (
+        {scan && finished && !newSurvey && !intro && !selected && !shownRecord && !openItem && (
           <ResultsPanel
             scan={shownScan!}
             name={demos.find((d) => d.scan_id === scan.id)?.name ?? null}
@@ -405,6 +439,8 @@ export default function App() {
             hasReport={!!config?.report}
             agentCity={run?.status === "done" && run.item && run.test?.city
               ? { [run.item.id]: run.test.city } : undefined}
+            lens={showLens ? lens : "findings"}
+            cityCounts={counts}
           >
             {config?.items && (
               <AddItemPanel canMake={!!config.make_items && !STATIC_DEMO}
