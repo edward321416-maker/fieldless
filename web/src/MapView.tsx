@@ -125,7 +125,8 @@ function findingsLook(map: maplibregl.Map, focus: string | null) {
 
 // The city-records lens: dots at every zoom, as an icon has no room for the state. A finding paired with a city
 // record is filled, one paired with none is a hollow ring, one of an item without a city list is grey; the city's
-// records in a photo's view that no finding was paired with are small light dots ringed in the item's colour.
+// records in a photo's view that no finding was paired with are small faint dots in the item's colour, with no ring,
+// so they never read as the hollow ring (2d review: light dots with a ring did, at zoom 17).
 function recordsLook(map: maplibregl.Map) {
   map.setLayoutProperty("records-dot", "visibility", "visible");
   map.setLayoutProperty("findings", "visibility", "none");
@@ -163,8 +164,7 @@ export default function MapView(props: Props) {
         layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ACCENT, "line-width": 4 } });
       // Under the findings, so a finding is never covered by a record the survey did not find (the records lens).
       map.addLayer({ id: "records-dot", type: "circle", source: "records", layout: { visibility: "none" },
-        paint: { "circle-radius": 4.5, "circle-color": "#F3F4F6", "circle-stroke-color": ["get", "colour"],
-          "circle-stroke-width": 2, "circle-opacity": 0.85, "circle-stroke-opacity": 0.85 } });
+        paint: { "circle-radius": 4, "circle-color": ["get", "colour"], "circle-opacity": 0.5, "circle-stroke-width": 0 } });
       map.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": ACCENT, "fill-opacity": 0.08 } });
       map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": ACCENT, "line-width": 2 } });
       map.addLayer({ id: "sel-wedge", type: "fill", source: "selection", filter: ["==", ["get", "part"], "wedge"],
