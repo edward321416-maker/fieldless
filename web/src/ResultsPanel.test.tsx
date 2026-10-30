@@ -58,6 +58,40 @@ describe("the finished survey", () => {
   });
 });
 
+describe("the finished survey against the city's records", () => {
+  it("keys the map's three shapes and says per item how its findings pair with the city's list", () => {
+    const html = renderToStaticMarkup(
+      <ResultsPanel scan={scan} name={null} findings={findings} hidden={new Set()} onToggle={() => undefined}
+        onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined} hasReport={false}
+        lens="records" cityCounts={{ street_tree: { matched: 13, notInList: 11, missed: 16, covered: 29 } }} />);
+    expect(html).toContain("Found and in the city&#x27;s list");
+    expect(html).toContain("Found, not in the city&#x27;s list");
+    expect(html).toContain("In the city&#x27;s list, not found (to check)");
+    expect(html).toContain("Paired by photo position and viewing direction");
+    expect(html).toContain("13 matched · 11 not in the city&#x27;s list · 16 to check");
+    expect(html).toContain('<span class="item-note">No city list to compare</span>');
+    expect(html).not.toContain("19 of 39 in the city&#x27;s list");
+  });
+  it("keeps the findings' notes and no legend in the findings lens", () => {
+    const html = renderToStaticMarkup(
+      <ResultsPanel scan={scan} name={null} findings={findings} hidden={new Set()} onToggle={() => undefined}
+        onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined} hasReport={false}
+        lens="findings" cityCounts={{ street_tree: { matched: 13, notInList: 11, missed: 16, covered: 29 } }} />);
+    expect(html).toContain("19 of 39 in the city&#x27;s list · 1 to check on site");
+    expect(html).not.toContain("Paired by photo position");
+  });
+  it("gives an agent's item its own run's count against the city's list", () => {
+    const withAgent = { ...scan, items: [...scan.items, { id: "agent_bike_rack", target: "bike rack", map_icon: "",
+      kind: "check", inventory: true, added_by: "agent" }] } as unknown as Scan;
+    const html = renderToStaticMarkup(
+      <ResultsPanel scan={withAgent} name={null} findings={[...findings, finding(90, "agent_bike_rack")]}
+        hidden={new Set()} onToggle={() => undefined} onOpenItem={() => undefined} onReview={() => undefined}
+        onIntro={() => undefined} hasReport={false} agentCity={{ agent_bike_rack: { found: 14, covered: 22 } }}
+        lens="records" cityCounts={{}} />);
+    expect(html).toContain('<span class="item-note">14 of 22 in the city&#x27;s list</span>');
+  });
+});
+
 describe("an item the agent added", () => {
   it("says so on its row and counts the city's list from its own run", () => {
     const withAgent = { ...scan, items: [...scan.items, { id: "agent_bike_rack", target: "bike rack", map_icon: "",

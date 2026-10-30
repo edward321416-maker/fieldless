@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { filesUrl, reportUrl, STATIC_DEMO } from "./api";
 import { BENCHMARKS } from "./benchmarks";
+import type { CityItemCounts } from "./cityMatch";
 import { isFinished, yearsSpan } from "./format";
 import { colourOf, itemName, type Finding } from "./items";
+import type { Lens } from "./LensSwitch";
 import ShareButton from "./ShareButton";
 import { checkLine, cityLine, headline, itemNote } from "./summary";
 import type { Scan } from "./types";
@@ -18,7 +20,16 @@ interface Props {
   onIntro: () => void; // back to what Fieldless does
   hasReport: boolean; // the server has the survey's results report (/api/config report)
   agentCity?: Record<string, { found: number; covered: number }>; // an agent item's rows against the city's list
+  lens?: Lens; // what the map shows; "records": each row says how its findings pair with the city's records
+  cityCounts?: Record<string, CityItemCounts>; // per item with a city list (cityMatch.cityCounts)
   children?: ReactNode; // the add-item panel, above the files
+}
+
+// A row's line in the city-records lens: the three numbers the map's three shapes show. An agent's item is compared
+// by its own run, which counts the city's records found, not each finding's pairing.
+function recordsNote(c: CityItemCounts | undefined, agent: { found: number; covered: number } | undefined): string {
+  if (c) return `${c.matched} matched · ${c.notInList} not in the city's list · ${c.missed} to check`;
+  return (agent && cityLine(agent, true)?.text) ?? "No city list to compare";
 }
 
 // A finished survey (docs/specs/2026-10-29-cleanup-design.md 4): one number on top, one row per item that is also the
@@ -29,6 +40,7 @@ export default function ResultsPanel(props: Props) {
   const city = scan.city_check;
   const top = headline(scan, BENCHMARKS[scan.standard]);
   const present = items.filter((it) => findings.some((f) => f.item === it.id));
+  const recordsLens = props.lens === "records";
 
   return (
     <section className="panel-section results" aria-labelledby="results-title">
@@ -58,13 +70,23 @@ export default function ResultsPanel(props: Props) {
             title={`Measured offline on ${city.measured_at} (${city.city})`}>How the city list check works</a>
         )}
       </div>
+      {recordsLens && (
+        <div className="lens-legend">
+          <ul>
+            <li><span className="shape shape-in" aria-hidden="true" />Found and in the city's list</li>
+            <li><span className="shape shape-not" aria-hidden="true" />Found, not in the city's list</li>
+            <li><span className="shape shape-missed" aria-hidden="true" />In the city's list, not found (to check)</li>
+          </ul>
+          <p className="hint small">Paired by photo position and viewing direction</p>
+        </div>
+      )}
       <ul className="item-rows">
         {present.map((it) => {
           const mine = findings.filter((f) => f.item === it.id);
           const name = itemName(it.id, items);
           const on = !props.hidden.has(it.id);
           const agentCity = props.agentCity?.[it.id];
-          const note = itemNote({
+          const note = recordsLens ? recordsNote(props.cityCounts?.[it.id], agentCity) : itemNote({
             city: agentCity ? cityLine(agentCity, true)?.text ?? null : cityLine(city?.items[it.id], !!city)?.text ?? null,
             confirmed: mine.filter((f) => f.badge === "defect" && f.status === "verified").length,
             possible: mine.filter((f) => f.badge === "defect" && f.status !== "verified").length,
