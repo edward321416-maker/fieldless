@@ -6,7 +6,7 @@ import AreaPanel from "./AreaPanel";
 import CoverageGuide from "./CoverageGuide";
 import Attribution from "./Attribution";
 import DemoNotice from "./DemoNotice";
-import IntroPanel, { IntroMapKey, IntroPhoto, type Example } from "./IntroPanel";
+import Overview, { type Example } from "./Overview";
 import { startsWithIntro } from "./intro";
 import { isActive, itemFromHash, withRun } from "./itemRun";
 import EvidenceCard from "./EvidenceCard";
@@ -16,7 +16,7 @@ import { findingsOf, itemName, keyOf, type Finding } from "./items";
 import MapView from "./MapView";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
-import { clearBox, reviewProgress } from "./summary";
+import { reviewProgress } from "./summary";
 import type { Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, Walk } from "./types";
 
 const POLL_MS = 3000;
@@ -34,9 +34,8 @@ export default function App() {
   const [scanId, setScanId] = useState<number | null>(scanFromHash());
   // A first visit opens on what Fieldless does, with the first example survey loaded behind it (design 1).
   const [intro, setIntro] = useState(() => startsWithIntro(window.location.hash));
-  const introRef = useRef(intro);
-  introRef.current = intro;
   const [scan, setScan] = useState<Scan | null>(null);
+  const [resultsOf, setResultsOf] = useState<number | null>(null); // the survey whose findings are loaded
   const [entrances, setEntrances] = useState<Entrance[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [walks, setWalks] = useState<Walk[]>([]);
@@ -47,6 +46,9 @@ export default function App() {
   const [run, setRun] = useState<ItemRun | null>(null);
   const [runTick, setRunTick] = useState(0); // a new look at the run, after a person's answers are sent
   const [itemRuns, setItemRuns] = useState<ItemRunSummary[]>([]);
+  // The overview's own data: the first example's finished item runs and the other example surveys.
+  const [overviewRuns, setOverviewRuns] = useState<ItemRun[]>([]);
+  const [others, setOthers] = useState<{ scan: Scan; name: string }[]>([]);
   const [streets, setStreets] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<Picked | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -65,6 +67,7 @@ export default function App() {
   const getView = useRef<(() => Bbox) | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const overviewRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     api.config().then(setConfig).catch((e: Error) => setError(e.message));
@@ -145,6 +148,7 @@ export default function App() {
         if (cancelled) return;
         setEntrances(e);
         setIssues(i);
+        setResultsOf(scan.id);
       })
       .catch((e: Error) => !cancelled && setError(e.message));
     if (config?.items) {
@@ -154,14 +158,38 @@ export default function App() {
       .then((w) => {
         if (cancelled) return;
         setWalks(w);
-        // the photographed streets, not the drawn box's empty corners; the introduction shows the whole example area
-        setFitTo(introRef.current ? [...scan.bbox] : contentBounds(w) ?? scan.bbox);
+        // the photographed streets, not the drawn box's empty corners
+        setFitTo(contentBounds(w) ?? scan.bbox);
       })
       .catch(() => !cancelled && setWalks([]));
     return () => {
       cancelled = true;
     };
   }, [scan?.id, finished, config?.items]);
+
+  // The overview sets the other example surveys beside the first; one that fails to load is left out.
+  useEffect(() => {
+    if (!intro || demos.length < 2 || others.length > 0) return;
+    let cancelled = false;
+    Promise.all(demos.slice(1).map((d) => api.scan(d.scan_id).then((s) => [{ scan: s, name: d.name }]).catch(() => [])))
+      .then((list) => !cancelled && setOthers(list.flat()));
+    return () => {
+      cancelled = true;
+    };
+  }, [intro, demos, others.length]);
+
+  // The overview shows the first example's two newest finished item runs, each with its phrase tries and results.
+  useEffect(() => {
+    if (!intro) return;
+    let cancelled = false;
+    const done = itemRuns.filter((r) => r.status === "done")
+      .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 2);
+    Promise.all(done.map((r) => api.itemRun(r.id).catch(() => null)))
+      .then((list) => !cancelled && setOverviewRuns(list.filter((r): r is ItemRun => r?.status === "done")));
+    return () => {
+      cancelled = true;
+    };
+  }, [intro, itemRuns]);
 
   // Bring the evidence card or the review panel into view when it opens (on a phone it sits below the map).
   useEffect(() => {
@@ -209,7 +237,8 @@ export default function App() {
     setNewSurvey(false);
     setSelecting(false);
     if (demos.length > 0) openScan(demos[0].scan_id);
-    if (scan && demos[0]?.scan_id === scan.id) setFitTo([...scan.bbox]);
+    // the overview has no map: the next map opened from it shows the example's photographed streets
+    if (scan && demos[0]?.scan_id === scan.id) setFitTo(contentBounds(walks) ?? [...scan.bbox]);
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }
 
@@ -226,16 +255,14 @@ export default function App() {
       .sort((a, b) => (order.get(a.f.item) ?? 99) - (order.get(b.f.item) ?? 99) || a.i - b.i)
       .map(({ f }) => f);
   }, [joined.issues, entrances, items]);
-  // The introduction's photos: per item, its first finding with a photo; over the map, the first finding the models
-  // were sure of whose box reads at a glance (the panel's order and the box's shape, so no item is chosen by name).
+  // The overview's photos and counts: per item, its first finding with a photo (the panel's order, so no item is
+  // chosen by name), and how many findings it has, entrances included.
   const examples: Example[] = useMemo(() => items.flatMap((it) => {
     const f = findings.find((x) => x.item === it.id && x.picked.item.evidence);
     return f ? [{ item: it.id, url: f.picked.item.evidence!.url, box: f.box }] : [];
   }), [items, findings]);
-  const introPhoto = useMemo(() => {
-    const sure = findings.filter((f) => f.status === "auto" && f.box && f.box.length === 4 && f.picked.item.evidence);
-    return sure.find((f) => clearBox(f.box)) ?? sure[0] ?? null;
-  }, [findings]);
+  const counts = useMemo(() => Object.fromEntries(items.map((it) => [it.id, findings.filter((f) => f.item === it.id).length])),
+    [items, findings]);
   const selected: Finding | null = picked ? findings.find((f) => f.key === keyOf(picked)) ?? null : null;
   // "Utility or streetlight pole · 3 of 20 · position approximate": the marker's name tag (ui-redesign 3.3).
   const selectedLabel = useMemo(() => {
@@ -273,50 +300,86 @@ export default function App() {
     setReviewing(true);
   }
 
+  // The top bar, the same over the overview and over a survey.
+  const header = (
+    <header className="top">
+      <button type="button" className="skip-link" onClick={() => (intro ? overviewRef : panelRef).current?.focus()}>
+        {intro ? "Skip to the overview" : "Skip to the survey panel"}
+      </button>
+      <h1 className="brand">
+        <button type="button" className="brand-link" onClick={goIntro} title="What Fieldless does">
+          {/* the logo: a walk with two photo points (docs/ui-rules.md U10) */}
+          <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+            <rect width="24" height="24" rx="6" fill="#1d4ed8" />
+            <path d="M5 17L10 9l4 5 5-7" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="10" cy="9" r="1.6" fill="#fff" />
+            <circle cx="14" cy="14" r="1.6" fill="#fff" />
+          </svg>
+          Fieldless
+        </button>
+      </h1>
+      {demos.length > 0 && (
+        // One picker for the example surveys, as Project Sidewalk picks its city (docs/specs/2026-10-29-cleanup-design.md 2)
+        <label className="example-picker">
+          <span className="visually-hidden">Example survey</span>
+          <select value={intro || newSurvey || !demos.some((d) => d.scan_id === scanId) ? "" : String(scanId)}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              setIntro(false);
+              setNewSurvey(false);
+              openScan(Number(e.target.value));
+            }}>
+            <option value="" disabled>Examples</option>
+            {demos.map((d) => <option key={d.scan_id} value={d.scan_id}>Example: {d.name}</option>)}
+          </select>
+        </label>
+      )}
+      {!STATIC_DEMO && (
+        <button type="button" className="primary new-survey" aria-expanded={newSurvey}
+          onClick={() => {
+            setIntro(false);
+            setNewSurvey((v) => !v);
+          }}>
+          + New survey
+        </button>
+      )}
+    </header>
+  );
+
+  // A first visit reads the overview, a full-width page without the map; a survey opened from it brings the map.
+  if (intro) {
+    return (
+      <div className="app overview-mode">
+        {header}
+        <main className="overview-page" id="overview" ref={overviewRef} tabIndex={-1}>
+          {error && <p className="error" role="alert">{error}</p>}
+          <Overview scan={resultsOf === scan?.id ? scan : null} name={demoName} issues={issues} counts={counts}
+            examples={examples} runs={overviewRuns.filter((r) => r.scan_id === scan?.id)} others={others}
+            canSurvey={!STATIC_DEMO} onSee={seeExample}
+            onSurvey={() => {
+              setIntro(false);
+              setNewSurvey(true);
+            }}
+            onOpenScan={(id) => {
+              setIntro(false);
+              openScan(id);
+            }}
+            onOpenRun={(scanId, runId) => {
+              setIntro(false);
+              openScan(scanId);
+              setItemRunId(runId);
+              setRunTick((t) => t + 1);
+            }} />
+          {STATIC_DEMO && <DemoNotice />}
+          <Attribution />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
-      <header className="top">
-        <button type="button" className="skip-link" onClick={() => panelRef.current?.focus()}>
-          Skip to the survey panel
-        </button>
-        <h1 className="brand">
-          <button type="button" className="brand-link" onClick={goIntro} title="What Fieldless does">
-            {/* the logo: a walk with two photo points (docs/ui-rules.md U10) */}
-            <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
-              <rect width="24" height="24" rx="6" fill="#1d4ed8" />
-              <path d="M5 17L10 9l4 5 5-7" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="10" cy="9" r="1.6" fill="#fff" />
-              <circle cx="14" cy="14" r="1.6" fill="#fff" />
-            </svg>
-            Fieldless
-          </button>
-        </h1>
-        {demos.length > 0 && (
-          // One picker for the example surveys, as Project Sidewalk picks its city (docs/specs/2026-10-29-cleanup-design.md 2)
-          <label className="example-picker">
-            <span className="visually-hidden">Example survey</span>
-            <select value={intro || newSurvey || !demos.some((d) => d.scan_id === scanId) ? "" : String(scanId)}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                setIntro(false);
-                setNewSurvey(false);
-                openScan(Number(e.target.value));
-              }}>
-              <option value="" disabled>Examples</option>
-              {demos.map((d) => <option key={d.scan_id} value={d.scan_id}>Example: {d.name}</option>)}
-            </select>
-          </label>
-        )}
-        {!STATIC_DEMO && (
-          <button type="button" className="primary new-survey" aria-expanded={newSurvey}
-            onClick={() => {
-              setIntro(false);
-              setNewSurvey((v) => !v);
-            }}>
-            + New survey
-          </button>
-        )}
-      </header>
+      {header}
       <MapView
         selecting={selecting}
         newSurvey={newSurvey}
@@ -329,7 +392,7 @@ export default function App() {
         items={items}
         hidden={hidden}
         focusItem={intro || newSurvey ? null : openItem}
-        padLeft={intro ? 370 : 0}
+        padLeft={0}
         walks={newSurvey ? previewWalks : walks}
         selected={intro || newSurvey ? null : selected}
         selectedLabel={selectedLabel}
@@ -338,8 +401,6 @@ export default function App() {
         onReady={(fn) => (getView.current = fn)}
         onStreets={setStreets}
       >
-        {intro && <IntroMapKey coverage={!!config?.coverage_tiles} />}
-        {intro && wide && introPhoto && scan && <IntroPhoto finding={introPhoto} items={items} photos={scan.image_count} />}
         {newSurvey && (
           <CoverageGuide coverage={!!config?.coverage_tiles} demos={demos}
             onGo={(b) => setFitTo([b[0], b[1], b[2], b[3]])} />
@@ -350,13 +411,6 @@ export default function App() {
       </MapView>
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
         {error && <p className="error" role="alert">{error}</p>}
-        {intro && (
-          <IntroPanel scan={scan} name={demoName} examples={examples} canSurvey={!STATIC_DEMO} onSee={seeExample}
-            onSurvey={() => {
-              setIntro(false);
-              setNewSurvey(true);
-            }} />
-        )}
         <div ref={detailRef}>
           {selected && !newSurvey && !intro && (
             <EvidenceCard finding={selected} list={cardList} queue={reviewing} items={items} backLabel={backLabel}
