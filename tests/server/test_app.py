@@ -405,6 +405,7 @@ def test_a_finished_survey_downloads_as_one_zip_of_report_geojson_csv_and_eviden
     assert any(n.endswith(".csv") for n in names)
     assert "Myeongdong" in z.read("report.html").decode("utf-8")  # the demo survey's name titles the report
     assert z.read(f"evidence/scan{scan_id}_entrance1.jpg") == b"jpg"
+    assert client.get(f"/api/scans/{scan_id}/files.zip").content == response.content  # the same bytes every time
 
 
 def test_survey_files_wait_for_the_survey_to_finish(make):

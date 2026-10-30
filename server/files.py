@@ -9,6 +9,17 @@ from pathlib import Path
 from assist import export, report
 from pipeline.survey_items import Standard
 
+# Every entry gets this time, so the same files make the same zip: the static site keeps each new zip it is given,
+# and zips that differed only in their entries' times filled its 1 GB (2026-10-30).
+ENTRY_TIME = (2026, 1, 1, 0, 0, 0)
+
+
+def _add(z: zipfile.ZipFile, source: Path, name: str, compress_type: int) -> None:
+    info = zipfile.ZipInfo(name, ENTRY_TIME)
+    info.compress_type = compress_type
+    info.external_attr = 0o644 << 16
+    z.writestr(info, Path(source).read_bytes())
+
 
 def survey_zip(scan_data: dict, standard: Standard, evidence_dir: Path, area: str | None = None,
                notes: dict | None = None) -> bytes:
@@ -21,9 +32,9 @@ def survey_zip(scan_data: dict, standard: Standard, evidence_dir: Path, area: st
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for path in sorted(Path(tmp).iterdir()):
-                z.write(path, path.name)
+                _add(z, path, path.name, zipfile.ZIP_DEFLATED)
             for rel in photos:  # "evidence/<name>"; JPEGs are already compressed
                 source = Path(evidence_dir) / Path(rel).name
                 if source.is_file():
-                    z.write(source, rel, compress_type=zipfile.ZIP_STORED)
+                    _add(z, source, rel, zipfile.ZIP_STORED)
     return buf.getvalue()
