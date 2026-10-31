@@ -1,6 +1,7 @@
 """One scan at a time on a background thread. Spend is capped per scan and per day (spec 13), so scans never run
 side by side. Queued scans are picked up when the worker starts. A scan a restart left running is marked failed, not
-resumed, because resuming would pay again for the stage that was cut off. Its spend so far is already saved.
+resumed, because resuming would pay again for the stage that was cut off. Its spend so far was saved with it: on a host
+whose disk does not survive, the backup is asked for when a job starts and as it spends (the checkpoint hook).
 
 Item runs (plan 12: a survey item the agent writes and runs on a finished scan's photos) share the queue, so a run
 and a scan never spend side by side either. A run waits for a person's answers in "labels_needed", off the queue;
@@ -9,25 +10,30 @@ import importlib
 import logging
 import queue
 import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
 
 from assist import report
 from pipeline import db, item_runs, second_opinion
 from pipeline.cost import CostCapReached
-from pipeline.meta_api import MetaApi, error_text
+from pipeline.meta_api import MetaApi, RunAborted, error_text
 from pipeline.runner import SAVE_EVERY_USD, Scan, meter_for, refuse_in_worker, run_scan, spend_saver  # noqa: F401
 
 log = logging.getLogger(__name__)
+
+CHECKPOINT_USD = 0.25  # a restart loses at most this much of a running job's spend, and the save delay
+QUEUED_TOO_LONG = "This survey waited past the UTC day it was started on; start it again."  # the day's cap counts it
 
 
 class ItemRunStopped(Exception):
     """An item run cannot go on; the message is the one sentence the screen shows."""
 
+
 class ScanWorker:
     def __init__(self, db_path: Path, run_dir: Path, run=None, on_done=None, public_cap_usd: float | None = None,
                  glimmer_daily_usd: float = second_opinion.GLIMMER_DAILY_USD, glimmer_total_usd: float | None = None,
-                 items=None):
+                 items=None, checkpoint=None):
         self.db_path = Path(db_path)
         self.run_dir = Path(run_dir)
         self.public_cap_usd = public_cap_usd  # Settings.public_cost_cap_usd
@@ -35,8 +41,10 @@ class ScanWorker:
         self._run = run or self._run_pipeline
         self._on_done = on_done  # called with the scan id after every scan or item run, finished or crashed
         self._items = items  # the agent's item writer (assist.custom_item, loaded when a run first needs it)
+        self.checkpoint = checkpoint or (lambda: None)  # asks for a backup; never blocks or raises (request_save)
         self._queue: queue.Queue = queue.Queue()
         self._thread: threading.Thread | None = None
+        self._job_started: float | None = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -66,14 +74,28 @@ class ScanWorker:
                     self._queue.put(("item", r["id"]))
         finally:
             conn.close()
+        self._start_thread()
+
+    def _start_thread(self) -> None:
         self._thread = threading.Thread(target=self._loop, name="scan-worker", daemon=True)
         self._thread.start()
 
+    def _put(self, job) -> None:
+        self._queue.put(job)
+        if self._thread is not None and not self._thread.is_alive():  # no one would read the queue
+            log.error("the worker thread had stopped; starting it again")
+            self._start_thread()
+
     def submit(self, scan_id: int) -> None:
-        self._queue.put(scan_id)
+        self._put(scan_id)
 
     def submit_item(self, run_id: int) -> None:
-        self._queue.put(("item", run_id))
+        self._put(("item", run_id))
+
+    def health(self) -> dict:
+        started = self._job_started
+        return {"alive": self._thread is not None and self._thread.is_alive(), "queued": self._queue.qsize(),
+                "running_for_s": None if started is None else round(time.time() - started)}
 
     def join(self) -> None:
         """Wait until every submitted scan has finished (tests)."""
@@ -91,6 +113,8 @@ class ScanWorker:
             try:
                 if job is None:
                     return
+                self._job_started = time.time()
+                self.checkpoint()  # a restart now must find the row, or the page polling it gets a 404 and the id is free
                 if isinstance(job, tuple):
                     scan_id = self._run_item(job[1])
                 else:
@@ -102,6 +126,7 @@ class ScanWorker:
                 else:
                     self._mark_failed(job, exc)
             finally:
+                self._job_started = None
                 if scan_id is not None and self._on_done:
                     try:
                         self._on_done(scan_id)
@@ -133,6 +158,18 @@ class ScanWorker:
         except Exception:
             log.exception("could not mark item run %s as failed", run_id)
 
+    def _saving_spend(self, save, spent_usd: float):
+        """A CostMeter hook: spend_saver's save, and a backup each time the spend has grown by CHECKPOINT_USD."""
+        backed_up = [spent_usd]
+
+        def hook(spent_usd: float) -> None:
+            save(spent_usd)
+            if spent_usd - backed_up[0] >= CHECKPOINT_USD:
+                backed_up[0] = spent_usd
+                self.checkpoint()
+
+        return hook
+
     def _run_item(self, run_id: int) -> int | None:
         """One step of an item run: write and test the item (assist.custom_item.start, or .resume with a person's
         answers), then run it on the scan's photos. Returns the run's scan id."""
@@ -148,10 +185,14 @@ class ScanWorker:
             run = db.item_run(conn, run_id)
             if run["status"] != "queued":
                 return run["scan_id"]
+            if not run["created_at"].startswith(db.now()[:10]):
+                db.update_item_run(conn, run_id, status="failed", error=QUEUED_TOO_LONG)
+                return run["scan_id"]
             db.update_item_run(conn, run_id, status="running", error=None)
             custom = self._items or importlib.import_module("assist.custom_item")
             meter = item_runs.meter_for_item(conn, run, public_cap_usd=self.public_cap_usd)
-            meter.on_spend = spend_saver(self.db_path, run_id, run["cost_usd"], update=db.update_item_run)
+            meter.on_spend = self._saving_spend(spend_saver(self.db_path, run_id, run["cost_usd"],
+                                                            update=db.update_item_run), run["cost_usd"])
             api = MetaApi(self.run_dir / "calls.jsonl", meter)
             try:
                 photos = item_runs.scan_photos(conn, run["scan_id"])
@@ -169,17 +210,22 @@ class ScanWorker:
                     check, test = result["check"], dict(result.get("test") or {})
                     db.update_item_run(conn, run_id, check_def=asdict(check), test=test)
                     rows = item_runs.run_item_on_scan(api, photos, check, self.run_dir, run_id, on_progress=progress)
-                    city = custom.city_check(photos, check, rows)
+                    db.update_item_run(conn, run_id, rows=rows, cost_usd=meter.spent_usd)  # kept whatever follows
+                    try:
+                        city = custom.city_check(photos, check, rows)
+                    except Exception:  # the rows stand without the comparison
+                        log.exception("city check failed for item run %s", run_id)
+                        city = None
                     if city is not None:
                         test["city"] = city
-                    db.update_item_run(conn, run_id, status="done", rows=rows, test=test, cost_usd=meter.spent_usd)
+                    db.update_item_run(conn, run_id, status="done", test=test, cost_usd=meter.spent_usd)
                 else:
                     db.update_item_run(conn, run_id, status="failed", error=result.get("reason") or "failed",
                                        test=result.get("test"), cost_usd=meter.spent_usd)
             except CostCapReached:
                 db.update_item_run(conn, run_id, status="failed", cost_usd=meter.spent_usd,
                                    error=f"The run stopped at its spending limit (${meter.cap_usd:.2f})")
-            except ItemRunStopped as stop:
+            except (ItemRunStopped, RunAborted) as stop:
                 db.update_item_run(conn, run_id, status="failed", error=str(stop), cost_usd=meter.spent_usd)
             except Exception as exc:
                 log.exception("item run %s failed", run_id)
@@ -217,12 +263,18 @@ class ScanWorker:
         conn = db.connect(self.db_path)
         try:
             scan = db.get_scan(conn, scan_id)
+            if scan["status"] == "queued" and not scan["created_at"].startswith(db.now()[:10]):
+                db.update_scan(conn, scan_id, status="failed", error=QUEUED_TOO_LONG)
+                return
             meter = meter_for(conn, scan, public_cap_usd=self.public_cap_usd)
-            meter.on_spend = spend_saver(self.db_path, scan_id, scan["cost_usd"])
+            meter.on_spend = self._saving_spend(spend_saver(self.db_path, scan_id, scan["cost_usd"]), scan["cost_usd"])
             api = MetaApi(self.run_dir / "calls.jsonl", meter)
             run_scan(Scan(conn, scan_id, api, self.run_dir, scan["bbox"],
                           second_opinion=second_opinion.from_env(self.run_dir), judge=self.judge()))
             if db.get_scan(conn, scan_id)["status"] == "done":
-                self._write_report_text(conn, scan_id, api)
+                try:
+                    self._write_report_text(conn, scan_id, api)
+                finally:
+                    db.update_scan(conn, scan_id, cost_usd=meter.spent_usd)  # run_scan's last save came before it
         finally:
             conn.close()

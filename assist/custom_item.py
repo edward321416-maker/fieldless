@@ -13,6 +13,7 @@ finished scan's photos (pipeline.item_runs.ScanPhotos). No person is asked anyth
 A test photo's id is the scan's photo idx, as a string. Every step is told to on_progress in a sentence a person reads
 on the screen."""
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,8 @@ from pipeline import config, second_opinion
 from pipeline.parallel import run_parallel
 from pipeline.sam_output import confident, parse
 from pipeline.survey_items import Check
+
+log = logging.getLogger(__name__)
 
 PASS_KEPT, PASS_FALSE = 0.7, 0.2  # of photos showing the target, the share kept; of photos without it, kept wrongly
 MIN_POSITIVES = 3  # fewer photos showing the target than this cannot test an item
@@ -79,8 +82,16 @@ def _key(judge, photos, target: str, idxs: list[int]) -> TestSet:
     plain = Check(id="key", find=target, target=target, report_when="", label_yes="", label_no="", label_unclear="",
                   ask=f"Does this street photo show a {target}? Answer yes only if one is clearly in view. "
                       f"{items_mod.UNCLEAR}")
-    answers = run_parallel(lambda i: counted_inventory(judge.answer(plain, photos.paths[i])), idxs, 6)
-    return TestSet("key", target, {}, tuple(Photo(str(i), a, {}) for i, a in zip(idxs, answers)))
+
+    def answer(i: int) -> str | None:
+        try:
+            return counted_inventory(judge.answer(plain, photos.paths[i]))
+        except Exception:  # one photo less to test on; start() stops if too few are left
+            log.exception("%s could not answer on photo %s", JUDGE, i)
+            return None
+
+    answers = run_parallel(answer, idxs, 6)
+    return TestSet("key", target, {}, tuple(Photo(str(i), a, {}) for i, a in zip(idxs, answers) if a is not None))
 
 
 def _spread(seq: list, k: int) -> list:

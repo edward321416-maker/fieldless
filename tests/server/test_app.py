@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from pipeline import config, db, mapillary, survey_items
 from pipeline.runner import RESUME_MIN_USD
-from server import limits
+from server import app as app_module, limits
 from server.app import create_app
 from server.settings import Settings
 
@@ -152,7 +152,7 @@ def test_invite_code_is_required_when_set(make):
 
 
 def test_three_scans_per_address_per_day(make):
-    client, _ = make()
+    client, _ = make(max_queued=0)
     for _ in range(3):
         assert client.post("/api/scans", json={"bbox": BBOX}).status_code == 202
     assert client.post("/api/scans", json={"bbox": BBOX}).status_code == 429
@@ -292,12 +292,20 @@ class FakeStore:
         self.restored = 0
         self.saves = 0
 
+    restore_failed = False
+
     def restore(self):
         self.restored += 1
         return False
 
     def request_save(self):
         self.saves += 1
+
+    def flush(self):
+        pass
+
+    def health(self):
+        return {"restore_failed": False, "last_save_error": None}
 
 
 def test_the_dataset_store_restores_at_start_and_saves_after_a_review(tmp_path):
@@ -677,3 +685,36 @@ def test_a_surveys_call_record_is_served_when_one_was_made(make):
     (config.run_dir("server") / f"call_stats_scan{scan_id}.json").write_text("{broken", encoding="utf-8")
     assert client.get(f"/api/scans/{scan_id}/calls").status_code == 404
     conn.close()
+
+
+def test_a_request_body_past_the_limit_is_refused(make):
+    client, _ = make()
+    assert client.post("/api/scans", json={"bbox": [0.0] * 20_000}).status_code == 413
+
+
+def test_a_blank_item_target_is_refused(make):
+    conn, scan_id = item_scan()
+    client, _ = make(item_invite_code="hydrant")
+    reply = client.post(f"/api/scans/{scan_id}/items", json={"target": "    ", "invite_code": "hydrant"})
+    assert reply.status_code == 422 and "target" in reply.json()["detail"]
+    conn.close()
+
+
+def test_a_preview_or_a_zip_past_its_slots_is_told_to_come_back(make, monkeypatch):
+    monkeypatch.setattr(app_module, "PREVIEW_SLOTS", 0)
+    monkeypatch.setattr(app_module, "ZIP_SLOTS", 0)
+    monkeypatch.setattr(app_module, "ZIP_WAIT_S", 0.01)
+    scan_id, *_ = seed()
+    client, _ = make()
+    assert client.post("/api/preview", json={"bbox": BBOX}).status_code == 503
+    assert client.get(f"/api/scans/{scan_id}/files.zip").status_code == 503
+
+
+def test_a_tile_gives_its_slot_back_when_it_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "TILE_SLOTS", 1)
+
+    def down(z, x, y):
+        raise mapillary.MapillaryError("stalled")
+
+    client = TestClient(create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(), tile=down))
+    assert [client.get(f"/api/mapillary/tiles/13/{x}/0").status_code for x in range(2)] == [502, 502]

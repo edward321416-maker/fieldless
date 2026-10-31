@@ -147,6 +147,9 @@ def meter_for(conn, scan: dict, scan_cap_usd: float | None = None, public_cap_us
 
 def stage_collect(s: Scan) -> None:
     budget = config.photo_budget(s.max_photos, checks=len(s.standard.checks), cap_usd=s.api.meter.cap_usd)
+    if budget < collect.MIN_SEQUENCE_PHOTOS:  # no walk is that short, so the area would be blamed for the budget
+        raise CostCapReached(f"cost cap ${s.api.meter.cap_usd:.2f}: what is left pays for {budget} photos, too few "
+                             f"for a walk")
     frames = collect.collect(tuple(s.bbox), budget)
     if not frames:
         raise NoPhotos("no recent pedestrian photos in this area")
@@ -402,24 +405,41 @@ def stage_defects(s: Scan) -> None:
         gone: list[dict] = []
         rows, missing = _run_check(s, check, clips, photos, by_idx, judge, dropped=gone,
                                    video=(answers[check.id], videos) if check.find_by == "video" else None)
-        if s.second_opinion is not None:
+        if missing.get("stopped"):
+            stops.append(missing.pop("stopped"))
+        elif s.second_opinion is not None:
             rows = second_opinion.apply(s.second_opinion, check, rows, photos, s.workers)
         return rows, missing, gone
 
+    stops: list[BaseException] = []
+
+    def paid_for(check):
+        """one(check), or None when the cost cap or the circuit breaker stopped it before it had any rows."""
+        try:
+            return one(check)
+        except (CostCapReached, RunAborted) as exc:
+            stops.append(exc)
+            return None
+
     # The checks run at once (the API client keeps the requests in flight under its limit); Glimmer's run after, back
-    # to back. Rows are written in to_run's order.
+    # to back. Rows are written in to_run's order. A cap or a stop ends the stage only after the finished rows are in:
+    # they are paid for.
     plain = [c for c in to_run if not (s.judge is not None and c.judge == "glimmer")]
-    done = dict(zip((c.id for c in plain), run_parallel(one, plain, len(plain))))
+    done = dict(zip((c.id for c in plain), run_parallel(paid_for, plain, len(plain))))
     for check in to_run:
-        if check.id not in done:
-            done[check.id] = one(check)
+        if check.id not in done and not stops:
+            done[check.id] = paid_for(check)
     for check in to_run:
+        if done.get(check.id) is None:
+            continue
         rows, missing, gone = done[check.id]
         unavailable[check.id] = missing
         for row in rows:
             db.add_issue(s.conn, s.scan_id, row)
         for pick in gone:
             db.add_dropped(s.conn, s.scan_id, pick)
+    if stops:
+        raise stops[0]
     if not only:
         s.state("defects_unavailable").write_text(json.dumps(failed), encoding="utf-8")
         s.state("defects_checks").write_text(json.dumps(checks, ensure_ascii=False), encoding="utf-8")
@@ -443,22 +463,27 @@ def stage_evidence(s: Scan, kinds: tuple[str, ...] = ("entrance", "issue")) -> N
     todo += ([("issue", r) for r in db.issues(s.conn, s.scan_id) if not (r["evidence"] or {}).get("image")]
              if "issue" in kinds else [])
 
-    def one(item):
-        kind, row = item
+    records: dict[int, dict] = {}  # finished rows by their place in todo, kept when the cap stops the rest
+
+    def one(numbered):
+        n, (kind, row) = numbered
         frame = by_idx[row["frame_idx"]]
         try:
             photo = _original_photo(frame["image_id"]) if kind == "entrance" else photos[row["frame_idx"]]
-            return evidence.make_evidence(s.api, photo, frame, out / evidence_name(s.scan_id, kind, row["id"],
-                                                                                   frame["image_id"]))
+            records[n] = evidence.make_evidence(s.api, photo, frame, out / evidence_name(s.scan_id, kind, row["id"],
+                                                                                         frame["image_id"]))
         except CostCapReached:
             raise
         except Exception as exc:  # no photo is stored without blurring; this row is retried on the next run
-            return {"error": error_text(exc)}
+            records[n] = {"error": error_text(exc)}
 
-    records = run_parallel(one, todo, s.workers)
-    for (kind, row), record in zip(todo, records):
-        (db.update_entrance if kind == "entrance" else db.update_issue)(s.conn, row["id"], evidence=record)
-    failed = sum("error" in r for r in records)
+    try:
+        run_parallel(one, list(enumerate(todo)), s.workers)
+    finally:
+        for n, record in records.items():
+            kind, row = todo[n]
+            (db.update_entrance if kind == "entrance" else db.update_issue)(s.conn, row["id"], evidence=record)
+    failed = sum("error" in r for r in records.values())
     if failed:
         raise RuntimeError(f"evidence failed for {failed} of {len(todo)} rows; they are retried on the next run")
 

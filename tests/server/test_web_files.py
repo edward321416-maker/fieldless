@@ -32,4 +32,6 @@ def test_the_web_app_goes_out_whole_gzipped_and_kept_by_the_browser(tmp_path):
     page = client.get("/")
     assert page.status_code == 200 and b"index-AbC123.js" in page.content
     assert page.headers["cache-control"] == "no-cache"  # it names this build's assets
+    same = client.get("/", headers={"if-none-match": page.headers["etag"]})
+    assert same.status_code == 304 and same.headers["cache-control"] == "no-cache"  # or the old page is kept for an hour
     assert client.get("/assets/missing.js").status_code == 404

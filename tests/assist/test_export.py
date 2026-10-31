@@ -193,3 +193,9 @@ def test_without_a_city_check_the_files_are_as_before(tmp_path):
     with open(paths["csv"]["curb_ramp_warning"], encoding="utf-8-sig", newline="") as f:
         assert csv.DictReader(f).fieldnames == ["lat", "lng", *export.PROPERTIES]
     assert paths["city_records"] == {}
+
+
+def test_text_that_starts_like_a_formula_stays_text_in_a_spreadsheet():
+    assert [export._cell(v) for v in ("=HYPERLINK(1)", "+1", "-1", "@x", "\tx", "\rx")] == [
+        "'=HYPERLINK(1)", "'+1", "'-1", "'@x", "'\tx", "'\rx"]
+    assert [export._cell(v) for v in ("Pike St", -1.5, 3, None, True)] == ["Pike St", "-1.5", "3", "", "true"]

@@ -123,6 +123,19 @@ def test_the_citys_list_adds_the_photos_it_says_should_show_one(data, monkeypatc
     assert out["test"]["layer"] == "SDOT benches" and out["test"]["labels"] == "model"
 
 
+class JudgeThatFailsOnce(FakeJudge):
+    def answer(self, check, photo, box=None):
+        if int(Path(photo).stem) == 0:
+            raise ConnectionError("no answer")
+        return super().answer(check, photo, box)
+
+
+def test_a_photo_the_second_model_could_not_answer_is_left_out_of_the_key(data):
+    photos = scan(data)
+    key = custom_item._key(JudgeThatFailsOnce(), photos, "public bench", [0, 1, 2, 20])
+    assert [p.id for p in key.photos] == ["1", "2", "20"]
+
+
 def test_too_few_photos_showing_it_is_not_tested(data):
     photos = scan(data)
     out = custom_item.start(fake_api(photos), photos, "public bench", lambda line: None, respond=agent_turns(),

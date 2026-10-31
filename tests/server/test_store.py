@@ -4,6 +4,7 @@ from contextlib import closing
 from pathlib import Path
 
 from pipeline import db
+from server import store as store_module
 from server.store import DB_NAME, GPU_LOG, DatasetStore, FolderBackup, folder_store
 
 
@@ -36,11 +37,21 @@ def test_restore_downloads_only_into_a_folder_without_a_database(tmp_path):
     assert store.restore() is False and len(calls) == 1  # the database is there now
 
 
-def test_a_failed_restore_still_lets_the_server_start(tmp_path):
+def test_a_failed_restore_still_lets_the_server_start_but_never_saves_over_the_backup(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RESTORE_WAIT_S", 0.0)
+    calls = []
+
     def offline(repo_id, **kwargs):
+        calls.append(repo_id)
         raise OSError("offline")
 
-    assert DatasetStore("me/data", tmp_path, api=FakeApi(), download=offline).restore() is False
+    api = FakeApi()
+    store = DatasetStore("me/data", tmp_path, api=api, download=offline)
+    assert store.restore() is False
+    assert len(calls) == store_module.RESTORE_ATTEMPTS and store.restore_failed
+    db.connect(tmp_path / DB_NAME).close()
+    store.save_now()
+    assert api.uploads == []
 
 
 def test_save_uploads_a_copy_of_the_database_and_the_evidence_only(tmp_path):

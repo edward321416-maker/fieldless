@@ -27,7 +27,7 @@ import cv2
 
 from pipeline import config, geo, media
 from pipeline.cost import CostCapReached
-from pipeline.meta_api import error_text, image_part, jpeg_part, text_part
+from pipeline.meta_api import RunAborted, error_text, image_part, jpeg_part, text_part
 from pipeline.parallel import run_parallel
 from pipeline.sam_output import check_frames, confident, parse
 from pipeline.survey_items import Check
@@ -410,6 +410,8 @@ def _check_rows(api, check: Check, clips: dict[int, list[int]], photos: dict[int
     """Rows for one check over every walk, and what could not be analysed: {"find": [photo idx], "ask": [photo idx]}.
     A check found by video takes SAM's answers on the videos from the caller, video = (texts, videos) as in
     video_picks, and "find" then lists the first photo of each video without an answer.
+    "stopped" holds the CostCapReached or RunAborted that stopped the answers part way, when one did: the rows are
+    what was answered before it, and the caller ends the run after keeping them.
     "not_target" lists the photos of picks the model said are not the target (no row), and `dropped`, when given,
     receives a record of each (db.add_dropped). Of a defect check's dropped picks, DROP_AUDIT_SHARE (at least one),
     chosen with audit_seed, still become rows for a person ("dropped_audit"): a person who finds the target there
@@ -456,13 +458,20 @@ def _check_rows(api, check: Check, clips: dict[int, list[int]], photos: dict[int
             if not _valid(answer):
                 raise ValueError(f"unexpected answer: {str(answer)[:200]}")
             if box and answer["visible"] and answer["answer"] == "unclear":
-                closer = api.spark_json([image_part(photo), jpeg_part(zoom_crop(photo, box)),
-                                         text_part(prompt(check, box) + ZOOM_NOTE)], "survey_check", SCHEMA)
+                try:
+                    closer = api.spark_json([image_part(photo), jpeg_part(zoom_crop(photo, box)),
+                                             text_part(prompt(check, box) + ZOOM_NOTE)], "survey_check", SCHEMA)
+                except (CostCapReached, RunAborted) as exc:  # the first answer is paid for and stands
+                    stops.append(exc)
+                    closer = None
+                except Exception:  # likewise
+                    closer = None
                 if _valid(closer):
                     answer = {**closer, "zoomed": True, "first": {k: answer.get(k) for k in ("answer", "note")}}
             return {**answer, "model": config.SPARK_MODEL} if judge is not None else answer
-        except CostCapReached:
-            raise
+        except (CostCapReached, RunAborted) as exc:  # the answers already in are paid for: the caller ends the run
+            stops.append(exc)
+            return {"error": error_text(exc)}
         except Exception as exc:  # this object only: reported as unavailable
             return {"error": error_text(exc)}
 
@@ -487,6 +496,7 @@ def _check_rows(api, check: Check, clips: dict[int, list[int]], photos: dict[int
     rows: list[dict] = []
     failed_ask: list[int] = []
     not_target: list[int] = []
+    stops: list[BaseException] = []
     if judge is None:
         gone: list[tuple[dict, dict]] = []
         for p, answer in zip(picks, run_parallel(spark, picks, workers)):
@@ -504,7 +514,8 @@ def _check_rows(api, check: Check, clips: dict[int, list[int]], photos: dict[int
             drop(p, answer, audited=i in sampled)
             if i in sampled:
                 rows.append(row(p, answer, ("needs_review", ["dropped_audit"], "unclear")))
-        return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target}
+        return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target,
+                      **({"stopped": stops[0]} if stops else {})}
 
     failures_in_a_row = [0]
 
@@ -565,4 +576,5 @@ def _check_rows(api, check: Check, clips: dict[int, list[int]], photos: dict[int
             continue
         rows.append(row(p, said, decided, extra))
     summary = {"model": judge.model, "answered": len(decisive), "fallback": len(fallback), "audit": audit}
-    return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target, "judge": summary}
+    return rows, {"find": failed_find, "ask": failed_ask, "not_target": not_target, "judge": summary,
+                  **({"stopped": stops[0]} if stops else {})}

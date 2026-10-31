@@ -24,6 +24,7 @@ MAX_BOXES = 16  # SAM accepts at most 16 prompted objects
 # Processes that decode masks; THRESHOLD_PARSE_PROCESSES overrides (the live container sets its own number).
 PARSE_PROCESSES = int(os.environ.get("THRESHOLD_PARSE_PROCESSES") or max(1, min(8, (os.cpu_count() or 2) - 1)))
 POOL_MIN_CHARS = 20_000  # a smaller answer is decoded in place: sending it to a process costs more than it saves
+DECODE_TIMEOUT_S = 300  # a worker process that stopped answering; a large answer decodes in under a minute
 # The record grammar of meta_sam_parser (_segmentation.py): a line is a frame header <Nf> (optional ;fields)
 # followed by records, each an object id and its <|box;...|> and <|mask;...|> tokens; payloads never contain "|".
 _LINE = re.compile(r"<([0-9]+)f(?:;[^>]*)?>(.*)")
@@ -189,10 +190,10 @@ def parse_away(text: str, video: bool) -> list[Seg]:
             _pool = _new_pool()
         pool = _pool
     try:
-        return pool.submit(parse, text, video).result()
+        return pool.submit(parse, text, video).result(timeout=DECODE_TIMEOUT_S)
     except ValueError:
         raise  # the answer is malformed: parse() says so in a worker as it would here
-    except Exception as exc:  # BrokenProcessPool, or workers that could not start: decode here, a new pool next time
+    except Exception as exc:  # BrokenProcessPool, a timeout, or workers that could not start: decode here, a new pool next time
         logging.getLogger(__name__).warning("mask decoding falls back to this process: %r", exc)
         with _pool_lock:
             if _pool is pool:

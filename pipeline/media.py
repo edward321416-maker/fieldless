@@ -11,6 +11,8 @@ import numpy as np
 from pipeline.sam_output import Seg
 
 LONG_SIDE = 1280  # D1: SAM and Spark saw 1280-wide videos
+FFMPEG_TIMEOUT_S = 600  # the longest video of a survey takes about a minute; a stuck ffmpeg must not hold the worker
+PROBE_TIMEOUT_S = 60
 
 
 @dataclass(frozen=True)
@@ -23,7 +25,9 @@ class VideoInfo:
 
 def _run(args: list[str]) -> None:
     try:
-        subprocess.run(args, check=True, capture_output=True)
+        subprocess.run(args, check=True, capture_output=True, timeout=FFMPEG_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{args[0]} gave no result in {FFMPEG_TIMEOUT_S} s") from None
     except subprocess.CalledProcessError as e:
         tail = "\n".join(e.stderr.decode(errors="replace").splitlines()[-20:])
         raise RuntimeError(f"{args[0]} failed (exit {e.returncode}):\n{tail}") from e
@@ -37,7 +41,7 @@ def probe(path: Path) -> VideoInfo:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream=width,height,r_frame_rate:format=duration", "-of", "json", str(path)],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, timeout=PROBE_TIMEOUT_S,
     ).stdout
     data = json.loads(out)
     stream = data["streams"][0]

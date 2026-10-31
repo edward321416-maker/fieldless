@@ -21,6 +21,7 @@ class Settings:
     item_invite_code: str | None = field(default=None, repr=False)
     ip_hash_salt: str = field(default="threshold", repr=False)
     scans_per_ip_per_day: int = 3  # spec 13; 0 turns the per-address limit off
+    max_queued: int = 3  # surveys waiting for the one worker; a visitor past that is told to come back
     # Total spend of the scans visitors start; past it the live site stops new scans (finished ones stay open). It
     # keeps a public server from running the free credit out and onto the card. None: no such cap.
     public_cost_cap_usd: float | None = None

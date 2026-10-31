@@ -84,6 +84,7 @@ def _retrying(request, retry_5xx: bool = True) -> httpx.Response:
 # zooms from the zoom 13 tile.
 COVERAGE_TILE_URL = "https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}"
 COVERAGE_ZOOMS = range(6, 14)
+TILE_TIMEOUT_S = 10
 
 
 def coverage_tile(z: int, x: int, y: int) -> bytes | None:
@@ -91,8 +92,8 @@ def coverage_tile(z: int, x: int, y: int) -> bytes | None:
     MapillaryError (token scrubbed) when the request fails."""
     token = config.mapillary_token()
     url = COVERAGE_TILE_URL.format(z=z, x=x, y=y)
-    try:
-        resp = _retrying(lambda: httpx.get(url, params={"access_token": token}, timeout=20))
+    try:  # one try: a person is watching the map, and a stalled tile must give its server thread back soon
+        resp = httpx.get(url, params={"access_token": token}, timeout=TILE_TIMEOUT_S)
     except httpx.HTTPError as e:
         raise MapillaryError(_scrub(f"coverage tile {z}/{x}/{y} failed: {type(e).__name__}: {e}", token)) from None
     if resp.status_code in (204, 404) or (resp.status_code == 200 and not resp.content):

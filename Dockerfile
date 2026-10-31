@@ -17,6 +17,8 @@ COPY requirements.txt constraints.txt ./
 RUN grep -v '^pytest' requirements.txt > runtime.txt \
     && pip install --no-cache-dir -r runtime.txt -c constraints.txt \
     && rm runtime.txt
+COPY assist/ assist/
+COPY eval/ eval/
 COPY pipeline/ pipeline/
 COPY server/ server/
 COPY --from=web /web/dist web/dist

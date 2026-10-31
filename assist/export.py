@@ -132,8 +132,12 @@ def features(scan_data: dict, standard: Standard, include_rejected: bool = False
 
 
 def _cell(value) -> str:
+    """One CSV cell. Text starting like a formula is marked as text: model answers and map names reach a spreadsheet
+    through these files."""
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + value
     return "" if value is None else str(value)
 
 

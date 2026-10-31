@@ -11,7 +11,7 @@ import logging
 import re
 import threading
 import time
-from contextlib import asynccontextmanager, closing
+from contextlib import asynccontextmanager, closing, contextmanager
 from typing import Literal
 
 import httpx
@@ -75,6 +75,11 @@ class IssueReview(BaseModel):
 EVIDENCE_CACHE = "public, max-age=86400"
 TILE_CACHE_S = 3600  # coverage changes when people upload; an hour old is fine for choosing an area
 TILE_CACHE_BYTES = 64_000_000  # compressed tiles kept; a dense zoom 13 tile is about 1 MB, a third of that gzipped
+# Sync routes share 40 server threads, so what can stall on Mapillary or hold a survey's photos in memory takes only
+# some of them: a stall must leave the finished surveys, /api/health and the web files answering.
+TILE_SLOTS, PREVIEW_SLOTS, ZIP_SLOTS = 8, 4, 2
+ZIP_WAIT_S = 15.0  # a survey's zip takes seconds; a few people downloading at once wait rather than fail
+MAX_BODY_BYTES = 64_000  # every POST here is a few fields of JSON
 
 
 def create_app(settings: Settings | None = None, worker=None, preview=None, store=None,
@@ -89,6 +94,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     elif store is None and settings.backup_dir:
         store = folder_store(settings.backup_dir, run_dir)
     worker = worker or ScanWorker(db_path, run_dir, on_done=(lambda _: store.request_save()) if store else None,
+                                  checkpoint=store.request_save if store else None,
                                   public_cap_usd=settings.public_cost_cap_usd,
                                   glimmer_daily_usd=settings.glimmer_daily_usd,
                                   glimmer_total_usd=settings.glimmer_total_usd)
@@ -97,6 +103,29 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     start_lock = threading.Lock()  # the per-address check, the new scan and its address tag happen as one step
     review_lock = threading.Lock()  # the "not reviewed yet" check and the review's write happen as one step
     demo_ids = {scan_id for scan_id, _ in settings.demo_scans}
+    tile_slots = threading.BoundedSemaphore(TILE_SLOTS)
+    preview_slots = threading.BoundedSemaphore(PREVIEW_SLOTS)
+    zip_slots = threading.BoundedSemaphore(ZIP_SLOTS)
+
+    @contextmanager
+    def slot(slots: threading.BoundedSemaphore, busy: str, wait_s: float = 0.0):
+        """One of slots, or a 503 with this sentence."""
+        if not slots.acquire(timeout=wait_s if wait_s else None, blocking=bool(wait_s)):
+            raise HTTPException(503, busy)
+        try:
+            yield
+        finally:
+            slots.release()
+
+    def check_can_spend() -> None:
+        """An empty database after a failed restore knows nothing of what was spent, and what it ran could not be
+        saved."""
+        if store and store.restore_failed:
+            raise HTTPException(503, "The server could not read its saved surveys, so new ones are paused.")
+
+    def check_room(conn) -> None:
+        if settings.max_queued and db.queued(conn) >= settings.max_queued:
+            raise HTTPException(503, "Several surveys are waiting already. Try again in a few minutes.")
 
     def check_reviewable(row: dict) -> None:
         if row["scan_id"] in demo_ids:
@@ -111,9 +140,12 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         worker.start()
         yield
         worker.stop()
+        if store:
+            store.flush()
 
     app = FastAPI(title="Fieldless", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.worker = worker
+    app.add_middleware(limits.BodyLimit, limit=MAX_BODY_BYTES)
 
     def connect():
         return closing(db.connect(db_path))
@@ -135,20 +167,16 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         message = first.get("msg", "invalid request")
         return JSONResponse(status_code=422, content={"detail": f"{where}: {message}" if where else message})
 
-    @app.middleware("http")
-    async def html_is_never_cached(request: Request, call_next):
-        """index.html names the hashed asset files of one build, so a stale copy after a redeploy is a blank page."""
-        response = await call_next(request)
-        if response.headers.get("content-type", "").startswith("text/html"):
-            response.headers["Cache-Control"] = "no-cache"
-        return response
-
     @app.get("/api/health")
     def health(request: Request):
         # How many X-Forwarded-For entries reach the server (a count, no addresses): checked once per host to set
         # PROXY_HOPS. mask_decoding says whether SAM masks are decoded in worker processes on this host.
         forwarded = [p for p in (request.headers.get("x-forwarded-for") or "").split(",") if p.strip()]
-        return {"ok": True, "forwarded_for_entries": len(forwarded), "mask_decoding": sam_output.decoding()}
+        working = worker.health() if hasattr(worker, "health") else {"alive": True}
+        backup = store.health() if store else None
+        return {"ok": working["alive"] and not (backup and backup["restore_failed"]),
+                "forwarded_for_entries": len(forwarded), "mask_decoding": sam_output.decoding(),
+                "worker": working, "backup": backup}
 
     @app.get("/api/config")
     def get_config():
@@ -170,7 +198,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             kept = tiles.get((z, x, y))
         if kept is None or now - kept[0] > TILE_CACHE_S:
             try:
-                body = tile(z, x, y)
+                with slot(tile_slots, "Mapillary coverage is not available right now"):
+                    body = tile(z, x, y)
             except mapillary.MapillaryError:
                 raise HTTPException(502, "Mapillary coverage is not available right now") from None
             kept = (now, None if body is None else gzip.compress(body, 6))
@@ -204,7 +233,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         try:
             std = survey_items.load(survey_items.standard_for(bbox))
             checks = len(std.checks)
-            found = preview(bbox, config.photo_budget(checks=checks), checks=checks)
+            with slot(preview_slots, "Mapillary is answering slowly. Try again in a minute."):
+                found = preview(bbox, config.photo_budget(checks=checks), checks=checks)
             # what the survey would look for, and its spending cap, for the preview step (ui-redesign 3.5)
             return {**found, "standard": std.code, "items": views.items_json(std), "cap_usd": config.SCAN_COST_CAP_USD}
         except (mapillary.MapillaryError, httpx.HTTPError, ValueError):  # ValueError: a reply that is not JSON
@@ -215,6 +245,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     def post_scan(body: ScanBody, request: Request):
         limits.check_invite(body.invite_code, settings.invite_code)
         bbox = limits.check_bbox(body.bbox, settings.max_bbox_deg2)
+        check_can_spend()
         peer = request.client.host if request.client else None
         hashed = limits.ip_hash(limits.client_ip(request.headers, peer), settings.ip_hash_salt)
         with start_lock, connect() as conn:
@@ -224,6 +255,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             if cap is not None and cap - db.public_cost(conn) < RESUME_MIN_USD:
                 raise HTTPException(503, "The live demo's survey budget is used up; the finished surveys stay open.")
             limits.check_daily_scans(conn, hashed, settings.scans_per_ip_per_day)
+            check_room(conn)
             scan_id = db.create_scan(conn, "mapillary", bbox, survey_items.standard_for(bbox))
             db.update_scan(conn, scan_id, client_ip_hash=hashed)
         worker.submit(scan_id)
@@ -237,6 +269,9 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             raise HTTPException(403, "Making a survey item is not open on this server; see the example run")
         limits.check_invite(body.invite_code, settings.item_invite_code, "Making a survey item")
         target = " ".join(body.target.split())
+        if len(target) < 2:
+            raise HTTPException(422, "target: name what the survey should record")
+        check_can_spend()
         peer = request.client.host if request.client else None
         hashed = limits.ip_hash(limits.client_ip(request.headers, peer), settings.ip_hash_salt)
         with start_lock, connect() as conn:
@@ -373,8 +408,9 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         with connect() as conn:
             scan, data = survey_data(conn, scan_id)
             notes = db.report_text(conn, scan_id)
-        body = files.survey_zip(data, views.standard_of(scan), run_dir / "evidence",
-                                area=dict(settings.demo_scans).get(scan_id), notes=notes)
+        with slot(zip_slots, "Several downloads are running. Try again in a minute.", ZIP_WAIT_S):
+            body = files.survey_zip(data, views.standard_of(scan), run_dir / "evidence",
+                                    area=dict(settings.demo_scans).get(scan_id), notes=notes)
         return Response(body, media_type="application/zip",
                         headers={"Content-Disposition": f'attachment; filename="fieldless-survey-{scan_id}.zip"'})
 
@@ -387,7 +423,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             notes = db.report_text(conn, scan_id)
         page = report.document(data, views.standard_of(scan), area=dict(settings.demo_scans).get(scan_id),
                                notes=notes, photo_base="../../evidence/")
-        return HTMLResponse(page)
+        return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/evidence/{name}")
     def get_evidence(name: str):

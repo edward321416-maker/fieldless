@@ -513,6 +513,27 @@ def test_a_detail_judged_on_a_box_too_small_to_show_it_is_unclear(box, expected)
 
 
 
+@pytest.mark.parametrize("error, stopped", [(RuntimeError("no answer"), False), (CostCapReached("cost cap $3.00"), True)],
+                         ids=["a failed call", "the cost cap"])
+def test_a_second_look_that_fails_keeps_the_first_answer(tmp_path, error, stopped):
+    photo = synthetic_photo(tmp_path / "p.jpg", size=(400, 300), seed=3)
+
+    def spark(schema_name, parts):
+        if sum(p["type"] == "input_image" for p in parts) == 2:
+            raise error
+        return {**NO, "answer": "unclear", "box": [10, 500, 60, 540], "note": "too far"}
+
+    by_idx = frames(1)
+    by_idx[0].update(width=400, height=300)
+    text = "<0f>1<|box;x1=40;y1=150;x2=80;y2=170;w=400;h=300;c=0.9|>\n"
+    rows, missing = survey_checks.run_check(FakeApi(spark=spark), dataclasses.replace(CHECK, find_by="video"), {0: [0]},
+                                            {0: photo}, by_idx, 1,
+                                            video=({0: text}, {0: survey_checks.Video((0,), (400, 300), 0)}))
+    (row,) = rows
+    assert row["model_outputs"]["check"]["note"] == "too far" and missing["ask"] == []
+    assert ("stopped" in missing) is stopped
+
+
 def test_a_marked_object_spark_calls_unclear_is_asked_again_enlarged(tmp_path):
     photo = synthetic_photo(tmp_path / "p.jpg", size=(400, 300), seed=3)
     assert survey_checks.zoom_crop(photo, [100, 100, 200, 300])[:2] == b"\xff\xd8"  # a JPEG

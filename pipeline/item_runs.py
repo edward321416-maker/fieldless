@@ -16,6 +16,7 @@ from pipeline.runner import evidence_name, refuse_in_worker
 from pipeline.survey_items import Check
 
 ITEM_COST_CAP_USD = 1.0  # one item run: writing, testing and surveying (docs/specs/2026-10-29-agent-items-design.md 3)
+GIVE_UP_AFTER = 20  # photos in a row that could not be had
 
 
 @dataclass(frozen=True)
@@ -40,11 +41,21 @@ class ScanPhotos:
 def scan_photos(conn, scan_id: int, workers: int = config.PARALLEL_REQUESTS, fetch=collect.fetch_photo) -> ScanPhotos:
     """The scan's photos, downloaded from Mapillary into the photo cache when they are not there (a scan seeded onto
     the live server brings its database and evidence photos, not its photos). A photo that cannot be had is left
-    out."""
+    out; after GIVE_UP_AFTER in a row Mapillary is taken to be down and the scan has no photos, since a stalled photo
+    costs minutes of retries and a part of the scan would be reported as all of it."""
     scan = db.get_scan(conn, scan_id)
     frames = db.frames(conn, scan_id)
-    have = run_parallel(lambda f: fetch({"id": f["image_id"]}) is not None, frames, workers)
-    kept = [f for f, ok in zip(frames, have) if ok]
+    kept, missing = [], 0
+    for start in range(0, len(frames), workers):
+        batch = frames[start:start + workers]
+        have = run_parallel(lambda f: fetch({"id": f["image_id"]}) is not None, batch, workers)
+        for frame, ok in zip(batch, have):
+            missing = 0 if ok else missing + 1
+            if ok:
+                kept.append(frame)
+        if missing >= GIVE_UP_AFTER:
+            kept = []
+            break
     return ScanPhotos(scan_id, scan["bbox"], scan["jurisdiction"], kept,
                       {f["idx"]: collect.photo_path(f["image_id"]) for f in kept})
 
@@ -71,6 +82,8 @@ def run_item_on_scan(api, photos: ScanPhotos, check: Check, run_dir: Path, run_i
     on_progress(f"Surveying all {len(photos.paths)} photos of the scan for {check.target}")
     by_idx = photos.by_idx()
     rows, missing = survey_checks.run_check(api, check, photos.clips(), photos.paths, by_idx, workers)
+    if missing.get("stopped"):  # part of the photos is not the survey the run reports: it fails, its spend saved
+        raise missing["stopped"]
     picks = len(rows) + len(missing.get("not_target", []))
     on_progress(f"SAM 3.1 found {picks} possible {check.target}; Muse Spark kept {len(rows)}")
     unavailable = len(set(missing.get("find", [])) | set(missing.get("ask", [])))

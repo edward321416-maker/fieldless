@@ -369,6 +369,12 @@ def busy(conn) -> bool:
                for table in ("scan", "item_run"))
 
 
+def queued(conn) -> int:
+    """Scans and item runs waiting for the worker."""
+    return sum(conn.execute(f"SELECT COUNT(*) FROM {table} WHERE status = 'queued'").fetchone()[0]
+               for table in ("scan", "item_run"))
+
+
 def item_runs(conn, scan_id: int | None = None) -> list[dict]:
     """A scan's item runs (every run when scan_id is None), oldest first. Empty for a database that predates the
     table (a read-only copy)."""

@@ -6,6 +6,8 @@ import ipaddress
 import os
 from datetime import datetime, timedelta, timezone
 
+from fastapi import HTTPException
+
 from pipeline import db
 
 # Trusted proxies in front of the server that append to X-Forwarded-For (Railway's edge: one). Check one request's
@@ -27,6 +29,27 @@ class LimitError(Exception):
         super().__init__(detail)
         self.status = status
         self.detail = detail
+
+
+class BodyLimit:
+    """ASGI middleware: a request body past `limit` bytes is refused with a 413 as it arrives, whether or not it said
+    its length."""
+
+    def __init__(self, app, limit: int):
+        self.app, self.limit = app, limit
+
+    async def __call__(self, scope, receive, send):
+        seen = 0
+
+        async def counted():
+            nonlocal seen
+            message = await receive()
+            seen += len(message.get("body", b""))
+            if seen > self.limit:
+                raise HTTPException(413, "The request is too large")
+            return message
+
+        await self.app(scope, counted if scope["type"] == "http" else receive, send)
 
 
 def _address_key(addr: str | None) -> str | None:
