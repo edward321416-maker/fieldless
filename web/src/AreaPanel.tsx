@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, STATIC_DEMO } from "./api";
 import { bboxTooLarge, bboxTooSmall } from "./bbox";
 import { dollars, isFinished, stageState, yearsSpan } from "./format";
 import { itemName } from "./items";
 import { itemArt } from "./markerArt";
+import { statusNote } from "./summary";
 import type { Bbox, Preview, Scan } from "./types";
 
 interface Props {
@@ -34,18 +35,6 @@ function Steps({ at }: { at: number }) {
 }
 
 const STATE_ICON: Record<string, string> = { done: "✓", running: "…", failed: "✕", stopped: "■", pending: "○" };
-
-// What a survey's status means for the person waiting; the raw error stays available under Details.
-function statusNote(scan: Scan): string | null {
-  if (scan.status === "queued") return "Waiting for the survey ahead of it to finish.";
-  if (scan.status === "stopped_cost_cap")
-    return "Stopped at the spending cap ($3 per survey, $10 per day across all surveys). Results so far are shown.";
-  if (scan.status === "failed")
-    return scan.error?.startsWith("NoPhotos")
-      ? "No recent pedestrian photos were found here. Try a nearby street."
-      : "The survey did not finish every step. Any results it produced are shown.";
-  return null;
-}
 
 function StageList({ scan }: { scan: Scan }) {
   return (
@@ -82,6 +71,10 @@ export default function AreaPanel(props: Props) {
     }
     if (bboxTooLarge(bbox, maxDeg2)) {
       setMessage("This area is too large. Choose a rectangle about 1 km across or smaller.");
+      return;
+    }
+    if (STATIC_DEMO) {
+      setMessage("Area selected on the map. Connect a live Fieldless server to count Mapillary photos and start a new scan here.");
       return;
     }
     let cancelled = false;
@@ -132,7 +125,7 @@ export default function AreaPanel(props: Props) {
       <h2 id="area-title">New survey</h2>
       <Steps at={step} />
       {step === 0 && (
-        <p className="lead">Choose the streets. Nothing runs, and nothing is spent, until you press Start.</p>
+        <p className="lead">Search any street or neighborhood in the top bar, or draw a box directly on the map. Nothing runs until you press Start.</p>
       )}
       <div className="row">
         <button type="button" className={props.selecting ? "" : "primary"} onClick={props.onToggleSelect}

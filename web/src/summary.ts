@@ -1,5 +1,6 @@
 import type { Benchmark } from "./benchmarks";
 import { dollars } from "./format";
+import { capital } from "./items";
 import type { Scan } from "./types";
 
 // The words of the results panel (docs/specs/2026-10-29-cleanup-design.md 4), kept apart so they are tested.
@@ -11,11 +12,24 @@ export function cityLine(match: { found: number; covered: number } | undefined, 
   return { share: match.found / match.covered, text: `${match.found} of ${match.covered} in the city's list` };
 }
 
-// The findings a person is asked about: those the models were unsure of, whether looked at yet or not.
+// The findings the models were unsure of, whether someone has looked at them yet or not.
 export const unsureCount = (c: Scan["counts"]) => c.needs_review + c.verified + c.rejected + c.field_check;
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const minutes = (seconds: number) => (seconds / 60).toFixed(1);
+
+// What a survey's status means for the person looking at it; the raw error stays available under Details.
+export function statusNote(scan: Pick<Scan, "status" | "error">): string | null {
+  if (scan.status === "queued") return "Waiting for the survey ahead of it to finish.";
+  if (scan.status === "stopped_cost_cap")
+    return "Stopped at the spending cap ($3 per survey, $10 per day across all surveys). Results so far are shown.";
+  if (scan.status === "failed") {
+    if (scan.error?.startsWith("NoPhotos")) return "No recent pedestrian photos were found here. Try a nearby street.";
+    if (scan.error && /start (a new survey|it again)/.test(scan.error)) return capital(scan.error); // written for this screen
+    return "The survey did not finish every step. Any results it produced are shown.";
+  }
+  return null;
+}
 
 // One number on top, the cost per km (after Treepedia's single figure), the time and whole cost under it, and the
 // published walking survey beside it when the standard has one (docs/ui-rules.md U1, U7). A person's review time
@@ -37,7 +51,7 @@ export function checkLine(c: Scan["counts"]): string {
   const unsure = unsureCount(c);
   const looked = unsure - c.needs_review;
   if (unsure === 0) return "The models were sure of every finding.";
-  if (looked === 0) return `${unsure} the models were unsure of are waiting for a person.`;
+  if (looked === 0) return `The models were unsure of ${unsure}: each is on the dispatch list to check on site.`;
   if (c.needs_review > 0) return `A person checked ${looked} of the ${unsure} the models were unsure of; ${c.needs_review} are waiting.`;
   return `A person checked the ${unsure} the models were unsure of: ${c.verified} confirmed, ${c.rejected} rejected, ` +
     `${c.field_check} to check on site.`;

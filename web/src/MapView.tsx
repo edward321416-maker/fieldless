@@ -5,7 +5,7 @@ import type { Feature, FeatureCollection } from "geojson";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { bboxFromCorners, bboxPolygon, viewToBbox } from "./bbox";
 import type { CityState, MissedRecord } from "./cityMatch";
-import { destination, distanceToLineM, targetBearing, viewWedge, type LngLat } from "./geo";
+import { destination, distanceToLineM, findingPoint, SIDEWALK_OFFSET_M, targetBearing, viewWedge, type LngLat } from "./geo";
 import { colourOf, DEFECT_RED, itemName, SITE_ORANGE, STATUS_SENTENCE, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
 import { markerCanvas, markerName, RATIO } from "./markerArt";
@@ -24,7 +24,7 @@ const MAPILLARY_CREDIT =
 const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 const START: [number, number] = [127.0571, 37.5484]; // Seongsu street_b, where D1 checked tactile paving
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
-const TARGET_M = 10; // the object is drawn this far along its bearing: the distance is not measured (approximate)
+const TARGET_M = SIDEWALK_OFFSET_M; // the object is drawn this far along its bearing: the distance is not measured (approximate)
 const ACCENT = "#1d4ed8";
 // Below this zoom each finding is a dot of its item's colour; from it on, the icon marker (docs/ui-rules.md U3).
 const ICON_ZOOM = 18;
@@ -55,6 +55,7 @@ interface Props {
   padLeft: number; // what covers the map's left on a wide screen when fitting (the introduction's photo)
   walks: Walk[];
   selected: Finding | null;
+  featured?: Finding | null; // default sightline & photo preview when entering the results screen
   selectedLabel: string;
   onSelect: (bbox: Bbox) => void;
   onPick: (f: Finding) => void;
@@ -65,15 +66,25 @@ interface Props {
 }
 
 function areaData(bbox: Bbox | null): FeatureCollection {
-  return bbox ? { type: "FeatureCollection", features: [bboxPolygon(bbox)] } : EMPTY;
+  if (!bbox) return EMPTY;
+  const [w, s, e, n] = bbox;
+  const poly = bboxPolygon(bbox);
+  poly.properties = { part: "box" };
+  const corners: Feature[] = [
+    { type: "Feature", properties: { part: "corner", oppLng: e, oppLat: n }, geometry: { type: "Point", coordinates: [w, s] } },
+    { type: "Feature", properties: { part: "corner", oppLng: w, oppLat: n }, geometry: { type: "Point", coordinates: [e, s] } },
+    { type: "Feature", properties: { part: "corner", oppLng: w, oppLat: s }, geometry: { type: "Point", coordinates: [e, n] } },
+    { type: "Feature", properties: { part: "corner", oppLng: e, oppLat: s }, geometry: { type: "Point", coordinates: [w, n] } },
+  ];
+  return { type: "FeatureCollection", features: [poly, ...corners] };
 }
 
 const point = (c: LngLat, props: Record<string, unknown> = {}): Feature =>
   ({ type: "Feature", properties: props, geometry: { type: "Point", coordinates: c } });
 
-// The selected finding drawn on the map: the camera where the photo was taken, the wedge it shows, a dashed ray to
-// the object and the object's marker on it, about TARGET_M along (the distance is not measured). Without a box the
-// marker stays at the camera.
+// The selected (or featured) finding drawn on the map: the camera where the photo was taken, the wedge it shows, a
+// dashed ray to the object and the object's marker on it, about TARGET_M along (the distance is not measured).
+// Without a box the marker stays at the camera.
 function selectionData(f: Finding | null): { data: FeatureCollection; at: LngLat; bearing: number | null } {
   if (!f) return { data: EMPTY, at: [0, 0], bearing: null };
   const camera: LngLat = [f.lng, f.lat];
@@ -115,6 +126,7 @@ function nearestWalk(f: Finding | null, walks: Walk[]): number | null {
 function findingsLook(map: maplibregl.Map, focus: string | null) {
   map.setLayoutProperty("records-dot", "visibility", "none");
   map.setLayoutProperty("findings", "visibility", "visible");
+  if (map.getLayer("finding-stems")) map.setLayoutProperty("finding-stems", "visibility", "visible");
   map.setLayerZoomRange("findings-dot", 0, ICON_ZOOM);
   map.setPaintProperty("findings-dot", "circle-color",
     focus ? ["case", ["==", ["get", "item"], focus], ["get", "colour"], DIMMED] : ["get", "colour"]);
@@ -130,6 +142,7 @@ function findingsLook(map: maplibregl.Map, focus: string | null) {
 function recordsLook(map: maplibregl.Map) {
   map.setLayoutProperty("records-dot", "visibility", "visible");
   map.setLayoutProperty("findings", "visibility", "none");
+  if (map.getLayer("finding-stems")) map.setLayoutProperty("finding-stems", "visibility", "none");
   map.setLayerZoomRange("findings-dot", 0, 24);
   map.setPaintProperty("findings-dot", "circle-color",
     ["case", NOT_IN_LIST, "#ffffff", NO_CITY_LIST, DIMMED, ["get", "colour"]]);
@@ -142,6 +155,7 @@ export default function MapView(props: Props) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const label = useRef<maplibregl.Popup | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [buildings3d, setBuildings3d] = useState(true);
   const latest = useRef(props);
   latest.current = props;
 
@@ -154,19 +168,27 @@ export default function MapView(props: Props) {
     const hover = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 18, className: "map-tip" });
     map.on("load", () => {
       map.addSource("walks", { type: "geojson", data: EMPTY });
+      map.addSource("finding-stems", { type: "geojson", data: EMPTY });
       map.addSource("area", { type: "geojson", data: areaData(latest.current.bbox) });
       map.addSource("selection", { type: "geojson", data: EMPTY });
       map.addSource("findings", { type: "geojson", data: EMPTY });
       map.addSource("records", { type: "geojson", data: EMPTY });
       map.addLayer({ id: "walks", type: "line", source: "walks", layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#475569", "line-width": 4, "line-opacity": 0.7 } });
+        paint: { "line-color": "#64748b", "line-width": 2.5, "line-opacity": 0.55, "line-dasharray": [2, 1.5] } });
       map.addLayer({ id: "walk-picked", type: "line", source: "walks", filter: ["==", ["get", "clip"], -1],
-        layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ACCENT, "line-width": 4 } });
+        layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ACCENT, "line-width": 3 } });
+      map.addLayer({ id: "finding-stems", type: "line", source: "finding-stems", minzoom: 15,
+        layout: { "line-cap": "round" },
+        paint: { "line-color": "#94a3b8", "line-width": 1.2, "line-opacity": 0.45 } });
       // Under the findings, so a finding is never covered by a record the survey did not find (the records lens).
       map.addLayer({ id: "records-dot", type: "circle", source: "records", layout: { visibility: "none" },
         paint: { "circle-radius": 4, "circle-color": ["get", "colour"], "circle-opacity": 0.5, "circle-stroke-width": 0 } });
-      map.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": ACCENT, "fill-opacity": 0.08 } });
-      map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": ACCENT, "line-width": 2 } });
+      map.addLayer({ id: "area-fill", type: "fill", source: "area", filter: ["==", ["get", "part"], "box"],
+        paint: { "fill-color": ACCENT, "fill-opacity": 0.06 } });
+      map.addLayer({ id: "area-line", type: "line", source: "area", filter: ["==", ["get", "part"], "box"],
+        paint: { "line-color": ACCENT, "line-width": 2.2, "line-dasharray": [3, 2] } });
+      map.addLayer({ id: "area-corners", type: "circle", source: "area", filter: ["==", ["get", "part"], "corner"],
+        paint: { "circle-radius": 6.5, "circle-color": "#ffffff", "circle-stroke-color": ACCENT, "circle-stroke-width": 2.5 } });
       map.addLayer({ id: "sel-wedge", type: "fill", source: "selection", filter: ["==", ["get", "part"], "wedge"],
         paint: { "fill-color": ACCENT, "fill-opacity": 0.18 } });
       map.addLayer({ id: "sel-ray", type: "line", source: "selection", filter: ["==", ["get", "part"], "ray"],
@@ -174,7 +196,7 @@ export default function MapView(props: Props) {
       // Far out, dots (Project Sidewalk's label map); near, the icon markers (docs/ui-rules.md U3).
       map.addLayer({ id: "findings-dot", type: "circle", source: "findings", maxzoom: ICON_ZOOM,
         layout: { "circle-sort-key": ["get", "order"] },
-        paint: { "circle-radius": 5, "circle-color": ["get", "colour"], "circle-stroke-color": DOT_STROKE,
+        paint: { "circle-radius": 5.5, "circle-color": ["get", "colour"], "circle-stroke-color": DOT_STROKE,
           "circle-stroke-width": DOT_STROKE_WIDTH } });
       map.addLayer({ id: "findings", type: "symbol", source: "findings", minzoom: ICON_ZOOM,
         layout: { "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true,
@@ -210,7 +232,8 @@ export default function MapView(props: Props) {
       const { items } = latest.current;
       const street = streetsRef.current[f.key];
       const text = [itemName(f.item, items), STATUS_SENTENCE[f.status] ?? f.status, street].filter(Boolean).join(" · ");
-      hover.setLngLat([f.lng, f.lat]).setHTML(`<strong></strong><br><span>Click to open the photo</span>`).addTo(map);
+      const coords = findingPoint(f.lat, f.lng, f.heading, f.box);
+      hover.setLngLat(coords).setHTML(`<strong></strong><br><span>Click to open the photo</span>`).addTo(map);
       const el = hover.getElement();
       el.querySelector("strong")!.textContent = text; // text, never HTML: names come from the data
     });
@@ -244,17 +267,40 @@ export default function MapView(props: Props) {
     map.on("idle", () => nameStreets(map));
 
     let start: [number, number] | null = null;
+    let draggingCorner = false;
     let drawTag: maplibregl.Popup | null = null; // "Release to count the photos in this box", at the box's corner
     const endDraw = () => {
       drawTag?.remove();
       drawTag = null;
+      if (draggingCorner) {
+        draggingCorner = false;
+        if (!latest.current.selecting) map.dragPan.enable();
+      }
     };
+    map.on("mousemove", "area-corners", () => {
+      map.getCanvas().style.cursor = "nwse-resize";
+    });
+    map.on("mouseleave", "area-corners", () => {
+      map.getCanvas().style.cursor = latest.current.selecting ? "crosshair" : "";
+    });
+    map.on("mousedown", "area-corners", (e) => {
+      const feat = e.features?.[0];
+      const oppLng = Number(feat?.properties?.oppLng);
+      const oppLat = Number(feat?.properties?.oppLat);
+      if (Number.isFinite(oppLng) && Number.isFinite(oppLat)) {
+        e.preventDefault();
+        start = [oppLng, oppLat];
+        draggingCorner = true;
+        map.dragPan.disable();
+      }
+    });
     map.on("mousedown", (e: maplibregl.MapMouseEvent) => {
+      if (draggingCorner) return;
       if (latest.current.selecting) start = [e.lngLat.lng, e.lngLat.lat];
     });
     map.on("mousemove", (e: maplibregl.MapMouseEvent) => {
       if (!start) return;
-      if (e.originalEvent.buttons === 0 || !latest.current.selecting) {
+      if (e.originalEvent.buttons === 0 || (!latest.current.selecting && !draggingCorner)) {
         start = null; // released outside the map, or drawing was cancelled: stop following the cursor
         endDraw();
         (map.getSource("area") as maplibregl.GeoJSONSource | undefined)?.setData(areaData(latest.current.bbox));
@@ -263,7 +309,7 @@ export default function MapView(props: Props) {
       const drawn = bboxFromCorners(start, [e.lngLat.lng, e.lngLat.lat]);
       (map.getSource("area") as maplibregl.GeoJSONSource | undefined)?.setData(areaData(drawn));
       drawTag ??= new maplibregl.Popup({ closeButton: false, closeOnClick: false, anchor: "bottom-left",
-        className: "map-label" }).setText("Release to count the photos in this box").addTo(map);
+        className: "map-label" }).setText("Release to select this survey range").addTo(map);
       drawTag.setLngLat([drawn[0], drawn[3]]);
     });
     map.on("mouseup", (e: maplibregl.MapMouseEvent) => {
@@ -312,6 +358,65 @@ export default function MapView(props: Props) {
     if (loaded) (mapRef.current?.getSource("area") as maplibregl.GeoJSONSource | undefined)?.setData(areaData(props.bbox));
   }, [props.bbox, loaded]);
 
+  // Tilts the map and raises the base map's buildings (OpenFreeMap's OSM heights); off, the flat map from above.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+
+    if (buildings3d) {
+      map.easeTo({ pitch: 48, bearing: -15, duration: 800 });
+
+      if (!map.getLayer("buildings-3d")) {
+        try {
+          map.addLayer(
+            {
+              id: "buildings-3d",
+              source: "openmaptiles",
+              "source-layer": "building",
+              type: "fill-extrusion",
+              minzoom: 14,
+              paint: {
+                "fill-extrusion-color": [
+                  "interpolate",
+                  ["linear"],
+                  ["get", "render_height"],
+                  0, "#cbd5e1",
+                  20, "#94a3b8",
+                  50, "#64748b",
+                  100, "#475569"
+                ],
+                "fill-extrusion-height": ["coalesce", ["get", "render_height"], 15],
+                "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+                "fill-extrusion-opacity": 0.85,
+              },
+            },
+            "findings-dot"
+          );
+        } catch (e) {
+          console.warn("Could not add the 3D buildings layer", e);
+        }
+      } else {
+        map.setLayoutProperty("buildings-3d", "visibility", "visible");
+      }
+
+      if (map.getLayer("walks")) {
+        map.setPaintProperty("walks", "line-color", ACCENT);
+        map.setPaintProperty("walks", "line-width", 3.5);
+        map.setPaintProperty("walks", "line-opacity", 0.9);
+      }
+    } else {
+      map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+      if (map.getLayer("buildings-3d")) {
+        map.setLayoutProperty("buildings-3d", "visibility", "none");
+      }
+      if (map.getLayer("walks")) {
+        map.setPaintProperty("walks", "line-color", "#64748b");
+        map.setPaintProperty("walks", "line-width", 2.5);
+        map.setPaintProperty("walks", "line-opacity", 0.55);
+      }
+    }
+  }, [buildings3d, loaded]);
+
   // A new survey: Mapillary's coverage (walks people already photographed) under the walks, and the neighbourhood in
   // view (docs/specs/2026-10-28-design-pass2-design.md 2). The tiles come through the server, which holds the token.
   useEffect(() => {
@@ -345,7 +450,8 @@ export default function MapView(props: Props) {
     }
   }, [props.areaLabel, props.bbox, loaded]);
 
-  // The markers: one image per item and badge, a source of the findings not hidden in the panel.
+  // The markers: one image per item and badge, projected onto their sidewalk bearing offsets so they do not sit
+  // collinearly on top of the camera walk wire.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
@@ -359,10 +465,22 @@ export default function MapView(props: Props) {
     }
     (map.getSource("findings") as maplibregl.GeoJSONSource).setData({
       type: "FeatureCollection",
-      features: shown.map((f) => point([f.lng, f.lat], {
+      features: shown.map((f) => point(findingPoint(f.lat, f.lng, f.heading, f.box), {
         key: f.key, item: f.item, icon: markerName(f.item, f.badge), order: f.badge ? 1 : 0, // badges draw on top
         colour: colourOf(f.item, props.items), badge: f.badge ?? "none", city: props.cityStates[f.key] ?? "none",
       })),
+    });
+    (map.getSource("finding-stems") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: shown.flatMap((f) => {
+        const at = findingPoint(f.lat, f.lng, f.heading, f.box);
+        if (at[0] === f.lng && at[1] === f.lat) return [];
+        return [{
+          type: "Feature" as const,
+          properties: { key: f.key, item: f.item },
+          geometry: { type: "LineString" as const, coordinates: [[f.lng, f.lat], at] },
+        }];
+      }),
     });
     streetsRef.current = Object.fromEntries(Object.entries(streetsRef.current)
       .filter(([k]) => props.findings.some((f) => f.key === k)));
@@ -411,28 +529,29 @@ export default function MapView(props: Props) {
       key ? 0.35 : focus ? ["case", ["==", ["get", "item"], focus], 1, 0.3] : 1);
   }, [props.selected?.key, props.focusItem, loaded]);
 
-  // The selected finding: bigger, the others dimmed, its photo's place, view and direction, and a name tag.
+  // The selected finding (or default featured finding on entry): its photo's camera place, 70° view wedge, dashed
+  // sightline ray, and enlarged marker. Only an explicit selection zooms in to 19 and opens the popup label.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
-    const f = props.selected;
-    const key = f?.key ?? "";
-    // the selected marker moves to the selection layer; the others dim
+    const active = props.selected ?? props.featured ?? null;
+    const key = active?.key ?? "";
+    // the active marker moves to the selection layer
     for (const layer of ["findings-dot", "findings"]) map.setFilter(layer, ["!=", ["get", "key"], key]);
-    const { data, at, bearing } = selectionData(f);
+    const { data, at, bearing } = selectionData(active);
     (map.getSource("selection") as maplibregl.GeoJSONSource).setData(data);
-    map.setFilter("walk-picked", ["==", ["get", "clip"], nearestWalk(f, props.walks) ?? -1]);
+    map.setFilter("walk-picked", ["==", ["get", "clip"], nearestWalk(props.selected, props.walks) ?? -1]);
     label.current?.remove();
     label.current = null;
-    if (f) {
+    if (props.selected) {
       // the photo window covers the lower part of a wide map: centre the marker in the part left free
-      const covered = f.picked.item.evidence && map.getContainer().clientWidth > 800
+      const covered = props.selected.picked.item.evidence && map.getContainer().clientWidth > 800
         ? Math.min(460, map.getContainer().clientHeight * 0.55) : 0;
       map.easeTo({ center: at, zoom: Math.max(map.getZoom(), 19), duration: 600, padding: { top: 0, bottom: covered, left: 0, right: 0 } });
       label.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, anchor: labelAnchor(bearing),
         offset: 26, className: "map-label" }).setLngLat(at).setText(props.selectedLabel).addTo(map);
     }
-  }, [props.selected?.key, props.selectedLabel, props.walks, loaded]);
+  }, [props.selected?.key, props.featured?.key, props.selectedLabel, props.walks, loaded]);
 
   useEffect(() => {
     const b = props.fitTo;
@@ -447,6 +566,10 @@ export default function MapView(props: Props) {
   return (
     <div className="map-wrap">
       <div ref={container} className="map" role="region" aria-label="Survey map" />
+      <button type="button" className="map-view-toggle" aria-pressed={buildings3d}
+        onClick={() => setBuildings3d((v) => !v)}>
+        {buildings3d ? "Flat map" : "3D buildings"}
+      </button>
       {props.children}
     </div>
   );

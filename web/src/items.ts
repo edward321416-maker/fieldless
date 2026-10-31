@@ -57,14 +57,14 @@ export function badgeOf(status: string, defect: boolean): Badge | null {
 }
 
 export const BADGE_TEXT: Record<Badge, string> = {
-  review: "Waiting for a person to check",
+  review: "The models were unsure",
   site: "A person could not tell: check on site",
   defect: "Possible defect",
 };
 
 export const STATUS_SENTENCE: Record<string, string> = {
-  auto: "Found by the models · not checked by a person",
-  needs_review: "Found by the models · waiting for a person to check",
+  auto: "Found by the models",
+  needs_review: "Found by the models · they were unsure",
   verified: "Confirmed by a person",
   field_check: "A person could not tell from the photo · check on site",
   rejected: "Rejected by a person",

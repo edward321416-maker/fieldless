@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BENCHMARKS } from "./benchmarks";
-import { checkLine, cityLine, clearBox, headline, itemNote, reviewProgress, thumbPosition, unsureCount } from "./summary";
+import { checkLine, cityLine, clearBox, headline, itemNote, reviewProgress, statusNote, thumbPosition, unsureCount } from "./summary";
 import type { Scan } from "./types";
 
 const counts = { defects: 2, obstructions: 0, entrances: 11, entrances_with_steps: 0, needs_review: 0,
@@ -33,7 +33,7 @@ describe("the results panel", () => {
   });
   it("says in one sentence what a person did with what the models were unsure of", () => {
     expect(checkLine({ ...counts, needs_review: 21, field_check: 0, verified: 0, rejected: 0 }))
-      .toBe("21 the models were unsure of are waiting for a person.");
+      .toBe("The models were unsure of 21: each is on the dispatch list to check on site.");
     expect(checkLine(counts))
       .toBe("A person checked the 21 the models were unsure of: 2 confirmed, 15 rejected, 4 to check on site.");
     expect(checkLine({ ...counts, needs_review: 16, field_check: 0, verified: 2, rejected: 3 }))
@@ -62,5 +62,16 @@ describe("the results panel", () => {
     expect(clearBox([300, 400, 500, 995])).toBe(false); // cut off at the bottom edge
     expect(clearBox([830, 30, 880, 400])).toBe(false); // thin against the right edge
     expect(clearBox(null)).toBe(false);
+  });
+});
+
+describe("why a survey ended as it did", () => {
+  it("says it in the visitor's words, and passes on the sentences the server wrote for this screen", () => {
+    expect(statusNote({ status: "done", error: null })).toBeNull();
+    expect(statusNote({ status: "failed", error: "NoPhotos: no recent pedestrian photos" })).toContain("Try a nearby street");
+    expect(statusNote({ status: "failed", error: "MapillaryError: HTTP 503" })).toContain("did not finish every step");
+    expect(statusNote({ status: "stopped_cost_cap", error: "cost cap $3.00" })).toContain("spending cap");
+    expect(statusNote({ status: "failed", error: "interrupted by a server restart; start a new survey" }))
+      .toBe("Interrupted by a server restart; start a new survey");
   });
 });

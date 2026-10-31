@@ -37,7 +37,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, "Could not reach the server. Check the connection and try again.");
   }
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail = res.statusText || `The server answered ${res.status}. Try again in a minute.`;  // HTTP/2 sends no text
     try {
       const body = await res.json();
       if (typeof body.detail === "string") detail = body.detail;

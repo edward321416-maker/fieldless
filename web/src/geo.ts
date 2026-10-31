@@ -1,6 +1,7 @@
 // Where a photo looks and where its object is, for the map (docs/specs/2026-10-28-ui-redesign-design.md 3.3).
 
 export const FOV_DEG = 70; // degrees across a photo, as eval/city.py FOV
+export const SIDEWALK_OFFSET_M = 8; // approximate sidewalk distance from the camera track along the object's bearing
 const EARTH_M = 6_371_000;
 
 export type LngLat = [number, number];
@@ -23,6 +24,19 @@ export function destination(lat: number, lng: number, bearing: number, meters: n
   const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
   const l2 = rad(lng) + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
   return [((l2 * 180) / Math.PI + 540) % 360 - 180, (p2 * 180) / Math.PI];
+}
+
+// Projects a finding from its camera GPS point onto the sidewalk along its viewing bearing so markers do not sit
+// collinearly on top of the camera walk wire. Falls back to the camera coordinates when heading or box is absent.
+export function findingPoint(
+  lat: number,
+  lng: number,
+  heading: number | null,
+  box: number[] | null,
+  meters = SIDEWALK_OFFSET_M,
+): LngLat {
+  const bearing = targetBearing(heading, box);
+  return bearing !== null ? destination(lat, lng, bearing, meters) : [lng, lat];
 }
 
 // What the photo shows: a wedge of `fov` degrees around its heading, `meters` deep, as a closed ring.

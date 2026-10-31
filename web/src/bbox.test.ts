@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bboxArea, bboxFromCorners, bboxPolygon, bboxTooLarge, bboxTooSmall, contentBounds, viewToBbox } from "./bbox";
+import { bboxArea, bboxAroundPoint, bboxFromCorners, bboxPolygon, bboxTooLarge, bboxTooSmall, clampBboxToMax, contentBounds, viewToBbox } from "./bbox";
 
 describe("bbox", () => {
   it("bounds the photographed walks, or nothing when there are none", () => {
@@ -17,6 +17,14 @@ describe("bbox", () => {
     expect(bboxTooLarge([126.9, 37.5, 127.0, 37.6], 0.0001)).toBe(true);
     expect(bboxTooSmall([126.98, 37.56, 126.980001, 37.57])).toBe(true);
     expect(bboxTooSmall(b)).toBe(false);
+  });
+  it("creates a surveyable bbox around a searched point and clamps oversized views", () => {
+    const around = bboxAroundPoint(-122.32, 47.614);
+    expect(bboxTooLarge(around, 0.0001)).toBe(false);
+    expect(bboxTooSmall(around)).toBe(false);
+    const wide = clampBboxToMax([-122.4, 47.5, -122.2, 47.7], 0.0001);
+    expect(bboxTooLarge(wide, 0.0001)).toBe(false);
+    expect((wide[0] + wide[2]) / 2).toBeCloseTo(-122.3, 5);
   });
   it("draws a closed polygon", () => {
     const ring = bboxPolygon([1, 2, 3, 4]).geometry.coordinates[0];

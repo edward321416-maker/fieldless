@@ -26,8 +26,9 @@ describe("how a survey was made", () => {
     expect(rows[1]).toEqual({ stage: "second_opinion", label: "Second opinion on possible defects", cost: null, share: 0,
       models: [{ model: "Muse Spark Open", calls: 1, cost: null }] });
   });
-  it("says which model did what, how often and for how much, and that the calls ran side by side", () => {
+  it("tucks the breakdown into a collapsible drawer while showing the summary and stage details", () => {
     const html = renderToStaticMarkup(<HowMade stats={stats} />);
+    expect(html).toContain("how-made-drawer");
     expect(html).toContain("How this survey was made");
     expect(html).toContain("429 model calls · $2.56 in all · 7.0 min of processing");
     expect(html).toContain("Survey items");

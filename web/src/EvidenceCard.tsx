@@ -17,6 +17,7 @@ interface Props {
   items: ItemMeta[];
   checks: CheckCount[]; // the scan's checks, for their short questions
   photoOnMap: boolean; // the photo window shows the big photo: the card keeps a thumbnail
+  readOnly?: boolean; // an example survey: nothing to answer
   backLabel: string; // where the back button goes: "← Street tree (31)", "← Stop reviewing"
   progress?: { done: number; total: number }; // a review's place (Project Sidewalk's Validate progress bar)
   street: string | undefined;
@@ -52,7 +53,8 @@ export default function EvidenceCard(props: Props) {
   const [steps, setSteps] = useState(0);
   const { question, choices } = choicesFor(p);
   // an agent item's rows belong to its run, which has no review (docs/specs/2026-10-29-agent-items-design.md 2)
-  const reviewable = !STATIC_DEMO && ["needs_review", "auto"].includes(f.status) && !(p.kind === "issue" && p.item.item_run);
+  const reviewable = !STATIC_DEMO && !props.readOnly && ["needs_review", "auto"].includes(f.status)
+    && !(p.kind === "issue" && p.item.item_run);
 
   useEffect(() => {
     shownAt.current = performance.now();
@@ -156,7 +158,8 @@ export default function EvidenceCard(props: Props) {
   const evidence = p.item.evidence;
   const title = p.kind === "entrance" ? `${p.item.name || "Unnamed entrance"}: ${p.item.label.text}` : p.item.label.text;
 
-  // The person's answer: in a review it comes first, right under what the finding is (docs/specs/2026-10-29-cleanup-design.md 4).
+  // The person's answer: in a review queue it comes first; when inspecting a dot on the map it is tucked inside a
+  // collapsible override drawer so visitors do not feel prompted to grade every finding.
   const answers = reviewable && (
     <div className={`answers${props.queue ? " answers-first" : ""}`}>
       <h3>{question}{f.status === "auto" && <span className="hint small"> (optional: the models were sure)</span>}</h3>
@@ -193,8 +196,8 @@ export default function EvidenceCard(props: Props) {
         </div>
       )}
       <div className="card-nav">
-        <button type="button" onClick={props.onClose}>{props.backLabel}</button>
-        <span className="hint">{!props.queue && index >= 0 ? `${index + 1} of ${props.list.length}` : ""}</span>
+        <button type="button" className="nav-back-btn" onClick={props.onClose}>{props.backLabel}</button>
+        <span className="hint card-counter">{!props.queue && index >= 0 ? `${index + 1} of ${props.list.length}` : ""}</span>
         <span className="card-arrows">
           <button type="button" onClick={() => step(-1)} disabled={index <= 0} aria-label="Previous (left arrow)">‹</button>
           <button type="button" onClick={() => step(1)} disabled={index < 0 || index >= props.list.length - 1}
@@ -228,44 +231,46 @@ export default function EvidenceCard(props: Props) {
         <p className="hint">No evidence photo for this item.</p>
       )}
 
-      <h3>Where</h3>
-      <p>
-        {props.street ?? "Street name not on the map"}
-        {facing && <> · photo taken {facing}</>}
-        {where && <>; the {target} is {where}, position approximate</>}.
-      </p>
+      <div className="evidence-meta-box">
+        <h3>Where</h3>
+        <p>
+          {props.street ?? "Street name not on the map"}
+          {facing && <> · photo taken {facing}</>}
+          {where && <>; the {target} is {where}, position approximate</>}.
+        </p>
 
-      {check ? (
-        <>
-          <h3>We asked {check.model}</h3>
-          <p className="asked">{props.checks.find((c) => c.id === check.id)?.question ?? check.question}</p>
-          <details className="instruction">
-            <summary>Full instruction to the model</summary>
-            <p>{check.question}</p>
-          </details>
-          <p><strong>Answer: {p.kind === "issue" ? p.item.label.text : ""}</strong>
-            {check.note && <> · “{check.note}”</>}</p>
-          {p.kind === "issue" && p.item.defect && (
-            <p className="hint">{f.status === "verified" ? "→ Confirmed as a defect by a person."
-              : `→ Listed as a possible defect for you to confirm. Look at the boxed ${target}.`}</p>
-          )}
-        </>
-      ) : p.kind === "entrance" ? (
-        <dl className="stats">
-          <dt>Steps</dt><dd>{p.item.label.text}</dd>
-          <dt>Stairs outlined by SAM 3.1</dt>
-          <dd>{p.item.stairs_detected === null ? "not checked" : p.item.stairs_detected ? "yes" : "no"}</dd>
-        </dl>
-      ) : (
-        <p>{p.item.durable ? "A defect of the paving itself, so it is likely still there today."
-          : `Seen in the photo of ${photoMonth(p.item.captured_at)}; movable objects may be gone now.`}</p>
-      )}
+        {check ? (
+          <>
+            <h3>We asked {check.model}</h3>
+            <p className="asked">{props.checks.find((c) => c.id === check.id)?.question ?? check.question}</p>
+            <details className="instruction">
+              <summary>Full instruction to the model</summary>
+              <p>{check.question}</p>
+            </details>
+            <p className="model-answer"><strong>Answer: {p.kind === "issue" ? p.item.label.text : ""}</strong>
+              {check.note && <> · “{check.note}”</>}</p>
+            {p.kind === "issue" && p.item.defect && (
+              <p className="hint">{f.status === "verified" ? "→ Confirmed as a defect by a person."
+                : `→ Listed as a possible defect. Look at the boxed ${target}.`}</p>
+            )}
+          </>
+        ) : p.kind === "entrance" ? (
+          <dl className="stats">
+            <dt>Steps</dt><dd>{p.item.label.text}</dd>
+            <dt>Stairs outlined by SAM 3.1</dt>
+            <dd>{p.item.stairs_detected === null ? "not checked" : p.item.stairs_detected ? "yes" : "no"}</dd>
+          </dl>
+        ) : (
+          <p>{p.item.durable ? "A defect of the paving itself, so it is likely still there today."
+            : `Seen in the photo of ${photoMonth(p.item.captured_at)}; movable objects may be gone now.`}</p>
+        )}
+      </div>
 
       {(match || p.item.old_photo || (p.kind === "issue" && p.item.second_opinion) || p.item.review_reasons.length > 0
         || zoomChip(check)) && (
         <p className="chips">
           {zoomChip(check) && <span className="chip">{zoomChip(check)}</span>}
-          {match && <span className="chip">{props.city!.city}'s list has a {target} here</span>}
+          {match && <span className="chip chip-match">{props.city!.city}'s list has a {target} here</span>}
           {p.item.old_photo && <span className="chip">Photo over 3 years old ({photoMonth(p.item.captured_at)})</span>}
           {p.kind === "issue" && p.item.second_opinion && (
             <span className="chip">{p.item.second_opinion.model} {p.item.second_opinion.agree ? "agrees" : "answered differently"}</span>
@@ -275,7 +280,15 @@ export default function EvidenceCard(props: Props) {
       )}
 
       {!props.queue && error && <p className="error" role="alert">{error}</p>}
-      {!props.queue && answers}
+      {!props.queue && answers && (
+        <details className="accordion-card answers-drawer">
+          <summary className="accordion-summary">
+            <span className="accordion-title">Disagree with the model? Override result</span>
+            <span className="accordion-meta">Keys: {choices.map((c) => c.key).join(" / ")}</span>
+          </summary>
+          {answers}
+        </details>
+      )}
     </section>
   );
 }

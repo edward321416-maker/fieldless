@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ActionTab } from "./ActionHub";
 import { api, ApiError, STATIC_DEMO } from "./api";
-import { contentBounds } from "./bbox";
+import { clampBboxToMax, contentBounds } from "./bbox";
 import AddItemPanel from "./AddItemPanel";
 import AreaPanel from "./AreaPanel";
 import type { CallStats } from "./callStats";
@@ -19,6 +20,7 @@ import HowMade from "./HowMade";
 import { findingsOf, itemName, keyOf, type Finding } from "./items";
 import LensSwitch, { type Lens } from "./LensSwitch";
 import MapView from "./MapView";
+import PlaceSearch from "./PlaceSearch";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
 import { reviewProgress } from "./summary";
@@ -36,6 +38,7 @@ export default function App() {
   const [demos, setDemos] = useState<DemoArea[]>([]);
   const [selecting, setSelecting] = useState(false);
   const [bbox, setBbox] = useState<Bbox | null>(null);
+  const [placeLabel, setPlaceLabel] = useState<string | null>(null);
   const [scanId, setScanId] = useState<number | null>(scanFromHash());
   // A first visit opens on what Fieldless does, with the first example survey loaded behind it (design 1).
   const [intro, setIntro] = useState(() => startsWithIntro(window.location.hash));
@@ -50,6 +53,7 @@ export default function App() {
   // a record the survey did not find opens its card.
   const [lens, setLens] = useState<Lens>("findings");
   const [record, setRecord] = useState<MissedRecord | null>(null);
+  const [actionTab, setActionTab] = useState<ActionTab>("dispatch");
   // An item the agent writes in the app: its run, from the address, and the survey's finished runs (examples).
   const [itemRunId, setItemRunId] = useState<number | null>(() => itemFromHash(window.location.hash));
   const [run, setRun] = useState<ItemRun | null>(null);
@@ -61,6 +65,7 @@ export default function App() {
   const [others, setOthers] = useState<{ scan: Scan; name: string }[]>([]);
   const [streets, setStreets] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [hideFeatured, setHideFeatured] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [newSurvey, setNewSurvey] = useState(false);
   const [previewWalks, setPreviewWalks] = useState<Walk[]>([]);
@@ -74,21 +79,25 @@ export default function App() {
   }, []);
   const [fitTo, setFitTo] = useState<Bbox | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The first screen's data did not arrive: without a word it would be an empty page. Try again asks once more.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadTick, setLoadTick] = useState(0);
   const getView = useRef<(() => Bbox) | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const overviewRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    api.config().then(setConfig).catch((e: Error) => setError(e.message));
+    setLoadFailed(false);
+    api.config().then(setConfig).catch(() => setLoadFailed(true));
     api.demo()
       .then((areas) => {
         setDemos(areas);
         // A first visit opens the first surveyed area, so results are on screen at once.
         if (areas.length > 0) setScanId((id) => id ?? areas[0].scan_id);
       })
-      .catch(() => setDemos([]));
-  }, []);
+      .catch(() => setLoadFailed(true));
+  }, [loadTick]);
 
   // The address names the survey on screen, so a link to it opens there; the introduction keeps it bare.
   useEffect(() => {
@@ -211,15 +220,18 @@ export default function App() {
   const onSelect = useCallback((b: Bbox) => {
     setBbox(b);
     setSelecting(false);
+    setNewSurvey(true);
   }, []);
 
   function openScan(id: number) {
     setPicked(null);
+    setHideFeatured(false);
     setReviewing(false);
     setOpenItem(null);
     setLens("findings");
     setRecord(null);
     setError(null);
+    setBbox(null);
     if (id === scanId) return; // already open: keep its results on screen
     setItemRunId(null);
     setItemRuns([]);
@@ -247,6 +259,7 @@ export default function App() {
   function goIntro() {
     setIntro(true);
     setPicked(null);
+    setHideFeatured(false);
     setReviewing(false);
     setOpenItem(null);
     setLens("findings");
@@ -254,6 +267,7 @@ export default function App() {
     setItemRunId(null);
     setNewSurvey(false);
     setSelecting(false);
+    setActionTab("dispatch");
     if (demos.length > 0) openScan(demos[0].scan_id);
     // the overview has no map: the next map opened from it shows the example's photographed streets
     if (scan && demos[0]?.scan_id === scan.id) setFitTo(contentBounds(walks) ?? [...scan.bbox]);
@@ -294,9 +308,19 @@ export default function App() {
   const cityStateMap = useMemo(() => cityStates(scan?.city_check, issues), [scan?.city_check, issues]);
   const records = useMemo(() => missedRecords(scan?.city_check), [scan?.city_check]);
   const cityItemCounts = useMemo(() => cityCounts(scan?.city_check, issues), [scan?.city_check, issues]);
+  const isExample = demos.some((d) => d.scan_id === scan?.id); // the server keeps the example surveys read-only
   const showLens = !!scan?.city_check && finished && !intro && !newSurvey && !selected;
   const onRecords = showLens && lens === "records";
   const shownRecord = onRecords ? record : null; // its dot is on the map
+  // On entry to Results view, highlight the first visible finding with a street photo & viewing cone so the map
+  // immediately pairs a sightline cone with a compact bottom-left photo preview (Alternative 1 spatial UI).
+  const featured: Finding | null = useMemo(() => {
+    if (selected || shownRecord || newSurvey || intro || !finished || onRecords || hideFeatured) return null;
+    const pool = findings.filter((f) => !hidden.has(f.item) && (!openItem || f.item === openItem));
+    return pool.find((f) => f.picked.item.evidence && f.heading !== null && f.box !== null)
+      ?? pool.find((f) => f.picked.item.evidence)
+      ?? null;
+  }, [selected, shownRecord, newSurvey, intro, finished, onRecords, hideFeatured, findings, hidden, openItem]);
   const toggleItem = (item: string) =>
     setHidden((h) => {
       const next = new Set(h);
@@ -327,7 +351,33 @@ export default function App() {
     setReviewing(true);
   }
 
-  // The top bar, the same over the overview and over a survey.
+  function useCurrentView() {
+    if (!getView.current) return;
+    const maxDeg2 = config?.max_bbox_deg2 ?? 0.0001;
+    setNewSurvey(true);
+    setSelecting(false);
+    setPlaceLabel("Current map view");
+    setBbox(clampBboxToMax(getView.current(), maxDeg2));
+  }
+
+  function startDrawingRange() {
+    setNewSurvey(true);
+    setSelecting((s) => !s);
+  }
+
+  const activeBbox = bbox ?? scan?.bbox ?? null;
+  const activeAreaLabel = newSurvey
+    ? (placeLabel ? `📍 ${placeLabel} (drag corners to resize)` : "📐 Selected range (drag corners to resize)")
+    : (demoName ? `📐 Survey range · ${demoName} (drag corner to change)` : null);
+
+  // The top bar: on the landing page (intro) it shows section links and a Launch App CTA; inside the app it shows
+  // the PlaceSearch omnibox, Example picker, and New survey toggle.
+  const loadNotice = loadFailed && (
+    <p className="error" role="alert">
+      The server did not answer, so the example surveys are not here yet.{" "}
+      <button type="button" className="link-button" onClick={() => setLoadTick((t) => t + 1)}>Try again</button>
+    </p>
+  );
   const header = (
     <header className="top">
       <button type="button" className="skip-link" onClick={() => (intro ? overviewRef : panelRef).current?.focus()}>
@@ -345,30 +395,63 @@ export default function App() {
           Fieldless
         </button>
       </h1>
-      {demos.length > 0 && (
-        // One picker for the example surveys, as Project Sidewalk picks its city (docs/specs/2026-10-29-cleanup-design.md 2)
-        <label className="example-picker">
-          <span className="visually-hidden">Example survey</span>
-          <select value={intro || newSurvey || !demos.some((d) => d.scan_id === scanId) ? "" : String(scanId)}
-            onChange={(e) => {
-              if (!e.target.value) return;
+      {intro ? (
+        <>
+          <nav className="landing-nav" aria-label="Landing page sections">
+            <a href="#overview-items">What it finds</a>
+            <a href="#overview-flow">How it works</a>
+            <a href="#overview-checks">Validation</a>
+            <a href="#overview-cities">Cities</a>
+          </nav>
+          <button type="button" className="primary new-survey" onClick={seeExample}>
+            Launch App →
+          </button>
+        </>
+      ) : (
+        <>
+          <PlaceSearch
+            demos={demos}
+            activeScanId={intro || newSurvey ? null : scanId}
+            onOpenDemo={(id) => {
               setIntro(false);
               setNewSurvey(false);
-              openScan(Number(e.target.value));
+              setPlaceLabel(null);
+              openScan(id);
+            }}
+            onPickPlace={(b, label) => {
+              setIntro(false);
+              setNewSurvey(true);
+              setSelecting(false);
+              setPlaceLabel(label);
+              setFitTo([b[0], b[1], b[2], b[3]]);
+              setBbox(b);
+            }}
+          />
+          {demos.length > 0 && (
+            // One picker for the example surveys, as Project Sidewalk picks its city (docs/specs/2026-10-29-cleanup-design.md 2)
+            <label className="example-picker">
+              <span className="visually-hidden">Example survey</span>
+              <select value={intro || newSurvey || !demos.some((d) => d.scan_id === scanId) ? "" : String(scanId)}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setIntro(false);
+                  setNewSurvey(false);
+                  setPlaceLabel(null);
+                  openScan(Number(e.target.value));
+                }}>
+                <option value="" disabled>Examples</option>
+                {demos.map((d) => <option key={d.scan_id} value={d.scan_id}>Example: {d.name}</option>)}
+              </select>
+            </label>
+          )}
+          <button type="button" className="primary new-survey" aria-expanded={newSurvey}
+            onClick={() => {
+              setIntro(false);
+              setNewSurvey((v) => !v);
             }}>
-            <option value="" disabled>Examples</option>
-            {demos.map((d) => <option key={d.scan_id} value={d.scan_id}>Example: {d.name}</option>)}
-          </select>
-        </label>
-      )}
-      {!STATIC_DEMO && (
-        <button type="button" className="primary new-survey" aria-expanded={newSurvey}
-          onClick={() => {
-            setIntro(false);
-            setNewSurvey((v) => !v);
-          }}>
-          + New survey
-        </button>
+            {newSurvey ? "← Back to results" : "+ New survey"}
+          </button>
+        </>
       )}
     </header>
   );
@@ -379,7 +462,8 @@ export default function App() {
       <div className="app overview-mode">
         {header}
         <main className="overview-page" id="overview" ref={overviewRef} tabIndex={-1}>
-          {error && <p className="error" role="alert">{error}</p>}
+          {loadNotice}
+        {error && <p className="error" role="alert">{error}</p>}
           <Overview scan={resultsOf === scan?.id ? scan : null} name={demoName} issues={issues} counts={itemCounts}
             examples={examples} runs={overviewRuns.filter((r) => r.scan_id === scan?.id)} others={others}
             canSurvey={!STATIC_DEMO} onSee={seeExample}
@@ -396,7 +480,24 @@ export default function App() {
               openScan(scanId);
               setItemRunId(runId);
               setRunTick((t) => t + 1);
-            }} />
+            }}
+            onLaunchAction={(tab) => {
+              setIntro(false);
+              setNewSurvey(false);
+              setPicked(null);
+              setRecord(null);
+              setOpenItem(null);
+              if (demos.length > 0) openScan(demos[0].scan_id);
+              if (scan && demos[0]?.scan_id === scan.id) setFitTo(contentBounds(walks) ?? [...scan.bbox]);
+              if (tab === "gis") {
+                setActionTab("gis");
+                setLens("records");
+              } else if (tab === "dispatch") {
+                setActionTab("dispatch");
+                setLens("findings");
+              }
+            }}
+          />
           {STATIC_DEMO && <DemoNotice />}
           <Attribution />
         </main>
@@ -412,8 +513,8 @@ export default function App() {
         newSurvey={newSurvey}
         coverage={!!config?.coverage_tiles}
         showCoverage={newSurvey}
-        bbox={bbox}
-        areaLabel={null}
+        bbox={activeBbox}
+        areaLabel={activeAreaLabel}
         fitTo={fitTo}
         findings={newSurvey ? [] : findings}
         items={items}
@@ -425,8 +526,12 @@ export default function App() {
         padLeft={0}
         walks={newSurvey ? previewWalks : walks}
         selected={newSurvey ? null : selected}
+        featured={newSurvey ? null : featured}
         selectedLabel={selectedLabel}
-        onSelect={onSelect}
+        onSelect={(b) => {
+          setPlaceLabel("Custom range on map");
+          onSelect(b);
+        }}
         onPick={(f) => pick(f.picked)}
         onPickRecord={setRecord}
         onReady={(fn) => (getView.current = fn)}
@@ -439,18 +544,70 @@ export default function App() {
           }} />
         )}
         {newSurvey && (
-          <CoverageGuide coverage={!!config?.coverage_tiles} demos={demos}
-            onGo={(b) => setFitTo([b[0], b[1], b[2], b[3]])} />
+          <CoverageGuide
+            coverage={!!config?.coverage_tiles}
+            demos={demos}
+            onGo={(b) => {
+              setPlaceLabel(null);
+              setFitTo([b[0], b[1], b[2], b[3]]);
+              setBbox(b);
+            }}
+          />
         )}
-        {selected && !newSurvey && (
-          <PhotoWindow finding={selected} items={items} onClose={() => setPicked(null)} />
+        {/* Always-visible floating range selector bar on the map so the user can draw/resize the survey box anytime */}
+        <div className="map-survey-bar" role="region" aria-label="Select survey range on map" hidden={!!selected && !newSurvey}>
+          {/* The bar leaves the photo window's credit in view (Mapillary terms): none over a large photo, no words over a small one. */}
+          {(selecting || newSurvey || !featured) && (
+            <span className="map-survey-place">
+              {selecting
+                ? "Drag on map to draw range…"
+                : placeLabel
+                  ? `📍 ${placeLabel}`
+                  : "📐 Area range (drag blue corner or draw):"}
+            </span>
+          )}
+          <button
+            type="button"
+            className={selecting ? "primary" : ""}
+            aria-pressed={selecting}
+            onClick={startDrawingRange}
+          >
+            {selecting ? "Cancel drawing" : "📐 Draw range on map"}
+          </button>
+          <button type="button" onClick={useCurrentView}>
+            🎯 Use current map view
+          </button>
+          {newSurvey && scan && finished && (
+            <button
+              type="button"
+              onClick={() => {
+                setNewSurvey(false);
+                setSelecting(false);
+                setBbox(null);
+                setPlaceLabel(null);
+              }}
+            >
+              ← Results
+            </button>
+          )}
+        </div>
+        {(selected || featured) && !newSurvey && (
+          <PhotoWindow
+            finding={(selected ?? featured)!}
+            items={items}
+            preview={!selected}
+            onInspect={() => featured && pick(featured.picked)}
+            onClose={() => (selected ? setPicked(null) : setHideFeatured(true))}
+          />
         )}
       </MapView>
       <aside className="panel" ref={panelRef} tabIndex={-1} aria-label="Survey panel">
+        {loadNotice}
         {error && <p className="error" role="alert">{error}</p>}
         <div ref={detailRef}>
           {selected && !newSurvey && (
             <EvidenceCard finding={selected} list={cardList} queue={reviewing} items={items} backLabel={backLabel}
+              readOnly={isExample}
               progress={reviewing && scan ? reviewProgress(scan.counts) : undefined}
               checks={scan?.checks ?? []} photoOnMap={wide && !!selected.picked.item.evidence}
               street={streets[selected.key]} city={scan?.city_check}
@@ -463,15 +620,15 @@ export default function App() {
           {shownRecord && <CityRecordCard record={shownRecord} items={items} onClose={() => setRecord(null)} />}
         </div>
         {/* What is being looked at comes first; a new survey is one button away (docs/ui-rules.md U6). */}
-        {!STATIC_DEMO && (newSurvey || !scan || !finished) && (
+        {(newSurvey || (!STATIC_DEMO && (!scan || !finished))) && (
           <AreaPanel
-            bbox={bbox}
+            bbox={activeBbox}
             selecting={selecting}
             maxDeg2={config?.max_bbox_deg2 ?? 0.0001}
             inviteRequired={config?.invite_required ?? false}
             scan={newSurvey ? null : scan}
             onToggleSelect={() => setSelecting((s) => !s)}
-            onUseView={() => getView.current && setBbox(getView.current())}
+            onUseView={useCurrentView}
             onStarted={(id) => {
               setNewSurvey(false);
               openScan(id);
@@ -492,14 +649,30 @@ export default function App() {
             findings={findings}
             hidden={hidden}
             onToggle={toggleItem}
-            onOpenItem={setOpenItem}
+            onOpenItem={(id) => {
+              setHideFeatured(false);
+              setOpenItem(id);
+            }}
             onReview={startReview}
+            canReview={!isExample}
             onIntro={goIntro}
             hasReport={!!config?.report}
             agentCity={run?.status === "done" && run.item && run.test?.city
               ? { [run.item.id]: run.test.city } : undefined}
             lens={showLens ? lens : "findings"}
             cityCounts={cityItemCounts}
+            streets={streets}
+            cityStates={cityStateMap}
+            actionTab={actionTab}
+            onPickFinding={(f) => pick(f.picked)}
+            onPickRecord={(r) => {
+              setLens("records");
+              setRecord(r);
+            }}
+            onSwitchLens={(l) => {
+              setLens(l);
+              setRecord(null);
+            }}
           >
             {callStats && callStats.scan_id === scan.id && <HowMade stats={callStats} />}
             {config?.items && (

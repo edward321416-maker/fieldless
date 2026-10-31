@@ -30,7 +30,7 @@ describe("the finished survey", () => {
     <ResultsPanel scan={scan} name="Capitol Hill" findings={findings} hidden={new Set(["curb_ramp"])}
       onToggle={() => undefined} onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined}
       hasReport />);
-  it("leads with the cost per km, then one row per item with its city share, then a person's part and the files", () => {
+  it("leads with the cost per km, then one row per item with its city share and bar, then a collapsible review drawer and the files", () => {
     expect(html).toContain("$4.11");
     expect(html).toContain("per km");
     expect(html).toContain("0.94 km in 19.2 min · $3.87 in all");
@@ -39,7 +39,11 @@ describe("the finished survey", () => {
     expect(html).toContain("Curb ramp");
     expect(html).toContain("No city list to compare · 2 possible defects");
     expect(html).toContain("19 of 39 in the city&#x27;s list · 1 to check on site");
-    expect(html).toContain("21 the models were unsure of are waiting for a person.");
+    expect(html).toContain("city-match-bar");
+    expect(html).toContain("width:49%");
+    expect(html).toContain("The models were unsure of 21: each is on the dispatch list to check on site.");
+    expect(html).not.toContain(">Review<"); // read-only unless the panel is told otherwise
+    expect(html).toContain("check-drawer");
     expect(html).toContain("Download for a GIS");
     expect(html).toContain('href="/api/scans/4/report" target="_blank"');
     expect(html).toContain(">Share</button>");

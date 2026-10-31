@@ -1,3 +1,4 @@
+import type { ActionTab } from "./ActionHub";
 import { BENCHMARKS } from "./benchmarks";
 import { CHECKED_BY_EYE } from "./claims";
 import { cityTotals } from "./cityMatch";
@@ -26,6 +27,7 @@ interface Props {
   onSurvey: () => void;
   onOpenScan: (id: number) => void;
   onOpenRun: (scanId: number, runId: number) => void;
+  onLaunchAction?: (tab: ActionTab | "custom") => void;
 }
 
 const STANDARD: Record<Scan["standard"], string> = { US: "US", KR: "Korean" };
@@ -40,44 +42,155 @@ const firstList = (scan: Scan) => (scan.city_check ? Object.values(scan.city_che
 export default function Overview(props: Props) {
   const { scan, name, canSurvey } = props;
   const bench = scan ? BENCHMARKS[scan.standard] : undefined;
+  const heroEx = props.examples[0];
+  const heroItemLabel = scan && heroEx ? itemName(heroEx.item, scan.items) : null;
+  const heroColour = scan && heroEx ? colourOf(heroEx.item, scan.items) : "#1d4ed8";
+  const totalFindings = Object.values(props.counts).reduce((a, b) => a + b, 0);
+  const totals = scan ? cityTotals(scan.city_check, props.issues) : null;
+  const launchAction = (tab: ActionTab | "custom") => {
+    if (props.onLaunchAction) props.onLaunchAction(tab);
+    else props.onSee();
+  };
+
   return (
     <section className="overview" aria-labelledby="overview-title">
-      <div className="overview-opening">
-        <h2 id="overview-title">Street surveys without the fieldwork</h2>
-        <p className="overview-lead">
-          Cities send people to walk every block and write down what is on the street. Fieldless reads the public street
-          photos that already exist and maps the same things, each with its photo.
-        </p>
-        {scan && scan.usd_per_km !== null && (
-          <div className="intro-compare">
-            {bench && (
-              <div className="compare-card">
-                <span className="compare-label">On foot</span>
-                <strong>${bench.usd_per_km}<small> /km</small></strong>
+      <div className="overview-hero">
+        <div className="overview-opening">
+          <span className="overview-kicker">AI street survey from public photos</span>
+          <h2 id="overview-title">Street surveys without the fieldwork</h2>
+          <p className="overview-lead">
+            Cities send people to walk every block and write down what is on the street. Fieldless reads the public street
+            photos that already exist and maps the same things, each with its photo.
+          </p>
+          {scan && scan.usd_per_km !== null && (
+            <div className="intro-compare">
+              {bench && (
+                <div className="compare-card">
+                  <span className="compare-label">On foot</span>
+                  <strong>${bench.usd_per_km}<small> /km</small></strong>
+                </div>
+              )}
+              <div className="compare-card compare-ours">
+                <span className="compare-label">Fieldless</span>
+                <strong>{dollars(scan.usd_per_km)}<small> /km</small></strong>
               </div>
+            </div>
+          )}
+          {scan && <p className="overview-headline">{headline(scan, bench).line}</p>}
+          {scan && bench && (
+            <p className="intro-scope">
+              On foot: {bench.name}: {bench.scope}. Fieldless: this example{name ? `, ${name}` : ""}. {bench.caveat}{" "}
+              <a href={bench.source} target="_blank" rel="noreferrer">Source</a>
+            </p>
+          )}
+          <div className="overview-actions">
+            {scan && name && (
+              <button type="button" className="primary launch-cta" onClick={props.onSee}>See the finished survey of {name}</button>
             )}
-            <div className="compare-card compare-ours">
-              <span className="compare-label">Fieldless</span>
-              <strong>{dollars(scan.usd_per_km)}<small> /km</small></strong>
+            {canSurvey && <button type="button" className="secondary-cta" onClick={props.onSurvey}>Survey your own streets</button>}
+          </div>
+        </div>
+
+        {scan && (
+          <div className="overview-showcase" onClick={props.onSee} role="presentation">
+            <div className="showcase-window">
+              <div className="showcase-bar">
+                <span className="showcase-dots"><i /><i /><i /></span>
+                <span className="showcase-title">Live App Preview · {name ?? `Survey ${scan.id}`}</span>
+                <span className="showcase-launch-tag">Click to launch app →</span>
+              </div>
+              <div className="showcase-body">
+                {heroEx && (
+                  <div className="showcase-photo-wrap">
+                    <img src={heroEx.url} alt="" />
+                    {heroEx.box && heroEx.box.length === 4 && (
+                      <div
+                        className="showcase-bbox"
+                        style={{
+                          left: `${heroEx.box[0] / 10}%`,
+                          top: `${heroEx.box[1] / 10}%`,
+                          width: `${(heroEx.box[2] - heroEx.box[0]) / 10}%`,
+                          height: `${(heroEx.box[3] - heroEx.box[1]) / 10}%`,
+                          borderColor: heroColour,
+                        }}
+                      >
+                        <span className="showcase-bbox-tag" style={{ background: heroColour }}>
+                          {heroItemLabel}
+                        </span>
+                      </div>
+                    )}
+                    <div className="showcase-photo-caption">
+                      <span>SAM 3.1 + Muse Spark detection</span>
+                      <span>{scan.image_count} street photos analyzed</span>
+                    </div>
+                  </div>
+                )}
+                <div className="showcase-stats-strip">
+                  <div className="showcase-stat">
+                    <strong>{totalFindings}</strong>
+                    <span>Mapped findings</span>
+                  </div>
+                  <div className="showcase-stat">
+                    <strong>{scan.items.length}</strong>
+                    <span>Survey items</span>
+                  </div>
+                  <div className="showcase-stat">
+                    <strong>{scan.usd_per_km !== null ? dollars(scan.usd_per_km) : "—"}/km</strong>
+                    <span>End-to-end AI cost</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
-        {scan && <p className="overview-headline">{headline(scan, bench).line}</p>}
-        {scan && bench && (
-          <p className="intro-scope">
-            On foot: {bench.name}: {bench.scope}. Fieldless: this example{name ? `, ${name}` : ""}. {bench.caveat}{" "}
-            <a href={bench.source} target="_blank" rel="noreferrer">Source</a>
-          </p>
-        )}
-        <div className="overview-actions">
-          {scan && name && (
-            <button type="button" className="primary" onClick={props.onSee}>See the finished survey of {name}</button>
-          )}
-          {canSurvey && <button type="button" onClick={props.onSurvey}>Survey your own streets</button>}
-        </div>
       </div>
       {scan && (
         <>
+          <section className="overview-part overview-workflows" aria-label="Actionable tools built into Fieldless">
+            <div className="workflow-head">
+              <span className="overview-kicker">Built-in Action Suite</span>
+              <h4>Turn a survey into field work and city records</h4>
+              <p className="hint">Click any workflow below to open it live inside the interactive survey workspace.</p>
+            </div>
+            <div className="workflow-grid">
+              <div
+                role="link"
+                tabIndex={0}
+                className="overview-card workflow-card"
+                onClick={() => launchAction("dispatch")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("dispatch")}
+              >
+                <span className="workflow-badge prio-p1">Field dispatch</span>
+                <strong>Pinpointed Crew Work Orders</strong>
+                <p>Skip walking every block. Go straight to possible defects and what the models were unsure of, each with GPS, street photo and a CSV work order.</p>
+                <span className="workflow-cta">Open Dispatch Queue →</span>
+              </div>
+              <div
+                role="link"
+                tabIndex={0}
+                className="overview-card workflow-card"
+                onClick={() => launchAction("gis")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("gis")}
+              >
+                <span className="workflow-badge prio-gis">City GIS diff</span>
+                <strong>{totals ? `+${totals.notInList} Unrecorded · -${totals.missed} Missing` : "Automated GIS Audit"}</strong>
+                <p>Compare the street with the city's records. Export a GeoJSON patch of assets the city has not listed and records the photos did not show.</p>
+                <span className="workflow-cta">Open GIS Diff &amp; Patch →</span>
+              </div>
+              <div
+                role="link"
+                tabIndex={0}
+                className="overview-card workflow-card"
+                onClick={() => launchAction("custom")}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("custom")}
+              >
+                <span className="workflow-badge prio-ai">On-demand AI agent</span>
+                <strong>Custom Street Asset Search</strong>
+                <p>Need to map fire hydrants, bike racks, or storm drains? Type any street object and Muse Spark writes, tests, and runs a new detector across existing photos.</p>
+                <span className="workflow-cta">Try Custom AI Detector →</span>
+              </div>
+            </div>
+          </section>
           <ItemCards scan={scan} counts={props.counts} examples={props.examples} />
           <Flow scan={scan} issues={props.issues} />
           <Checks scan={scan} issues={props.issues} others={props.others} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compassWord, destination, distanceM, distanceToLineM, targetBearing, viewWedge } from "./geo";
+import { compassWord, destination, distanceM, distanceToLineM, findingPoint, SIDEWALK_OFFSET_M, targetBearing, viewWedge } from "./geo";
 import { fallbackLetter, hasIcon } from "./icons";
 import { badgeOf, colourOf, inkOn, isLight, PALETTE } from "./items";
 import { namedRoads, streetText } from "./streets";
@@ -28,6 +28,15 @@ describe("where a photo looks", () => {
     expect(distanceM([-122.3, 47.6], wedge[1])).toBeCloseTo(25, 0);
     expect(compassWord(2)).toBe("north");
     expect(compassWord(271)).toBe("west");
+  });
+
+  it("projects a finding along its viewing bearing onto the sidewalk when heading and box are known", () => {
+    const cam: [number, number] = [-122.32, 47.614];
+    const projected = findingPoint(cam[1], cam[0], 90, [500, 0, 500, 1000]);
+    expect(distanceM(cam, projected)).toBeCloseTo(SIDEWALK_OFFSET_M, 1);
+    expect(projected[0]).toBeGreaterThan(cam[0]); // due east of the camera
+    expect(findingPoint(cam[1], cam[0], null, [500, 0, 500, 1000])).toEqual(cam);
+    expect(findingPoint(cam[1], cam[0], 90, null)).toEqual(cam);
   });
 
   it("measures the distance to a polyline", () => {
