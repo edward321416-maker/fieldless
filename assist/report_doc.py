@@ -18,11 +18,11 @@ SCALES_M = (10, 20, 50, 100, 200, 500, 1000, 2000)
 WALK_INK = "#475569"
 STATUS_ORDER = ("auto", "needs_review", "field_check", "verified", "rejected")
 MISSED_SHOWN = 10  # city records listed per item in 4.3; the rest are in the item's records-to-check CSV
-STATUS_WORDS = {"auto": "found by the models", "needs_review": "awaiting review", "field_check": "check on site",
+STATUS_WORDS = {"auto": "found by the models", "needs_review": "models unsure", "field_check": "check on site",
                 "verified": "confirmed", "rejected": "rejected"}
 HOW_MADE = ("SAM 3.1 found each survey item in public Mapillary street photos, and Muse Spark judged each one on the "
             "best photo against the item's question. Defect findings were judged again by Muse Spark Open. What the "
-            "models could not settle is marked for review or a site visit.")
+            "models could not settle is marked for a site visit.")
 SECTIONS = (("summary", "1. Summary"), ("scope", "2. Scope and method"), ("findings", "3. Findings by item"),
             ("actions", "4. Actions"), ("ledger", "5. Photo ledger"), ("limits", "6. Limits"),
             ("appendix", "Appendix: data and credits"))

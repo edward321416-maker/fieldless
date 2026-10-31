@@ -40,7 +40,7 @@ MAX_PRIORITIES = 5
 DIGIT = re.compile(r"\d")
 BANNED = re.compile(r"\b(?:non-compliant|compliant|violations?|illegal|inaccessible|accessible)\b", re.IGNORECASE)
 HOW_MADE = ("Made from public Mapillary street photos: SAM 3.1 found each survey item in the photos and Muse Spark "
-            "judged each one on the best photo. What the models could not settle is marked for review or a site "
+            "judged each one on the best photo. What the models could not settle is marked for a site "
             "visit.")
 LIMITS_FIXED = (
     "A photo settles only what it shows: measurements (slopes, widths, heights) and anything hidden or out of frame "
@@ -286,11 +286,12 @@ def _limits(s: dict) -> list[str]:
                    f"since.")
     t = s["totals"]
     if t["unclear"] or t["needs_review"]:
-        out.append(f"Unclear from the photo: {t['unclear']}. Awaiting a person's review: {t['needs_review']}. "
-                   f"Both are in the GeoJSON and CSV files with their review status.")
+        out.append(f"Unclear from the photo: {t['unclear']}. The models were unsure of: {t['needs_review']}. "
+                   f"Both are in the GeoJSON and CSV files with their status.")
     if t["dropped"]:
+        spot_check = f"; {t['dropped_audited']} of them were kept as a random spot check" if t["dropped_audited"] else ""
         out.append(f"Set aside by the models as not the target: {t['dropped']} (in the dropped CSV, with their "
-                   f"photos); {t['dropped_audited']} of them went to a person as a random spot check.")
+                   f"photos){spot_check}.")
     if t["field_check"]:
         out.append(f"A person could not tell from the photo either: {t['field_check']}. These need a site visit "
                    f"(status \"Check on site\" in the GeoJSON and CSV files).")
@@ -299,7 +300,7 @@ def _limits(s: dict) -> list[str]:
 
 def _waiting(s: dict) -> str | None:
     n = s["totals"]["defects_unconfirmed"]
-    return f"Possible defects awaiting a person's confirmation: {n}." if n else None
+    return f"Possible defects to check on site: {n}." if n else None
 
 
 def _attribution(p: dict) -> tuple[str, str, str]:
@@ -337,7 +338,7 @@ def to_markdown(s: dict, notes: dict | None = None) -> str:
         lines += ["| Item | Finding | Photo |", "|---|---|---|"]
         lines += [f"| {_md(d['title'])} | {_md(d['label'])} | {_md(_md_photo(d))} |" for d in s["defects"]]
     else:
-        lines.append("No defect has been confirmed by a person yet.")
+        lines.append("No defect has been confirmed yet.")
     lines += ["", _waiting(s)] if _waiting(s) else []
     lines += ["", "## Limits", ""] + [f"- {line}" for line in _limits(s)]
     lines += ["", "Street photos: Mapillary contributors, CC BY-SA 4.0. Survey by Fieldless."]

@@ -35,7 +35,7 @@ ENTRANCE = "entrance"
 PROPERTIES = ("item", "label", "answer", "review_status", "status", "defect", "photo_id", "photo_url",
               "captured_at", "creator", "license", "evidence", "scan_id", "row_id")
 # review_status in words, for whoever opens the file in a GIS or a spreadsheet
-STATUS_TEXT = {"auto": "Found by the models", "needs_review": "To review", "verified": "Confirmed by a person",
+STATUS_TEXT = {"auto": "Found by the models", "needs_review": "Models unsure", "verified": "Confirmed by a person",
                "field_check": "Check on site", "rejected": "Rejected by a person"}
 UNSAFE = re.compile(r"[^a-z0-9_]+")
 MATCH_TEXT = {True: "In the city's list", False: "In the city's list (beyond the photo's view)",

@@ -79,7 +79,7 @@ def test_markdown_lists_confirmed_defects_and_attributes_every_photo():
     assert len(photo_lines) == 1 and "pKey=101" in photo_lines[0]  # the confirmed defect only
     for line in photo_lines:
         assert "by alice" in line and "CC BY-SA 4.0" in line
-    assert "Possible defects awaiting a person's confirmation: 1." in text
+    assert "Possible defects to check on site: 1." in text
     assert "Older than 3 years: 1 of 6" in text and "Summary (written by Muse Spark" not in text
 
 
@@ -215,7 +215,7 @@ def test_finds_the_models_set_aside_are_counted_and_listed_with_their_spot_check
 
     ramp = next(i for i in s["items"] if i["item"] == "curb_ramp_warning")
     assert ramp["dropped"] == 2 and (s["totals"]["dropped"], s["totals"]["dropped_audited"]) == (2, 1)
-    assert "Set aside by the models as not the target: 2" in text and "1 of them went to a person" in text
+    assert "Set aside by the models as not the target: 2" in text and "1 of them were kept as a random spot check" in text
 
 
 CITY = {"scan_id": 1, "city": "Seattle", "measured_at": "2026-10-28", "reviewed": True, "method": "m",
