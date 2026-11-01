@@ -1,5 +1,6 @@
 # secrets (.env, .env.local, ...)
 .env*
+!.env.example
 # raw media and spike outputs
 spike/clips/
 spike/out/*

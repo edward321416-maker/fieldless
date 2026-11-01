@@ -6,13 +6,13 @@ One survey covers street assets (utility and streetlight poles, street trees, pu
 
 **Try it:** [live app](https://edward321416--fieldless-web.us-east.modal.run) (open a finished survey, or start your own; spend is capped) · [read-only demo](https://huggingface.co/spaces/BBONG1201/fieldless) (the same surveys, static) · [the Seattle survey with the item Muse Spark added](https://edward321416--fieldless-web.us-east.modal.run/#scan=17&item=4)
 
-![The Seattle survey on the city-records view: $4.48 per km; filled dots are on the city's own lists, rings are finds the lists lack, faint dots are the city's records in the photos that the survey did not find](docs/images/records-lens.png)
+![The Seattle survey on the city-records view: $4.48 per km; filled dots are on the city's own lists, rings are finds the lists lack, faint dots are the city's records in the photos' view that the survey did not find](docs/images/records-lens.png)
 
 ## Why
 
 Street surveys are slow, expensive and quickly out of date.
 
-- **Seattle** sent 14 interns to walk 2,336 miles of sidewalk over 16 weeks ($400,000, 2017). ([SDOT](https://seattle.gov/documents/Departments/SDOT/About/SidewalkAssessExecSummary_4_6_2018R5.pdf))
+- **Seattle** sent 14 interns to walk 2,336 miles of sidewalk over 16 weeks (a $400,000 budget, 2017). ([SDOT](https://seattle.gov/documents/Departments/SDOT/About/SidewalkAssessExecSummary_4_6_2018R5.pdf))
 - **Republic, Missouri** is using a $240,000 federal grant in 2026 to have engineers ride its sidewalks and map width, slope and damage, to update an ADA transition plan last made in 2016. ([KY3, 2026](https://www.ky3.com/2026/08/10/what-are-those-machines-driving-around-republic-mo-sidewalks/))
 - US cities with 50+ employees must keep an ADA inventory of barriers in their streets. Only 13% of 401 surveyed entities had a transition plan readily available. ([Eisenberg et al., *Cities*, 2020](https://doi.org/10.1016/j.cities.2020.102720))
 - Chicago-area cities measured manual sidewalk data collection at about $1,600 per mile, against $64 per mile when people reviewed street photos instead. ([CMAP, 2026](https://cmap.illinois.gov/news-updates/measuring-sidewalk-accessibility/))
@@ -30,7 +30,7 @@ One pass over the photos fills a whole survey. Each item is a few sentences in a
 | Condition | Curb ramps without a detectable warning surface | Seattle's curb-ramp inventory, plus photo checks |
 | Record | Steps at shop entrances · objects blocking the walkway, with the photo date | Photo checks |
 | Added in the app | Anything a photo can show, typed as a target (for example "bike rack") | Muse Spark Open's answers on sample photos, and the city's list when it has one (SDOT bike racks) |
-| Another country's rules | Seoul: tactile paving with blocks missing or cut by a cover, steps at shop entrances, street trees (Korean standard, `kr.toml`) | Seoul's street-tree list (Open Data Plaza), plus photo checks |
+| Another country's rules | Seoul: tactile paving with blocks missing or cut by a cover, steps at shop entrances, street trees (Korean standard, `kr.toml`) | Seoul's street-tree list (Open Data Plaza; counts and source only), plus photo checks |
 
 It reports only what a photo can settle. Slopes, widths and sub-inch lips need a tape measure, and Fieldless says so instead of guessing.
 
@@ -43,21 +43,21 @@ area (bbox) → Mapillary photos → scene scan → survey items → evidence �
 1. **Collect** (Mapillary API v4): pedestrian, non-panorama photo sequences in the area, thinned to about one photo every 2 m, keeping a photo wherever the walker turns.
 2. **Scene scan** (Muse Spark, video input): Spark watches each sequence as a short video (photo numbers burned in) and lists the entrances and the kinds of objects on the sidewalk. Its words become SAM prompts.
 3. **Survey items** (SAM 3.1 + Muse Spark): for each item, SAM 3.1 finds the `find` phrase. Curb ramps and poles are tracked across a sequence as video, one row per object; trees, litter cans and pay stations are found on photos and grouped by distance walked (8 m for things in rows, 15 m for the rest). Two boxes on one object in one photo become one row. Muse Spark answers the item's question on the best photo in a fixed JSON format with a box and a reason, or says "unclear". When it calls a marked object unclear, it is asked once more with the box enlarged, and the card says what the first look said. A detail on a box under 7% of the photo's height is too small to judge and stays unclear. When Spark says the thing is not in the photo at all (SAM found a driveway, not a curb ramp), the find is set aside, not hidden: it is listed in the export.
-   - **Open-weight judge for large runs** (Muse Glimmer 30B, served by us on Modal): in a run started with `--glimmer`, Glimmer answers first the street-asset checks whose item says `judge = "glimmer"`. When it is unclear or fails, Spark answers; Spark also audits 10% of Glimmer's answers, and a disagreement is marked for review. Which items Glimmer takes was measured per item against the city's inventory and labelled photos (poles, litter cans, pay stations: yes; street trees: not yet). A small survey is faster and no dearer on Muse Spark alone: a 199-photo Capitol Hill scan with Glimmer took 34 min (two GPU starts, about 7 min of waiting) and saved about $0.56 of Spark calls while keeping the GPU on for about 17 minutes (about $1.15, estimated). The live site and plain runs use Muse Spark.
-4. **Second opinion** (Muse Spark Open on Baseten): every possible defect is asked again on the same photo. If the two models disagree, the finding is recorded as unclear, not as a defect.
+   - **Open-weight judge for large runs** (Muse Glimmer 30B, served by us on Modal): in a run started with `--glimmer`, Glimmer answers first the street-asset checks whose item says `judge = "glimmer"`. When it is unclear or fails, Spark answers; Spark also audits 10% of Glimmer's answers, and a disagreement is marked "Models unsure" on its card. Which items Glimmer takes was measured per item against the city's inventory and labelled photos (poles, litter cans, pay stations: yes; street trees: not yet). A small survey is faster and no dearer on Muse Spark alone: a 199-photo Capitol Hill scan with Glimmer took 34 min (two GPU starts, about 7 min of waiting) and saved about $0.56 of Spark calls while keeping the GPU on for about 17 minutes (about $1.15, estimated). The live site and plain runs use Muse Spark.
+4. **Second opinion** (Muse Spark Open on Baseten): every possible defect on the US survey items is asked again on the same photo (the Seoul survey has no second opinion). If the two models disagree, the finding is recorded as unclear, not as a defect.
 5. **Evidence**: faces and plates blurred with SAM 3.1; every photo shows its Mapillary creator, logo and link.
 6. **On the map**: picking a finding shows on the map where its photo was taken and which way it looked, with the photo and the model's box over the map; the card says what Muse Spark was asked and answered.
-7. **Report and files**: a survey report page (`/api/scans/<id>/report`, also in the download) with the counts, a map, the evidence photo of every finding, what photos cannot settle, and a short text Muse Spark writes from the counts (code drops any sentence with a number or a judging word, so every number comes from code). "Download for a GIS" gives GeoJSON and a CSV per item. Where the city keeps a list (`eval/cities/seattle.toml`), each finding carries the city's own field names: the matched record's IDs (a tree's `COMPKEY` and `UNITID`, a pole's `SCLNR`), whether it matched, and the survey's answer in the city's own field (`DETWARN_EXISTS` for curb ramps); a CSV per item lists the city's records the photos showed but the survey did not find, by their IDs. Every row keeps its photo's creator, link and licence.
+7. **Report and files**: a survey report page (`/api/scans/<id>/report`, also in the download) with the counts, a map, the evidence photo of every finding, what photos cannot settle, and a short text Muse Spark writes from the counts (code drops any sentence with a number or a judging word, so every number comes from code). "Download for a GIS" gives GeoJSON and a CSV per item. Where the city keeps a list (`eval/cities/seattle.toml`), each finding carries the city's own field names: the matched record's IDs (a tree's `COMPKEY` and `UNITID`, a pole's `SCLNR`), whether it matched, and the survey's answer in the city's own field (`DETWARN_EXISTS` for curb ramps); a CSV per item lists the city records in the photos' view that the survey did not find, by their IDs. Seoul's list is passed on as counts and a source only (KOGL Type 4), so a Seoul report has no city IDs and no such CSV. Every row keeps its photo's creator, link and licence.
 
 Every stage saves its state, so a stopped scan resumes. Each scan has a cost cap, enforced in code.
 
 ### What the app shows
 
 - **Overview.** A first visit opens on one page that walks through a finished survey: its cost per km beside a published walking survey, every item with a photo, how the survey rules, the city's records and the photos meet, what backs the numbers, the items Muse Spark wrote in the app, and both cities.
-- **City records.** On the results map, "City records" draws each finding by how it pairs with the city's own list: filled if it is on the list, a ring if the list lacks it, and a faint dot for each city record in the photos' view that the survey did not find. Clicking a faint dot shows the city's ids for that record, to look up or visit.
-- **Dispatch.** The places a crew should go instead of walking every street: possible defects first, then what the models were unsure of, each with its point, street name and photo, and a work order CSV.
-- **GIS diff.** The findings the city's list lacks and the records the photos did not show, as a GeoJSON patch for the city's database.
-- **Choosing an area.** Search a place by name (OpenStreetMap's Nominatim, from the browser) or draw a box on the map and drag its corners.
+- **City records.** On the results map, "City records" draws each finding by how it pairs with the city's own list: filled if it is on the list, a ring if the list lacks it, and a faint dot for each city record in the photos' view that the survey did not find. Clicking a faint dot shows the city's ids for that record, to look up or visit. Seoul's list is shown as counts and a source only, so Seoul has no City records view.
+- **Dispatch.** The findings to check on site: possible defects first ("P1 · Possible defect"), then what the models were unsure of ("P2 · Field verification"), each with its street name and photo, and a work order CSV.
+- **GIS diff.** The findings the city's list lacks and the city's records the survey did not find, as GeoJSON (the "Differences (.geojson)" button, `scan_<id>_city_diff.geojson`), a list for the city to check. It needs the city's records, so Seoul, whose list is counts and a source only, has no GIS diff.
+- **Choosing an area.** Search a place by name and press Enter: the browser asks OpenStreetMap's Nominatim only then, never while you type (the preset places filter in the page). Or draw a box on the map and drag its corners.
 - **How this survey was made.** Each finished demo survey lists its stages, the Meta model that did each, its calls and its cost (`/api/scans/{id}/calls`).
 
 ![The overview: how the survey rules, the city's records and the street photos meet, and what backs the numbers](docs/images/overview-flow.png)
@@ -79,13 +79,13 @@ For "bike rack" on the Seattle survey, it settled on the phrase "metal bike hold
 
 ## Meta AI used
 
-| Meta technology | Role |
-|---|---|
-| **Mapillary** | The input: open pedestrian-view street photos (CC BY-SA 4.0) |
-| **SAM 3.1** | Finds every survey item by name (text prompts), tracks objects across a sequence (video), outlines a step from Spark's box (box prompt), and blurs people and plates |
-| **Muse Spark** | Watches photo sequences as video, judges each item in a fixed JSON format with a box and a reason, writes and tests new survey items as an agent that calls SAM 3.1 as a tool, reads a rule PDF, and writes the report's text |
-| **Muse Spark Open** (open weights, on Baseten) | Gives the answers a new item is tested against, and a second opinion on every possible defect |
-| **Muse Glimmer** (open weights) | Served by us on one Modal H100 with vLLM (`deploy/modal_glimmer.py`, scales to zero). Takes the street-asset checks in large runs (`--glimmer`); Spark covers its unclear answers and audits 10%. On a busy GPU a check costs about $0.00075 against $0.012 on Muse Spark (measured, 300 checks at 32 in flight). Re-judging a Seattle scan, it matched 12 of 29 of the city's poles where Spark matched 13 of 31 (the points in view differ by run); litter cans and pay stations came out the same, and 6 of 7 Spark audits agreed. In a small survey it is slower and no cheaper, because starting the GPU takes four to six minutes, so the live site uses Muse Spark |
+| Meta technology | What it does | Runs on |
+|---|---|---|
+| **Mapillary** | The input: open pedestrian-view street photos (CC BY-SA 4.0) | Mapillary API v4; the photos are downloaded and never committed |
+| **SAM 3.1** | Finds every survey item by name (text prompts), tracks objects across a sequence (video), outlines a step from Spark's box (box prompt), and blurs people and plates | Meta Model API (`api.meta.ai`), hosted by Meta |
+| **Muse Spark** | Watches photo sequences as video, judges each item in a fixed JSON format with a box and a reason, writes and tests new survey items as an agent that calls SAM 3.1 as a tool, reads a rule PDF, and writes the report's text | Meta Model API (`api.meta.ai`), hosted by Meta |
+| **Muse Spark Open** (open weights) | Gives the answers a new item is tested against, and a second opinion on every possible defect on the US survey items | Baseten (`meta-models/muse-spark-open-1026`); optional, needs `BASETEN_API_KEY`. Without it surveys run on Muse Spark alone |
+| **Muse Glimmer** (open weights) | Takes the street-asset checks in large runs (`--glimmer`); Spark covers its unclear answers and audits 10%. On a busy GPU a check costs about $0.00075 against $0.012 on Muse Spark (measured, 300 checks at 32 in flight). Re-judging a Seattle scan, it matched 12 of 29 of the city's poles where Spark matched 13 of 31 (the points in view differ by run); litter cans and pay stations came out the same, and 6 of 7 Spark audits agreed. In a small survey it is slower and no cheaper, because starting the GPU takes four to six minutes, so the live site uses Muse Spark | Served by us on one Modal H100 with vLLM (`deploy/modal_glimmer.py`, scales to zero); used only in runs started with `--glimmer` and `GLIMMER_URL` |
 
 In the recorded Seattle survey, SAM 3.1 answered 643 calls, Muse Spark 171 and Muse Spark Open 1, for $4.21 in all: the item checks alone were 282 SAM 3.1 calls and 144 Muse Spark calls ($2.48).
 
@@ -93,8 +93,8 @@ In the recorded Seattle survey, SAM 3.1 answered 643 calls, Muse Spark 171 and M
 
 All numbers are measured by us with the code in `eval/` (city check, precision) on the surveys in the demo.
 
-- **Seattle, Capitol Hill**: 181 photos over 0.94 km walked, one pass with five items: $4.21 ($4.48 per km) and about 8 min (7.0 min of processing plus about 1 min to collect the photos). Per item, found vs the city's inventory where the photos reach: utility and streetlight poles 13/29, street trees 25/39, parking pay stations 2/4, litter cans 1/8. Curb-ramp warnings remain weak on this walk: most ramps are too far away or too small in the photo to judge the warning surface, so 6 of the 8 ramp findings are left unclear, and 4 of 27 city ramps were matched (the 1 with an answer agrees with the city record). Items installed after the photos (2022) are counted separately (12 curb ramps). How much a scan finds depends on the walk: another day's walk over the same blocks (181 photos, 0.89 km, same code) found poles 0/24, street trees 18/39 and pay stations 1/9.
-- **How often a finding is right**: of the 86 findings the models recorded on their own, 73 were right when we looked at each evidence photo, 3 were wrong (a traffic-signal pole taken for a utility pole, two street-tree boxes on something else) and 10 could not be told from the photo (park trees, things far away); 1 of the 73 was the same object counted twice. These were judged by Claude, the AI coding assistant, not by a person. Finds the city's list lacks are not called wrong: of the 7 we checked by eye in an earlier pass over the same blocks, 6 were real things kept in another agency's list (signal poles, park trees, utility bins) or off by GPS, and 1 was too small to tell.
+- **Seattle, Capitol Hill**: 181 photos over 0.94 km walked, one pass with five photo checks: $4.21 ($4.48 per km) and about 8 min (7.0 min of processing plus about 1 min to collect the photos). Per item, found vs the city's inventory where the photos reach: utility and streetlight poles 13/29, street trees 25/39, parking pay stations 2/4, litter cans 1/8. Curb-ramp warnings remain weak on this walk: most ramps are too far away or too small in the photo to judge the warning surface, so 6 of the 8 ramp findings are left unclear, and 4 of 27 city ramps were matched (the 1 with an answer agrees with the city record). Items installed after the photos (2022) are counted separately (12 curb ramps). How much a scan finds depends on the walk: another day's walk over the same blocks (181 photos, 0.89 km, same code) found poles 0/24, street trees 18/39 and pay stations 1/9.
+- **How often a finding is right**: of the 86 findings the models recorded on their own, 73 were right on their evidence photos, 3 were wrong (a traffic-signal pole taken for a utility pole, two street-tree boxes on something else) and 10 could not be told from the photo (park trees, things far away); 1 of the 73 was the same object counted twice. These were judged by Claude, the AI coding assistant, not by a person. Finds the city's list lacks are not called wrong: of the 7 checked against their evidence photos in an earlier pass over the same blocks, 6 were real things kept in another agency's list (signal poles, park trees, utility bins) or off by GPS, and 1 was too small to tell.
 - **Seoul** (Korean standard): Seongsu 103 photos in 6.6 min at $2.52 per km, with street trees added to the survey afterwards ($0.45 and 54 s for that item alone); Myeongdong 280 photos at $3.72 per km. Street trees in Seongsu: 6 of the 23 trees in Seoul's own list that the photos could see (the photos are from February, with bare trees, and several are far away), and 11 of the 13 trees found pair with a record on the list. Both tactile-paving defect spots in Seongsu were found with no false alarms; no false alarms across Myeongdong. Entrances: 11 of 12 (Seongsu) and 37 of 46 (Myeongdong) reported entrances are real.
 - **Muse Spark item agent**: in the app, "bike rack" passed its test and found 12 racks for $0.72 (above). From the ADA excerpt it wrote 6 items and set aside 16 requirements that need measuring.
 - For scale, field surveys take weeks to months and roughly $100–$1,000 per km. Those surveys record more items, so this compares scale, not the same job.
@@ -103,7 +103,7 @@ All numbers are measured by us with the code in `eval/` (city check, precision) 
 
 - Photos come from [Mapillary](https://www.mapillary.com) under CC BY-SA 4.0. Every evidence photo shows its creator, the Mapillary logo and a link. Downloaded photos are never committed.
 - Faces and licence plates are blurred, and blurring is only ever added.
-- City inventories used for checking are the City of Seattle's open GIS layers (SDOT curb ramps, trees, pay stations and bike racks; Seattle City Light poles; Seattle Public Utilities litter cans) and Seoul's street-tree list (Seoul Open Data Plaza, OA-23040; `eval/seoul_trees.py` turns it into a layer). Seattle's carry no stated licence, only the City's notice that it makes no warranty of accuracy. The repo keeps only the city point IDs that label the small test sets in `assist/testsets/`, not the layers.
+- City inventories used for checking are the City of Seattle's open GIS layers (SDOT curb ramps, trees, pay stations and bike racks; Seattle City Light poles; Seattle Public Utilities litter cans) and Seoul's street-tree list (Seoul Open Data Plaza, OA-23040; `eval/seoul_trees.py` turns it into a layer). Seoul's tree list (Open Data Plaza OA-23040) is KOGL Type 4, so only counts are shown, with the source. Seattle's carry no stated licence, only the City's notice that it makes no warranty of accuracy. The repo keeps only the city point IDs that label the small test sets in `assist/testsets/`, not the layers.
 - This is not a navigation app and not an enforcement tool. It records facts so they can be fixed.
 
 ## Limits
@@ -113,7 +113,7 @@ All numbers are measured by us with the code in `eval/` (city check, precision) 
 - Some Mapillary walks are stored turned on their side, and their metadata does not say so. Fieldless does not detect this yet, and such photos yield fewer finds (in one Capitol Hill test, one walk of four: 53 of 181 photos).
 - A photo cannot settle slopes, widths or sub-inch lips; distant corners come back "unclear".
 - Accuracy labels for the demo areas were made from the photos by the AI coding assistant, or come from city inventories that can be older or newer than the photos.
-- The speed comparison uses published field-survey figures, which cover more items than Fieldless does today.
+- The speed comparison uses published field-survey figures, which cover more items than Fieldless does today. Fieldless is a narrower first pass than the 2017 survey, which recorded surface condition and slope.
 
 ## Built during the Meta Global AI Developer Hackathon
 
@@ -125,22 +125,19 @@ The repository was renamed from `threshold`, its earlier working name, which a f
 
 ## Run it yourself
 
+**No keys?** The [read-only demo](https://huggingface.co/spaces/BBONG1201/fieldless) shows the recorded surveys, reports and files with no key and no account. Every number there comes from a real run.
+
 ### Setup
 
-Needs Python 3.12+ and `ffmpeg`/`ffprobe` on PATH.
+Needs Python 3.14 and `ffmpeg`/`ffprobe` on PATH. Older versions fail on negative `--bbox` values.
 
 ```
 python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.txt   # macOS/Linux: .venv/bin/python
-.venv/Scripts/python -m pytest -q                         # offline tests, no API calls
+.venv/Scripts/python -m pip install -r requirements.txt -c constraints.txt   # macOS/Linux: .venv/bin/python
+.venv/Scripts/python -m pytest -q                                            # offline tests, no API calls
 ```
 
-Create a file named `.env` with two lines, either in the repo root (it is git-ignored) or in any parent folder. Git worktrees of this repo can share one `.env` placed above them.
-
-```
-MODEL_API_KEY=<your Meta Model API key>
-MAPILLARY_TOKEN=<your Mapillary client token>
-```
+Copy `.env.example` to `.env` and fill in the two required keys. It can sit in the repo root (git-ignored) or in any parent folder.
 
 ### Survey items from a rule (Muse Spark agent)
 
@@ -160,10 +157,10 @@ A survey item is two sentences: what SAM 3.1 should find, and the yes/no questio
 
 While it runs, it prints each tool call the agent makes and what code measured, for example
 `[5] SAM 3.1 finds "curb cut": 10 of 12 photos that show it, 0 of 4 that do not`.
-The result is a TOML file of `[[check]]` items with their source and measured scores, and a report. A person adds the
-items they accept to `pipeline/standards/us.toml`. The excerpt in `assist/rules/` is from the 2010 ADA Standards for
-Accessible Design (U.S. Department of Justice, public domain). The test set `assist/testsets/seattle_ramps.json` lists
-Mapillary image ids with labels made from the photos.
+The result is a TOML file of `[[check]]` items with their source and measured scores, and a report. Nothing is
+added to the standard for you: to use an item, copy it into `pipeline/standards/us.toml`. The excerpt in
+`assist/rules/` is from the 2010 ADA Standards for Accessible Design (U.S. Department of Justice, public domain).
+The test set `assist/testsets/seattle_ramps.json` lists Mapillary image ids with labels made from the photos.
 
 Inventory items record where something is (streetlight poles, street trees, litter cans), not a defect, so they need no
 rule: Muse Spark drafts one from the target's name, and the agent picks the SAM 3.1 phrase and tests that Muse Spark
@@ -272,9 +269,11 @@ python -m assist.report --run RUN --scan SCAN_ID [--area "Capitol Hill"] [--narr
 
 This writes `report.md`, `report.html`, `survey_scan<id>.geojson` and one CSV per survey item into
 `<run>/report_scan<id>/`, plus `survey_scan<id>_dropped.csv` (the finds the models set aside) and, when the scan has a
-city check (`python -m eval.city_check --city seattle`), `survey_scan<id>_<item>_city_records_to_check.csv`. Every
+city check (`python -m eval.city_check --run RUN --scan SCAN_ID --city seattle`),
+`survey_scan<id>_<item>_city_records_to_check.csv` (not for Seoul, whose list is counts and a source only). Every
 finding sits at its photo's location with the photo's creator, Mapillary link and licence, and carries the city's own
-field names when the city keeps a list of that item (`eval/cities/<city>.toml`); rows a person rejected are left out.
+field names when the city keeps a list of that item (`eval/cities/<city>.toml`); rows rejected in the app's review
+(a survey you start yourself has one) are left out.
 `--narrate` has Muse Spark write the summary, a paragraph per item and the priorities from the report's counts, with
 each share already put in words by code ("about half", "most"); code drops any piece that names an unknown item, holds
 a digit or judges ("violation", "accessible"). Without it no API key is needed; `--save` keeps the text for the app.
@@ -293,11 +292,13 @@ python -m deploy.static_site --run <run> --scan <id>:<Name> --out data/site --sp
 `deploy/modal_app.py` runs the server on Modal: one always-on container serves the web app and the API and runs surveys one at a time. SQLite runs on the container's disk; after every survey, review and item run the database and evidence photos are copied to a Modal Volume (`BACKUP_DIR`), and a new container restores them from there.
 
 ```bash
-python deploy/modal_app.py --seed data/runs/<run>   # once: the demo surveys
-modal deploy deploy/modal_app.py
+.venv/Scripts/python -m pip install modal -c constraints.txt   # the Modal client; not in requirements.txt
+npm --prefix web install && npm --prefix web run build         # the container serves web/dist, which a fresh clone lacks
+.venv/Scripts/python deploy/modal_app.py --seed data/runs/<run>   # once: the demo surveys
+.venv/Scripts/python -m modal deploy deploy/modal_app.py
 ```
 
-Both read `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` and the server's keys from the shared `.env`; only the server's keys go into the Modal secret. Anyone can start a survey, with no per-address limit (`SCANS_PER_IP_PER_DAY=0`). Spend stays inside the $3 per-survey and $10 per-day caps and `PUBLIC_COST_CAP_USD` ($40) across all surveys visitors start; past it, new surveys stop and finished ones stay open. Adding a survey item in the app needs `ITEM_INVITE_CODE` and is capped at $1 a run, inside the same daily cap.
+Both read `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` and the server's keys from the shared `.env`; only the server's keys go into the Modal secret. Anyone can start a survey, with no per-address limit (`SCANS_PER_IP_PER_DAY=0`). Meta API spend stays inside the $3 per-survey and $10 per-day caps and `PUBLIC_COST_CAP_USD` ($40) across all surveys visitors start; past it, new surveys stop and finished ones stay open. The recorded Seattle survey ran locally with a $5 cap (`--cap-usd`, for local runs only), so its $4.21 is not a limit breach. Adding a survey item in the app needs `ITEM_INVITE_CODE` and is capped at $1 a run, inside the same daily cap.
 
 ### On a Hugging Face Docker Space
 
