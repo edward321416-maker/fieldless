@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from assist import asset_check as asset_page, report
-from eval.city_check import shareable
+from eval.city_check import lists_records, shareable
 from pipeline import collect, config, db, mapillary, sam_output, survey_items
 from pipeline.runner import RESUME_MIN_USD
 from server import files, limits, review, views
@@ -363,8 +363,10 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         return shareable(check) if check else None
 
     def asset_check(scan_id: int) -> dict | None:
-        """The city's records one by one, with what the photos settled (eval.asset_check)."""
-        return offline_file(f"asset_check_scan{scan_id}.json")
+        """The city's records one by one, with what the photos settled (eval.asset_check), unless the city's list may
+        not be listed record by record (eval.city_check.lists_records)."""
+        check = offline_file(f"asset_check_scan{scan_id}.json")
+        return check if check and lists_records(check.get("city")) else None
 
     def headings(conn, scan_id: int) -> dict[int, float | None]:
         return {f["idx"]: f.get("compass") for f in db.frames(conn, scan_id)}

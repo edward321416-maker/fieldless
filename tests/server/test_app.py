@@ -421,10 +421,10 @@ def asset_check_file(scan_id: int) -> dict:
     photo = {"image": f"scan{scan_id}_look0_7.jpg", "image_id": "7", "creator": "kev", "captured_at": "2025-07-11T00:00:00Z",
              "link": "https://www.mapillary.com/app/?pKey=7", "license": "CC BY-SA 4.0", "blurred_regions": 1}
     row = {"item": "pole", "asset": "City pole", "city_list": "City poles", "city_record": "P1", "city_location": "1 Main St",
-           "status": "Seen in photo", "how_seen": "Second look, newer photo", "models_unsure": "", "city_date": "2020-05",
+           "status": "Seen in photo", "how_seen": "Second look, panorama", "models_unsure": "", "city_date": "2020-05",
            "seen_in_photo_on": "2025-07-11", "photo_newer_than_city_date": "yes", "city_condition": "", "lat": 37.5, "lng": 127.0,
            "position_source": "City record", "position_accuracy": "City record", "box": [1, 2, 3, 4], "evidence": photo}
-    totals = {"in_view": 2, "seen": 1, "seen_by": {"Second look, newer photo": 1}, "not_determined": 1, "not_listed": 0,
+    totals = {"in_view": 2, "seen": 1, "seen_by": {"Second look, panorama": 1}, "not_determined": 1, "not_listed": 0,
               "not_listed_unsure": 0, "seen_unsure": 0, "newer": 1}
     return {"scan_id": scan_id, "city": "Testville", "totals": totals,
             "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **totals}],
@@ -449,6 +449,15 @@ def test_a_survey_without_an_asset_check_has_none(make):
     assert "asset_check" not in client.get(f"/api/scans/{scan_id}").json()
     for end in ("", "/report", "/table.csv", "/table.geojson"):
         assert client.get(f"/api/scans/{scan_id}/asset-check{end}").status_code == 404
+
+
+def test_a_city_whose_list_goes_by_counts_has_no_asset_check(make):
+    scan_id, *_ = seed()
+    check = {**asset_check_file(scan_id), "city": "Seoul"}
+    (config.run_dir("server") / f"asset_check_scan{scan_id}.json").write_text(json.dumps(check), encoding="utf-8")
+    client, _ = make(demo_scans=((scan_id, "Seongsu"),))
+    assert "asset_check" not in client.get(f"/api/scans/{scan_id}").json()
+    assert client.get(f"/api/scans/{scan_id}/asset-check").status_code == 404
 
 
 def test_a_broken_asset_check_file_is_left_out(make):

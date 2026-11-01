@@ -127,3 +127,8 @@ def test_shareable_leaves_the_comparison_it_was_given_whole():
 def test_seattle_is_unchanged():
     check = {"city": "Seattle", "items": {"street_tree": {"found": 1, "covered": 2, "missed": [{"lat": 1}]}}}
     assert city_check.shareable(check) == check
+
+
+def test_a_city_whose_list_goes_by_counts_is_not_listed_record_by_record():
+    assert city_check.lists_records("Seattle") is True
+    assert city_check.lists_records("Seoul") is False

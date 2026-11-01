@@ -38,6 +38,11 @@ def shareable(check: dict) -> dict:
     return {**check, "items": items, "counts_only": True, "source": source}
 
 
+def lists_records(city: str | None) -> bool:
+    """Whether a city's records may be listed one by one (COUNTS_ONLY: they may not)."""
+    return city not in COUNTS_ONLY
+
+
 def load_city(name: str) -> dict:
     """A city's file: its name, the folder of its layers and, per survey item, the layer of its own records and the
     fields that name one."""
