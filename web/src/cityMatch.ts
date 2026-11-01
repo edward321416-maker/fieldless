@@ -3,11 +3,12 @@ import type { CityCheck, Issue } from "./types";
 // The survey against the city's own records (eval/city_check.py, the scan's city_check), for the overview's three
 // numbers and the map's city-records lens. Per item with a city list:
 // - matched: the city's records in a photo's view that a finding was paired with (`found`)
-// - notInList: findings not rejected by a person and paired with no city record (not in `matched_ids`)
+// - notInList: findings not rejected by a person and paired with no city record (not in `matched_ids`); null for a
+//   list sent as counts only, which has no records to pair with, so no finding is known to be off it
 // - missed: the city's records in a photo's view that no finding was paired with (`covered` - `found`)
 export interface CityItemCounts {
   matched: number;
-  notInList: number;
+  notInList: number | null;
   missed: number;
   covered: number;
 }
@@ -30,7 +31,7 @@ export function cityCounts(city: CityCheck | undefined, issues: Issue[]): Record
   if (!city) return {};
   return Object.fromEntries(Object.entries(city.items).map(([item, c]) => {
     const matched = new Set<number | string>(c.matched_ids);
-    const notInList = kept(issues, item).filter((i) => !matched.has(i.id)).length;
+    const notInList = city.counts_only ? null : kept(issues, item).filter((i) => !matched.has(i.id)).length;
     return [item, { matched: c.found, notInList, missed: Math.max(0, c.covered - c.found), covered: c.covered }];
   }));
 }
@@ -39,10 +40,10 @@ export function cityCounts(city: CityCheck | undefined, issues: Issue[]): Record
 export function cityTotals(city: CityCheck | undefined, issues: Issue[]):
   (CityItemCounts & { fields: string[] }) | null {
   if (!city) return null;
-  const sum = { matched: 0, notInList: 0, missed: 0, covered: 0 };
+  const sum: CityItemCounts = { matched: 0, notInList: city.counts_only ? null : 0, missed: 0, covered: 0 };
   for (const c of Object.values(cityCounts(city, issues))) {
     sum.matched += c.matched;
-    sum.notInList += c.notInList;
+    if (sum.notInList !== null) sum.notInList += c.notInList ?? 0;
     sum.missed += c.missed;
     sum.covered += c.covered;
   }
@@ -53,7 +54,7 @@ export function cityTotals(city: CityCheck | undefined, issues: Issue[]):
 // Each finding of an item the city keeps a list of, by the finding's key (items.ts keyOf): paired with a city
 // record or not. Findings of other items, and rejected ones, have no state.
 export function cityStates(city: CityCheck | undefined, issues: Issue[]): Record<string, CityState> {
-  if (!city) return {};
+  if (!city || city.counts_only) return {}; // no records, so no finding is said to be in or out of the list
   const out: Record<string, CityState> = {};
   for (const [item, c] of Object.entries(city.items)) {
     const matched = new Set<number | string>(c.matched_ids);
@@ -63,9 +64,15 @@ export function cityStates(city: CityCheck | undefined, issues: Issue[]): Record
 }
 
 export function missedRecords(city: CityCheck | undefined): MissedRecord[] {
-  if (!city) return [];
+  if (!city || city.counts_only) return []; // a list sent as counts only has no record to show, whatever else came
   return Object.entries(city.items).flatMap(([item, c]) => (c.missed ?? []).map((m, n) => ({
     key: `record:${item}:${n}`, item, layer: c.layer, lat: m.lat, lng: m.lng,
     fields: (c.id_fields ?? Object.keys(m.city)).map((f): [string, string] => [f, String(m.city[f] ?? "")]),
   })));
+}
+
+// Whether a finding was paired with one of the city's records (the evidence card's chip).
+export function isPaired(city: CityCheck | undefined, item: string, id: number | string): boolean {
+  if (!city || city.counts_only) return false;
+  return (city.items[item]?.matched_ids as (number | string)[] | undefined)?.includes(id) ?? false;
 }

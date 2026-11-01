@@ -106,9 +106,10 @@ def rows(scan_data: dict) -> list[tuple[str, dict]]:
 
 def city_fields(item: str, row: dict, city: dict | None) -> dict:
     """The city's record for one finding, in the city's own field names, or {} when the city keeps no layer for the
-    item. Entrances are never paired (eval.city_check pairs sidewalk rows only)."""
+    item. Entrances are never paired (eval.city_check pairs sidewalk rows only). A list whose records may not be
+    passed on (counts_only) pairs nothing, so no finding is said to be missing from it."""
     c = (city or {}).get("items", {}).get(item)
-    if not c:
+    if not c or city.get("counts_only"):
         return {}
     pair = next((p for p in c.get("pairs", []) if p["issue_id"] == row["id"]), None) if item != ENTRANCE else None
     out = {"city_layer": c["layer"], "city_match": MATCH_TEXT[pair["in_view"] if pair else None],

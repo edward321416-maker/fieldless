@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, STATIC_DEMO } from "./api";
+import { isPaired } from "./cityMatch";
 import { photoMonth, reasonText, zoomChip } from "./format";
 import { compassWord, targetBearing } from "./geo";
 import { colourOf, STATUS_SENTENCE, type Finding } from "./items";
@@ -153,8 +154,7 @@ export default function EvidenceCard(props: Props) {
   const facing = f.heading !== null ? `facing ${compassWord(f.heading)}` : "";
   const where = aside(f.heading, bearing);
   const check = p.kind === "issue" ? p.item.check : null;
-  const match = p.kind === "issue" && typeof p.item.id === "number"
-    && props.city?.items[f.item]?.matched_ids.includes(p.item.id);
+  const match = p.kind === "issue" && isPaired(props.city, f.item, p.item.id);
   const evidence = p.item.evidence;
   const title = p.kind === "entrance" ? `${p.item.name || "Unnamed entrance"}: ${p.item.label.text}` : p.item.label.text;
 

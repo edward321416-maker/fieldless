@@ -206,3 +206,18 @@ def test_the_scope_section_states_the_method_of_the_surveys_own_standard():
 
     assert "judged again by Muse Spark Open" in us
     assert "Muse Spark Open" not in kr and "SAM 3.1 found each survey item" in kr
+
+
+def test_a_counts_only_city_list_is_credited_and_never_called_a_list_the_findings_are_missing_from():
+    from tests.assist.test_report import SEOUL
+    data = survey_scan.load()
+    data["city_check"] = SEOUL
+    s = report.summary(data, STANDARD, area="Seongsu", now=NOW)
+
+    page = report_doc.document(s)
+    summary = html.unescape(report_doc.summary_text(s))
+
+    actions = page.split('id="actions"')[1].split('<section class="sec"')[0]
+    assert "KOGL Type 4" in page and "1 of 3 in the city" in page
+    assert "the lists do not have" not in summary and "2 listed points the photos did not confirm" in summary
+    assert "not in the city" not in actions and "2" in actions  # only the count of listed points not confirmed

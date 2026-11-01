@@ -718,3 +718,36 @@ def test_a_tile_gives_its_slot_back_when_it_fails(tmp_path, monkeypatch):
 
     client = TestClient(create_app(Settings(static_dir=tmp_path / "no-web"), worker=FakeWorker(), tile=down))
     assert [client.get(f"/api/mapillary/tiles/13/{x}/0").status_code for x in range(2)] == [502, 502]
+
+
+SEOUL_CHECK = {"scan_id": 1, "city": "Seoul", "measured_at": "2026-10-28", "reviewed": True, "method": "m",
+               "method_url": "https://example.org/city.py",
+               "items": {"utility_pole": {
+                   "layer": "Seoul street trees", "found": 6, "covered": 23, "matched_ids": [1],
+                   "rejected_at_city_point": [], "id_fields": ["자치구", "노선"],
+                   "pairs": [{"issue_id": 1, "in_view": True, "dist_m": 5.0, "city": {"자치구": "성동구", "노선": "왕십리로"}}],
+                   "missed": [{"lat": 37.5, "lng": 127.0, "city": {"자치구": "성동구", "노선": "왕십리로"}}]}}}
+
+
+def test_seouls_records_never_leave_the_server_only_its_counts_and_source(make):
+    """Seoul's tree list is KOGL Type 4: the scan, the files and the report carry the counts and the source only."""
+    import io
+    import zipfile
+    client, _ = make()
+    _, scan_id = finished_scan()
+    (config.run_dir("server") / f"city_check_scan{scan_id}.json").write_text(
+        json.dumps({**SEOUL_CHECK, "scan_id": scan_id}, ensure_ascii=False), encoding="utf-8")
+
+    scan = client.get(f"/api/scans/{scan_id}").json()["city_check"]
+    assert scan["counts_only"] is True and "KOGL Type 4" in scan["source"]
+    item = scan["items"]["utility_pole"]
+    assert (item["found"], item["covered"]) == (6, 23)
+    assert item["pairs"] == item["missed"] == item["id_fields"] == item["matched_ids"] == []
+
+    zipped = zipfile.ZipFile(io.BytesIO(client.get(f"/api/scans/{scan_id}/files.zip").content))
+    everything = "".join(zipped.read(n).decode("utf-8-sig") for n in zipped.namelist() if not n.endswith(".jpg"))
+    page = client.get(f"/api/scans/{scan_id}/report").text
+    for text in (json.dumps(scan, ensure_ascii=False), everything, page):
+        assert "성동구" not in text and "왕십리로" not in text
+    assert not any(n.endswith("_city_records_to_check.csv") for n in zipped.namelist())
+    assert "KOGL Type 4" in page  # the source is credited where the numbers are

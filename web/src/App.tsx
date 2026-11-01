@@ -309,7 +309,7 @@ export default function App() {
   const records = useMemo(() => missedRecords(scan?.city_check), [scan?.city_check]);
   const cityItemCounts = useMemo(() => cityCounts(scan?.city_check, issues), [scan?.city_check, issues]);
   const isExample = demos.some((d) => d.scan_id === scan?.id); // the server keeps the example surveys read-only
-  const showLens = !!scan?.city_check && finished && !intro && !newSurvey && !selected;
+  const showLens = !!scan?.city_check && !scan.city_check.counts_only && finished && !intro && !newSurvey && !selected;
   const onRecords = showLens && lens === "records";
   const shownRecord = onRecords ? record : null; // its dot is on the map
   // On entry to Results view, highlight the first visible finding with a street photo & viewing cone so the map

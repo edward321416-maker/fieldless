@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cityCounts, cityStates, cityTotals, missedRecords } from "./cityMatch";
+import { cityCounts, cityStates, cityTotals, isPaired, missedRecords } from "./cityMatch";
 import type { CityCheck, Issue } from "./types";
 
 const city = {
@@ -11,6 +11,13 @@ const city = {
         { lat: 47.62, lng: -122.31, city: { COMPKEY: 222411, UNITID: "TRE-54699" } }] },
     litter_can: { layer: "SPU litter cans", found: 0, covered: 1, matched_ids: [], rejected_at_city_point: [] },
   },
+} as unknown as CityCheck;
+// Seoul's list as the server sends it: the counts and the source, no records (eval/city_check.py shareable)
+const seoul = {
+  scan_id: 1, city: "Seoul", measured_at: "2026-10-29", reviewed: false, method: "", method_url: "", counts_only: true,
+  source: "Seoul Open Data Plaza OA-23040, KOGL Type 4",
+  items: { street_tree: { layer: "Seoul street trees", found: 6, covered: 23, matched_ids: [], rejected_at_city_point: [],
+    id_fields: [], pairs: [], missed: [] } },
 } as unknown as CityCheck;
 const issue = (id: number | string, type: string, review = "auto") =>
   ({ id, issue_type: type, review_status: review }) as unknown as Issue;
@@ -41,5 +48,25 @@ describe("the survey against the city's own records", () => {
       { key: "record:street_tree:1", item: "street_tree", layer: "SDOT street trees", lat: 47.62, lng: -122.31,
         fields: [["COMPKEY", "222411"], ["UNITID", "TRE-54699"]] },
     ]);
+  });
+});
+
+describe("a city list shown as counts only", () => {
+  it("keeps the counts and says nothing of how a finding pairs with a record it does not have", () => {
+    expect(cityCounts(seoul, issues)).toEqual({ street_tree: { matched: 6, notInList: null, missed: 17, covered: 23 } });
+    expect(cityTotals(seoul, issues)).toEqual({ matched: 6, notInList: null, missed: 17, covered: 23, fields: [] });
+  });
+  it("labels no finding as in or out of the list", () => {
+    expect(cityStates(seoul, issues)).toEqual({});
+    expect(isPaired(seoul, "street_tree", 1)).toBe(false);
+    expect(isPaired(city, "street_tree", 1)).toBe(true);
+    expect(isPaired(city, "street_tree", 4)).toBe(false);
+    expect(isPaired(undefined, "street_tree", 1)).toBe(false);
+  });
+  it("lists no record, even if a stale answer still carried some", () => {
+    expect(missedRecords(seoul)).toEqual([]);
+    const stale = { ...seoul, items: { street_tree: { ...seoul.items.street_tree,
+      missed: [{ lat: 37.5, lng: 127, city: { district: "x" } }] } } } as CityCheck;
+    expect(missedRecords(stale)).toEqual([]);
   });
 });

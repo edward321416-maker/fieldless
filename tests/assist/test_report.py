@@ -317,3 +317,39 @@ def test_cli_without_narrate_uses_the_saved_sentences():
 def test_save_needs_narrate():
     with pytest.raises(SystemExit):
         report.main(["--run", "r", "--scan", "1", "--save"])
+
+
+SEOUL = {"scan_id": 1, "city": "Seoul", "measured_at": "2026-10-28", "reviewed": True, "method": "m",
+         "method_url": "https://example.org/city.py", "counts_only": True,
+         "source": "Seoul Open Data Plaza OA-23040, KOGL Type 4",
+         "items": {"streetlight_pole": {"layer": "Seoul street trees", "found": 1, "covered": 3, "matched_ids": [],
+                                        "rejected_at_city_point": [], "id_fields": [], "pairs": [], "missed": []}}}
+
+
+def test_a_counts_only_city_list_gives_counts_and_no_claim_about_the_findings_it_lacks():
+    """Seoul's records are not in the check, so nothing says which findings are or are not on its list."""
+    data = survey_scan.load()
+    data["city_check"] = SEOUL
+
+    s = report.summary(data, STANDARD, area="Seongsu", now=NOW)
+    text = report.to_markdown(s)
+
+    pole = next(i for i in s["items"] if i["item"] == "streetlight_pole")
+    assert pole["city"] == {"found": 1, "covered": 3, "not_seen": 2}
+    assert s["actions"]["city"] == [{"item": "streetlight_pole", "title": "streetlight pole", "found": 1, "covered": 3,
+                                     "not_seen": 2, "id_fields": [], "missed": []}]
+    assert "1 of 3 (Seoul)" in text and "KOGL Type 4" in text
+    assert "findings_not_on_city_list" not in report._in_words(pole) and "not_in_city" not in str(report.facts(s))
+
+
+def test_the_city_check_the_report_reads_leaves_seouls_records_out(tmp_path):
+    whole = {"scan_id": 1, "city": "Seoul", "measured_at": "2026-10-28", "reviewed": True, "method": "m",
+             "method_url": "u", "items": {"street_tree": {
+                 "layer": "Seoul street trees", "found": 6, "covered": 23, "matched_ids": [5], "id_fields": ["자치구"],
+                 "pairs": [{"issue_id": 5, "city": {"자치구": "성동구"}}], "missed": [{"city": {"자치구": "성동구"}}]}}}
+    (tmp_path / "city_check_scan1.json").write_text(json.dumps(whole, ensure_ascii=False), encoding="utf-8")
+
+    got = report.load_city_check(tmp_path, 1)
+
+    assert got["counts_only"] is True and "성동구" not in str(got) and got["items"]["street_tree"]["found"] == 6
+    assert report.load_city_check(tmp_path, 2) is None

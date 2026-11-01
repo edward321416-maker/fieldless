@@ -137,6 +137,11 @@ def _color(s: dict, item: str) -> str:
 
 # --- code's own sentences ---------------------------------------------------------------------------------------
 
+def counts_only_note(cc: dict) -> str:
+    """What a city list shown as counts only says of itself: why there are no records, and where the counts come from."""
+    return f" City list: counts only. Source: {cc['source']}." if cc.get("counts_only") else ""
+
+
 def summary_text(s: dict) -> str:
     """The summary in code's words, when Muse Spark's is missing or was dropped."""
     t, a = s["totals"], s["actions"]
@@ -145,9 +150,11 @@ def summary_text(s: dict) -> str:
     found = [i["title"] for i in s["items"] if i["found"]]
     what = ", ".join(found) if found else "no survey item"
     if s.get("city_check"):  # a difference from a list is not an error in it: either side may be the one missing
-        new = sum(c["not_in_city"] for c in a["city"])
         unconfirmed = sum(c["not_seen"] for c in a["city"])
-        city = (f" and, against the city's lists, {new} {_plural(new, 'find')} the lists do not have and "
+        new = sum(c.get("not_in_city", 0) for c in a["city"])
+        lacking = ("" if s["city_check"].get("counts_only")  # the list's records are not here to tell
+                   else f"{new} {_plural(new, 'find')} the lists do not have and ")
+        city = (f" and, against the city's lists, {lacking}"
                 f"{unconfirmed} listed {_plural(unconfirmed, 'point')} the photos did not confirm")
     else:
         city = ""
@@ -278,7 +285,7 @@ def _findings(s: dict, notes: dict | None) -> str:
                       f"{_h(_name(i['title']))}</h3>{para}{table}</article>")
     cc = s.get("city_check")
     note = (f'<p class="muted">City record: {_h(cc["method"])} Measured {_h(cc["measured_at"])}. '
-            f'<a href="{_h(cc["method_url"])}">Method</a></p>' if cc else
+            f'<a href="{_h(cc["method_url"])}">Method</a>{_h(counts_only_note(cc))}</p>' if cc else
             '<p class="muted">No city record was checked against this survey.</p>')
     return _section("findings", "".join(blocks) + note)
 
@@ -297,7 +304,11 @@ def _actions(s: dict, notes: dict | None) -> str:
                      [[_h(_name(e["title"])), _h(e["label"]), _h(e["status"]), _photo_link(e)]
                       for e in a["site_visits"]],
                      row_class="visit") if a["site_visits"] else "<p>None.</p>")
-    city = (_table(["Item", "In the photos, not in the city's list", "In the city's list, not found by this survey"],
+    counts_only = bool((s.get("city_check") or {}).get("counts_only"))  # no records: only the count not found
+    city = (_table(["Item", "In the city's list, not found by this survey"],
+                   [[_h(_name(c["title"])), str(c["not_seen"])] for c in a["city"]])
+            if a["city"] and counts_only else
+            _table(["Item", "In the photos, not in the city's list", "In the city's list, not found by this survey"],
                    [[_h(_name(c["title"])), str(c["not_in_city"]), str(c["not_seen"])] for c in a["city"]])
             if a["city"] else ("<p>None.</p>" if s.get("city_check") else
                                "<p>No city record was checked against this survey.</p>"))

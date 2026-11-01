@@ -45,8 +45,11 @@ const seongsu = {
   id: 1, standard: "KR", km: 0.58, usd_per_km: 2.52, cost_usd: 1.46, processing_seconds: 397, review_seconds: 0,
   image_count: 103, status: "done", items: [], checks: [{ id: "check0" }],
   city_check: { scan_id: 1, city: "Seoul", measured_at: "2026-10-28", reviewed: false, method: "", method_url: "",
-    items: { street_tree: { layer: "Seoul street trees", found: 6, covered: 23, matched_ids: [], rejected_at_city_point: [] } } },
+    counts_only: true, source: "Seoul Open Data Plaza OA-23040, KOGL Type 4", // Seoul's list as the server sends it
+    items: { street_tree: { layer: "Seoul street trees", found: 6, covered: 23, matched_ids: [], rejected_at_city_point: [],
+      id_fields: [], pairs: [], missed: [] } } },
 } as unknown as Scan;
+const SOURCE_NOTE = "City list: counts only. Source: Seoul Open Data Plaza OA-23040, KOGL Type 4.";
 
 const render = (over: Partial<Parameters<typeof Overview>[0]> = {}) => renderToStaticMarkup(
   <Overview scan={scan} name="Capitol Hill" issues={issues} counts={{ utility_pole: 1, street_tree: 5 }}
@@ -218,5 +221,28 @@ describe("what the overview leaves out", () => {
     const html = render({ others: [{ scan: { ...seongsu, city_check: undefined } as Scan, name: "Seongsu" }] });
     expect(html).not.toContain("Another city");
     expect(html).toContain("Korean standard");
+  });
+});
+
+describe("a city list shown as counts only", () => {
+  const html = render();
+  it("keeps the other city's numbers on its card and in the checks, with the source beside them", () => {
+    expect(html).toContain("6 of 23 in Seoul street trees");
+    expect(html).toContain("Seongsu: Seoul street trees");
+    expect(count(html, SOURCE_NOTE)).toBe(2); // its survey card and the check that quotes it
+  });
+  it("credits no source for a list shown whole", () => {
+    expect(render({ others: [] })).not.toContain("counts only");
+  });
+  it("shows the counts as the survey's own city list, and says nothing of findings missing from it", () => {
+    const only = render({ scan: { ...scan, city_check: seongsu.city_check } as Scan });
+    expect(only).toMatch(/>6<\/strong><span[^>]*>Found and in the city&#x27;s list</);
+    expect(only).toMatch(/>17<\/strong><span[^>]*>In the city&#x27;s list, not found</);
+    expect(only).toContain("6 of 23");
+    expect(only).toContain(SOURCE_NOTE);
+    for (const text of ["not on the city", "Found, not in the city", "a list to check", "Open GIS Diff", "city&#x27;s own field names"]) {
+      expect(only).not.toContain(text);
+    }
+    expect(only).toContain("Back to the city: GeoJSON and a CSV per item, and a survey report.");
   });
 });

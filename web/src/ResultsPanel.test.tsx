@@ -135,3 +135,31 @@ describe("one item's findings", () => {
     expect(html).not.toContain("Photos: Mapillary contributors");
   });
 });
+
+describe("a city list shown as counts only", () => {
+  const seoul = { ...scan, standard: "KR", city_check: { scan_id: 4, city: "Seoul", measured_at: "2026-10-29",
+    reviewed: false, method: "", method_url: "https://example.org/method", counts_only: true,
+    source: "Seoul Open Data Plaza OA-23040, KOGL Type 4",
+    items: { street_tree: { layer: "Seoul street trees", found: 6, covered: 23, matched_ids: [], rejected_at_city_point: [],
+      id_fields: [], pairs: [], missed: [] } } } } as unknown as Scan;
+  const html = renderToStaticMarkup(
+    <ResultsPanel scan={seoul} name={null} findings={findings} hidden={new Set()} onToggle={() => undefined}
+      onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined} hasReport={false}
+      actionTab="gis" />);
+
+  it("shows the counts and credits the source", () => {
+    expect(html).toContain("6 of 23 in the city&#x27;s list");
+    expect(html).toContain("City list: counts only. Source: Seoul Open Data Plaza OA-23040, KOGL Type 4.");
+  });
+  it("has no GIS Diff and says nothing about findings missing from the list", () => {
+    expect(html).not.toContain("GIS Diff");
+    expect(html).not.toContain("not on the list");
+    expect(html).not.toContain("not in the city");
+  });
+  it("shows no such note for a list that is shown whole", () => {
+    const seattle = renderToStaticMarkup(
+      <ResultsPanel scan={scan} name={null} findings={findings} hidden={new Set()} onToggle={() => undefined}
+        onOpenItem={() => undefined} onReview={() => undefined} onIntro={() => undefined} hasReport={false} />);
+    expect(seattle).not.toContain("counts only");
+  });
+});

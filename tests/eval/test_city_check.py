@@ -100,3 +100,29 @@ def test_a_target_the_city_publishes_finds_its_layer_by_any_of_its_names():
     assert city_check.extra_layer(city, "bicycle parking rack")["id"] == "bike_rack"
     assert city_check.extra_layer(city, "public bench") is None
     assert city_check.extra_layer(city, "") is None
+
+
+SEOUL = {"city": "Seoul", "items": {"street_tree": {
+    "layer": "Seoul street trees", "found": 6, "covered": 23, "matched_ids": [658], "rejected_at_city_point": [660],
+    "id_fields": ["자치구"], "pairs": [{"issue_id": 658, "city": {"자치구": "성동구"}}],
+    "missed": [{"lat": 37.5, "lng": 127.0, "city": {"자치구": "성동구"}}]}}}
+
+
+def test_seoul_keeps_counts_and_source_but_no_records():
+    out = city_check.shareable(SEOUL)
+    item = out["items"]["street_tree"]
+    assert (item["found"], item["covered"], item["layer"]) == (6, 23, "Seoul street trees")
+    assert item["pairs"] == [] and item["missed"] == [] and item["id_fields"] == [] and item["matched_ids"] == []
+    assert out["counts_only"] is True and "KOGL Type 4" in out["source"]
+    assert "성동구" not in str(out)
+
+
+def test_shareable_leaves_the_comparison_it_was_given_whole():
+    before = json.dumps(SEOUL, ensure_ascii=False)
+    city_check.shareable(SEOUL)
+    assert json.dumps(SEOUL, ensure_ascii=False) == before  # the file on disk and the offline run stay complete
+
+
+def test_seattle_is_unchanged():
+    check = {"city": "Seattle", "items": {"street_tree": {"found": 1, "covered": 2, "missed": [{"lat": 1}]}}}
+    assert city_check.shareable(check) == check

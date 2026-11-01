@@ -272,3 +272,28 @@ describe("every photo carries its creator, the Mapillary logo and a link", () =>
     }
   });
 });
+
+describe("a city list shown as counts only", () => {
+  const seoulScan = { ...mockScan, standard: "KR", city_check: {
+    scan_id: 17, city: "Seoul", measured_at: "2026-10-29", reviewed: false, method: "", method_url: "", counts_only: true,
+    source: "Seoul Open Data Plaza OA-23040, KOGL Type 4",
+    items: { street_tree: { layer: "Seoul street trees", found: 6, covered: 23, matched_ids: [], rejected_at_city_point: [],
+      id_fields: [], pairs: [], missed: [] } } } } as unknown as Scan;
+  const some = [makeFinding(3, "street_tree", null, "needs_review"), makeFinding(4, "street_tree", null, "auto")];
+
+  it("has no GIS Diff: there are no records to set against the survey", () => {
+    const html = renderToStaticMarkup(<ActionHub scan={seoulScan} findings={some} initialTab="dispatch" />);
+    expect(html).toContain(">Dispatch<");
+    expect(html).not.toContain("GIS Diff");
+  });
+
+  it("opens on Dispatch when asked for the GIS Diff, and calls no finding unlisted", () => {
+    const html = renderToStaticMarkup(<ActionHub scan={seoulScan} findings={some} initialTab="gis" />);
+    expect(html).toContain("findings to check on site");
+    expect(html).toContain("Work order CSV");
+    for (const text of ["Against Seoul", "not on the list", "Not on the list", "not on the city", "Differences (.geojson)"]) {
+      expect(html).not.toContain(text);
+    }
+    expect(html).not.toContain("city&#x27;s list");
+  });
+});

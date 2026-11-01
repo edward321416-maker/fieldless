@@ -36,7 +36,10 @@ interface Props {
 // A row's line in the city-records lens: the three numbers the map's three shapes show. An agent's item is compared
 // by its own run, which counts the city's records found, not each finding's pairing.
 function recordsNote(c: CityItemCounts | undefined, agent: { found: number; covered: number } | undefined): string {
-  if (c) return `${c.matched} matched · ${c.notInList} not in the city's list · ${c.missed} to check`;
+  if (c) {
+    const notInList = c.notInList === null ? "" : ` · ${c.notInList} not in the city's list`; // counts-only lists: unknown
+    return `${c.matched} matched${notInList} · ${c.missed} to check`;
+  }
   return (agent && cityLine(agent, true)?.text) ?? "No city list to compare";
 }
 
@@ -148,6 +151,7 @@ export default function ResultsPanel(props: Props) {
           );
         })}
       </ul>
+      {city?.counts_only && <p className="hint small">City list: counts only. Source: {city.source}.</p>}
 
       <ActionHub
         scan={scan}

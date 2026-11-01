@@ -128,6 +128,10 @@ export interface CityCheck {
   reviewed: boolean;
   method: string;
   method_url: string;
+  // The city's list may not be passed on (Seoul's is KOGL Type 4): only the counts and the source are sent, and the
+  // fields that hold its records (matched_ids, id_fields, pairs, missed) are empty.
+  counts_only?: boolean;
+  source?: string;
   items: Record<string, { layer: string; found: number; covered: number; matched_ids: number[];
     rejected_at_city_point: number[];
     id_fields?: string[]; // the fields the city names one record by, e.g. ["COMPKEY", "UNITID"]

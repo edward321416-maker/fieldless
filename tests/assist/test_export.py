@@ -199,3 +199,14 @@ def test_text_that_starts_like_a_formula_stays_text_in_a_spreadsheet():
     assert [export._cell(v) for v in ("=HYPERLINK(1)", "+1", "-1", "@x", "\tx", "\rx")] == [
         "'=HYPERLINK(1)", "'+1", "'-1", "'@x", "'\tx", "'\rx"]
     assert [export._cell(v) for v in ("Pike St", -1.5, 3, None, True)] == ["Pike St", "-1.5", "3", "", "true"]
+
+
+def test_a_counts_only_city_list_adds_no_city_columns_and_no_records_to_check(tmp_path):
+    from tests.assist.test_report import SEOUL
+    data = {**survey_scan.load(), "city_check": SEOUL}
+
+    feats = export.features(data, STANDARD)
+    paths = export.write(data, STANDARD, tmp_path)
+
+    assert not any(k.startswith("city_") for f in feats for k in f["properties"])  # no "not paired" on every row
+    assert paths["city_records"] == {}

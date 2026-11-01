@@ -29,6 +29,7 @@ from pathlib import Path
 
 from assist import export, report_doc, style
 from eval import store
+from eval.city_check import shareable
 from pipeline import config, db, survey_items
 from pipeline.cost import CostMeter
 from pipeline.meta_api import MetaApi, text_part
@@ -70,7 +71,8 @@ What the JSON holds: each item's "title" is what it records and "found" how many
 counts the answers to the item's "question"; "unclear" means the photo could not settle it. "city", when present,
 compares the survey with the city's own list along the photographed streets: "covered" is the city's records there,
 "found" how many of them the survey matched, "not_seen" how many it did not match, and "not_in_city" how many of the
-survey's findings have no city record nearby. "in_words" gives each item's shares in words: of its findings, how
+survey's findings have no city record nearby (left out where the city's records are not part of the survey, and
+then nothing is said of findings the list lacks). "in_words" gives each item's shares in words: of its findings, how
 many are unclear; of the city's records, how many the survey matched; of its findings, how many the list lacks. Use
 those words for shares. Never size how many were found ("a few poles", "most trees"): the report's table gives the
 counts beside your text.
@@ -191,10 +193,11 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
     for i in items:
         c = (city_check or {}).get("items", {}).get(i["item"])
         if c:
-            matched = set(c.get("matched_ids") or [])
-            kept = [r for r, _, _ in grouped[i["item"]] if r["review_status"] != "rejected"]
-            i["city"] = {"found": c["found"], "covered": c["covered"], "not_seen": max(0, c["covered"] - c["found"]),
-                         "not_in_city": sum(r["id"] not in matched for r in kept)}
+            i["city"] = {"found": c["found"], "covered": c["covered"], "not_seen": max(0, c["covered"] - c["found"])}
+            if not city_check.get("counts_only"):  # without the city's records no finding is known to be off the list
+                matched = set(c.get("matched_ids") or [])
+                kept = [r for r, _, _ in grouped[i["item"]] if r["review_status"] != "rejected"]
+                i["city"]["not_in_city"] = sum(r["id"] not in matched for r in kept)
     titles = {i["item"]: i["title"] for i in items}
     defects = [{**p, "title": titles[item]} for item, rows in grouped.items() for _, p, _ in rows
                if p["defect"] and p["review_status"] == "verified"]
@@ -203,7 +206,7 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
     actions = {"repairs": [e for e in ledger if e["defect"]],
                "site_visits": [e for e in ledger if e["review_status"] == "field_check" or e["answer"] == "unclear"],
                "city": [{"item": i["item"], "title": i["title"], **i["city"], **_missed(city_check, i["item"])}
-                        for i in items if i["city"] and (i["city"]["not_seen"] or i["city"]["not_in_city"])]}
+                        for i in items if i["city"] and (i["city"]["not_seen"] or i["city"].get("not_in_city"))]}
     km = views.surveyed_km(frames)
     app = views.scan_json(scan, scan_data["entrances"], scan_data["issues"], km=km)
     dates = sorted(f["captured_at"] for f in frames if f.get("captured_at"))
@@ -253,7 +256,9 @@ def _row_cells(s: dict, i: dict) -> list[str]:
 def _city_note(s: dict) -> str | None:
     """How the city-record numbers were measured, under the items table."""
     cc = s.get("city_check")
-    return f"City record: {cc['method']} Measured {cc['measured_at']}." if cc else None
+    if not cc:
+        return None
+    return f"City record: {cc['method']} Measured {cc['measured_at']}.{report_doc.counts_only_note(cc)}"
 
 
 def _item_cells(i: dict) -> list[str]:
@@ -365,7 +370,8 @@ def _in_words(i: dict) -> dict:
     words = {"unclear": share(i["by_answer"].get("unclear", 0), i["found"])}
     if c := i.get("city"):
         words["city_records_matched"] = share(c["found"], c["covered"])
-        words["findings_not_on_city_list"] = share(c["not_in_city"], i["found"])
+        if "not_in_city" in c:
+            words["findings_not_on_city_list"] = share(c["not_in_city"], i["found"])
     return words
 
 
@@ -440,9 +446,10 @@ def write(scan_data: dict, standard: Standard, out_dir: Path, area: str | None =
 
 
 def load_city_check(run_dir: Path, scan_id: int) -> dict | None:
-    """The offline comparison with the city's records (eval, city_check_scan<N>.json), if one was made."""
+    """The offline comparison with the city's records (eval, city_check_scan<N>.json), if one was made, as
+    eval.city_check.shareable lets it be written into a report: Seoul's list as counts and a source only."""
     path = Path(run_dir) / f"city_check_scan{scan_id}.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    return shareable(json.loads(path.read_text(encoding="utf-8"))) if path.is_file() else None
 
 
 def make_text(conn, run_dir: Path, scan_id: int, api, area: str | None = None) -> dict:

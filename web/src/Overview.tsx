@@ -38,6 +38,10 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 // A survey's first city list, the one its cards name ("6 of 23 in" the list's own name).
 const firstList = (scan: Scan) => (scan.city_check ? Object.values(scan.city_check.items)[0] ?? null : null);
 
+// A list sent as counts only (Seoul's, KOGL Type 4): said wherever its counts are, with the source it is credited to.
+const countsOnlyNote = (scan: Scan) =>
+  scan.city_check?.counts_only ? `City list: counts only. Source: ${scan.city_check.source}.` : null;
+
 // What a first visit sees: every part of a survey on one page before the map, in the order a reader asks about it.
 // The cost per km comes first; then each item at the same size, how the rules, the city's records and the photos
 // meet, what backs the numbers, the items the agent wrote, and the example surveys. Each number is the server's.
@@ -168,18 +172,26 @@ export default function Overview(props: Props) {
                 <p>Possible defects and what the models were unsure of, each with its place, street photo and a CSV.</p>
                 <span className="workflow-cta">Open Dispatch →</span>
               </div>
-              <div
-                role="link"
-                tabIndex={0}
-                className="overview-card workflow-card"
-                onClick={() => launchAction("gis")}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("gis")}
-              >
-                <span className="workflow-badge prio-gis">City records</span>
-                <strong>{totals ? `${totals.notInList} not on the city's list · ${totals.missed} not found, to check` : "Compare with the city's list"}</strong>
-                <p>Compare the survey with the city's records and download the differences as GeoJSON, a list to check.</p>
-                <span className="workflow-cta">Open GIS Diff →</span>
-              </div>
+              {totals && countsOnlyNote(scan) ? (
+                <div className="overview-card workflow-card">
+                  <span className="workflow-badge prio-gis">City records</span>
+                  <strong>{`${totals.matched} of ${totals.covered} of the city's records in the photos' view found`}</strong>
+                  <p>{countsOnlyNote(scan)}</p>
+                </div>
+              ) : (
+                <div
+                  role="link"
+                  tabIndex={0}
+                  className="overview-card workflow-card"
+                  onClick={() => launchAction("gis")}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("gis")}
+                >
+                  <span className="workflow-badge prio-gis">City records</span>
+                  <strong>{totals ? `${totals.notInList} not on the city's list · ${totals.missed} not found, to check` : "Compare with the city's list"}</strong>
+                  <p>Compare the survey with the city's records and download the differences as GeoJSON, a list to check.</p>
+                  <span className="workflow-cta">Open GIS Diff →</span>
+                </div>
+              )}
               <div
                 role="link"
                 tabIndex={0}
@@ -245,6 +257,7 @@ function Flow({ scan, issues }: { scan: Scan; issues: Issue[] }) {
   const totals = cityTotals(city, issues);
   const lists = city ? Object.values(city.items).map((c) => c.layer) : [];
   const fields = totals?.fields.slice(0, 3).join(", ") ?? "";
+  const countsOnly = countsOnlyNote(scan);
   return (
     <section className="overview-part" aria-labelledby="overview-flow">
       <h3 id="overview-flow">How the pieces fit</h3>
@@ -259,6 +272,7 @@ function Flow({ scan, issues }: { scan: Scan; issues: Issue[] }) {
               <strong>City records</strong>
               <span>{plural(lists.length, "city list")}</span>
               <span className="flow-lists">{lists.join(" · ")}</span>
+              {countsOnly && <span className="hint small">{countsOnly}</span>}
             </li>
           )}
           <li className="overview-card flow-box">
@@ -277,21 +291,23 @@ function Flow({ scan, issues }: { scan: Scan; issues: Issue[] }) {
               <span className="flow-shape flow-in" aria-hidden="true" />
               <strong className="flow-count">{totals.matched}</strong><span className="flow-label">Found and in the city's list</span>
             </li>
-            <li className="overview-card flow-box flow-outcome">
-              <span className="flow-shape flow-new" aria-hidden="true" />
-              <strong className="flow-count">{totals.notInList}</strong><span className="flow-label">Found, not in the city's list</span>
-            </li>
+            {totals.notInList !== null && (
+              <li className="overview-card flow-box flow-outcome">
+                <span className="flow-shape flow-new" aria-hidden="true" />
+                <strong className="flow-count">{totals.notInList}</strong><span className="flow-label">Found, not in the city's list</span>
+              </li>
+            )}
             <li className="overview-card flow-box flow-outcome">
               <span className="flow-shape flow-missed" aria-hidden="true" />
               <strong className="flow-count">{totals.missed}</strong><span className="flow-label">In the city's list, not found</span>
-              <span className="hint small">a list to check</span>
+              {!countsOnly && <span className="hint small">a list to check</span>}
             </li>
           </ul>
         ) : <p className="overview-card flow-none">This survey has no city list to compare.</p>}
         <span className="flow-arrow" aria-hidden="true" />
         <p className="flow-back">
-          Back to the city: GeoJSON and a CSV per item in the city's own field names{fields ? ` (${fields})` : ""}, and a
-          survey report.
+          Back to the city: GeoJSON and a CSV per item{countsOnly ? "" : " in the city's own field names"}
+          {fields ? ` (${fields})` : ""}, and a survey report.
         </p>
       </div>
     </section>
@@ -311,7 +327,7 @@ function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others:
   const totals = cityTotals(scan.city_check, issues);
   if (totals) {
     cards.push({ title: "City records", big: `${totals.matched} of ${totals.covered}`,
-      text: "of the city's recorded assets in the photos' view were found" });
+      text: "of the city's recorded assets in the photos' view were found", how: countsOnlyNote(scan) ?? undefined });
   }
   const n = secondOpinions(issues);
   const disagree = "when the two disagree the finding stays unclear";
@@ -328,7 +344,8 @@ function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others:
   const other = others.find((o) => o.scan.city_check);
   const list = other ? firstList(other.scan) : null;
   if (other && list) {
-    cards.push({ title: "Another city", big: `${list.found} of ${list.covered}`, text: `${other.name}: ${list.layer}` });
+    cards.push({ title: "Another city", big: `${list.found} of ${list.covered}`, text: `${other.name}: ${list.layer}`,
+      how: countsOnlyNote(other.scan) ?? undefined });
   }
   return (
     <section className="overview-part" aria-labelledby="overview-checks">
@@ -406,6 +423,7 @@ function Surveys({ first, others, onOpenScan }: { first: Props["others"][number]
                 {scan.usd_per_km !== null && <span>{dollars(scan.usd_per_km)} per km</span>}
                 <span>{scan.image_count} photos</span>
                 {list && <span>{`${list.found} of ${list.covered} in ${list.layer}`}</span>}
+                {list && countsOnlyNote(scan) && <span className="hint small">{countsOnlyNote(scan)}</span>}
               </button>
             </li>
           );

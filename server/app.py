@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from assist import report
+from eval.city_check import shareable
 from pipeline import collect, config, db, mapillary, sam_output, survey_items
 from pipeline.runner import RESUME_MIN_USD
 from server import files, limits, review, views
@@ -343,7 +344,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
 
     def city_check(scan_id: int) -> dict | None:
         """The offline comparison with the city's records (eval, docs/specs/2026-10-28-ui-redesign-design.md 4.1),
-        if one was made for this scan. A file that cannot be read is left out, not an error for the visitor."""
+        if one was made for this scan, as eval.city_check.shareable lets it be shown: Seoul's list as counts and a
+        source only. A file that cannot be read is left out, not an error for the visitor."""
         path = run_dir / f"city_check_scan{scan_id}.json"
         if not path.is_file():
             return None
@@ -352,7 +354,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         except (OSError, ValueError):
             log.exception("could not read %s", path)
             return None
-        return data if isinstance(data, dict) else None
+        return shareable(data) if isinstance(data, dict) else None
 
     def headings(conn, scan_id: int) -> dict[int, float | None]:
         return {f["idx"]: f.get("compass") for f in db.frames(conn, scan_id)}

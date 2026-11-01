@@ -155,8 +155,11 @@ export default function ActionHub({
   onPickRecord,
   onSwitchLens,
 }: Props) {
-  const [tab, setTab] = useState<ActionTab>(initialTab);
+  const [picked, setTab] = useState<ActionTab>(initialTab);
   const [expanded, setExpanded] = useState(false);
+  // A list sent as counts only has no records to set against the survey, so there is no GIS Diff to open.
+  const hasDiff = !!scan.city_check && !scan.city_check.counts_only;
+  const tab: ActionTab = picked === "gis" && !hasDiff ? "dispatch" : picked;
 
   const dispatchRows = useMemo(() => buildDispatchList(findings, scan, streets), [findings, scan, streets]);
 
@@ -198,7 +201,7 @@ export default function ActionHub({
             Dispatch
             <span className="action-tab-badge">{dispatchRows.length}</span>
           </button>
-          {scan.city_check && (
+          {hasDiff && (
             <button
               type="button"
               role="tab"
@@ -318,7 +321,7 @@ export default function ActionHub({
         </div>
       )}
 
-      {tab === "gis" && scan.city_check && (
+      {tab === "gis" && hasDiff && scan.city_check && (
         <div className="action-pane">
           <p className="action-lead">
             Against {scan.city_check.city}'s records: <strong>{totals?.matched ?? 0}</strong> found and on the list,{" "}

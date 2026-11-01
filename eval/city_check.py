@@ -7,6 +7,8 @@ paired with one, and which rejections looked straight at an unfound one. eval/ci
 Writes <run>/city_check_scan<N>.json; the server attaches it to the scan as "city_check" when it is there. Each item
 also names the city records its findings paired with and the photographed ones it missed, in the fields the city's
 file lists (eval/cities/<city>.toml), so assist.export can write them (docs/specs/2026-10-29-city-fields-design.md).
+The file keeps every record. What the server, the report and the exports read is shareable(file): for a city whose list
+may not be passed on (COUNTS_ONLY) it has the counts and the source, no records.
 """
 import argparse
 import json
@@ -20,6 +22,19 @@ from eval.store import load_scan, open_ro
 METHOD = "Rows paired one-to-one with the city's points by photo position and viewing direction (eval/city.py)."
 METHOD_URL = "https://github.com/edward321416-maker/fieldless/blob/main/eval/city.py"
 CITIES = Path(__file__).parent / "cities"
+
+# Seoul's tree list is KOGL Type 4 (credit the source, no commercial use, no changes), and a hackathon entry licenses
+# everything in it for any use. So only the counts leave the project; the records stay in the offline comparison.
+COUNTS_ONLY = {"Seoul": "Seoul Open Data Plaza OA-23040, KOGL Type 4"}
+
+
+def shareable(check: dict) -> dict:
+    """The part of a comparison with a city's records that may be shown, served or exported."""
+    source = COUNTS_ONLY.get(check.get("city"))
+    if source is None:
+        return check
+    items = {k: {**v, "matched_ids": [], "id_fields": [], "pairs": [], "missed": []} for k, v in (check.get("items") or {}).items()}
+    return {**check, "items": items, "counts_only": True, "source": source}
 
 
 def load_city(name: str) -> dict:
