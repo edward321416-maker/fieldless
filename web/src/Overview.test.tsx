@@ -230,7 +230,7 @@ describe("what the overview leaves out", () => {
   });
   it("leaves out another city whose survey has no city list", () => {
     const html = render({ others: [{ scan: { ...seongsu, city_check: undefined } as Scan, name: "Seongsu" }] });
-    expect(html).not.toContain("Another city");
+    expect(html).not.toContain("Another example");
     expect(html).toContain("Korean standard");
   });
 });
@@ -255,5 +255,18 @@ describe("a city list shown as counts only", () => {
       expect(only).not.toContain(text);
     }
     expect(only).toContain("Back to the city: GeoJSON and a CSV per item, and a survey report.");
+  });
+});
+
+describe("a survey with an update list", () => {
+  it("offers the list in place of the two tools it stands in for", () => {
+    const counts = { in_view: 94, seen: 53, seen_by: {}, not_determined: 41, not_listed: 33, not_listed_unsure: 3, seen_unsure: 4, newer: 52 };
+    const asset_check = { city: "Seattle", items: [], totals: counts, actions: {}, no_visit: 43, left_out: { repeats: 0, wrong: 0 },
+      trust: { photo_months: [], controls: [], looked_at: 0, sent_back: 0, outside_view: 0 } };
+    const html = render({ scan: { ...scan, asset_check } as Scan });
+    expect(html).toContain("43 of 94 city records need no site visit");
+    expect(html).toContain("Open the update list →");
+    expect(html).not.toContain("Open Dispatch");
+    expect(html).not.toContain("Open GIS Diff");
   });
 });

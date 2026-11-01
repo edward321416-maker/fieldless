@@ -160,6 +160,21 @@ export default function Overview(props: Props) {
               <p className="hint">Each opens on the finished example survey.</p>
             </div>
             <div className="workflow-grid">
+              {scan.asset_check ? (
+                <div
+                  role="link"
+                  tabIndex={0}
+                  className="overview-card workflow-card"
+                  onClick={() => launchAction("dispatch")}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("dispatch")}
+                >
+                  <span className="workflow-badge prio-gis">City records</span>
+                  <strong>{`${scan.asset_check.no_visit} of ${scan.asset_check.totals.in_view} city records need no site visit`}</strong>
+                  <p>A list for the city's asset team: what to correct, which dates to update, where to visit and what to compare with the list, each row with its photo, as a page, a CSV and GeoJSON.</p>
+                  <span className="workflow-cta">Open the update list →</span>
+                </div>
+              ) : (
+                <>
               <div
                 role="link"
                 tabIndex={0}
@@ -191,6 +206,8 @@ export default function Overview(props: Props) {
                   <p>Compare the survey with the city's records and download the differences as GeoJSON, a list to check.</p>
                   <span className="workflow-cta">Open GIS Diff →</span>
                 </div>
+              )}
+                </>
               )}
               <div
                 role="link"
@@ -346,7 +363,7 @@ function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others:
   const other = others.find((o) => o.scan.city_check);
   const list = other ? firstList(other.scan) : null;
   if (other && list) {
-    cards.push({ title: "Another city", big: `${list.found} of ${list.covered}`, text: `${other.name}: ${list.layer}`,
+    cards.push({ title: "Another example", big: `${list.found} of ${list.covered}`, text: `${other.name}: ${list.layer}`,
       how: countsOnlyNote(other.scan) ?? undefined });
   }
   return (

@@ -38,8 +38,8 @@ describe("AssetCheckPane", () => {
     expect(html).toContain("<strong>19</strong> more objects are not on the city&#x27;s lists");
   });
 
-  it("gives every asset the same row, with a column per action that has rows", () => {
-    expect(html).toContain('<th scope="row">Street tree</th><td>107</td><td>27</td><td>16</td><td>58</td><td>19</td>');
+  it("gives every asset the same row, in columns that fit the panel", () => {
+    expect(html).toContain('<th scope="row">Street tree</th><td>107</td><td>43</td><td>58</td><td>19</td>');
     expect(html).not.toContain("Correct the record");
   });
 

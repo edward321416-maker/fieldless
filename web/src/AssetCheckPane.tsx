@@ -7,6 +7,8 @@ import { EvidencePhoto, PhotoCredit } from "./Photo";
 import type { AssetCheck, AssetCheckSummary, AssetRow, Scan } from "./types";
 
 const ACTIONS = ["Correct the record", "Update the date", "No change", "Visit on site", "Compare with the list"];
+const NO_VISIT = ["Correct the record", "Update the date", "No change"];
+const VISIT = "Visit on site";
 const COMPARE = "Compare with the list";
 // The list opens on rows of several assets: a correction may be one row of one asset (docs/ui-rules.md U2).
 const FIRST = "Update the date";
@@ -137,14 +139,15 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
       <p className="hint small">Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records.</p>
       <table className="asset-table">
         <thead>
-          <tr><th scope="col">Asset</th><th scope="col">In view</th>
-            {present.map((a) => <th key={a} scope="col">{a}</th>)}</tr>
+          <tr><th scope="col">Asset</th><th scope="col">In view</th><th scope="col">No visit</th><th scope="col">Visit</th>
+            <th scope="col">Compare</th></tr>
         </thead>
         <tbody>
           {summary.items.map((i) => (
             <tr key={i.item}>
               <th scope="row">{i.asset}</th><td>{i.in_view}</td>
-              {present.map((a) => <td key={a}>{i.actions[a] ?? 0}</td>)}
+              <td>{NO_VISIT.reduce((n, a) => n + (i.actions[a] ?? 0), 0)}</td>
+              <td>{i.actions[VISIT] ?? 0}</td><td>{i.actions[COMPARE] ?? 0}</td>
             </tr>
           ))}
         </tbody>
@@ -165,7 +168,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
       <ul className="asset-rows">
         {shown.map((r) => <AssetRowCard key={`${r.item} ${r.city_record} ${r.evidence?.url ?? ""} ${r.lat}`} row={r} scan={scan} onShow={show(r)} />)}
       </ul>
-      {action === "Visit on site" && <p className="hint small">Not determined does not mean missing. These need a newer photo or a site visit.</p>}
+      {action === VISIT && <p className="hint small">Not determined does not mean missing. These need a newer photo or a site visit.</p>}
       <div className="action-foot asset-foot">
         {rows.length > SHOWN && (
           <button type="button" className="link-button action-more-btn" onClick={() => setExpanded((v) => !v)}>
