@@ -6,7 +6,7 @@ import type { MissedRecord } from "./cityMatch";
 import type { Finding } from "./items";
 import type { AssetCheckSummary, AssetRow, Scan } from "./types";
 
-const counts = { in_view: 107, seen: 70, seen_by: {}, not_determined: 37, not_listed: 41, not_listed_unsure: 13, newer: 44 };
+const counts = { in_view: 107, seen: 70, seen_by: {}, not_determined: 37, not_listed: 41, not_listed_unsure: 13, seen_unsure: 4, newer: 44 };
 const summary: AssetCheckSummary = {
   city: "Seattle",
   items: [{ item: "street_tree", asset: "Street tree", city_list: "SDOT street trees", ...counts }],
@@ -66,6 +66,12 @@ describe("AssetRowCard", () => {
     expect(html).toContain("Photo by kev");
     expect(html).toContain("View on Mapillary");
     expect(html).toContain("CC BY-SA 4.0");
+  });
+
+  it("says when a photo was cut from a panorama, and not otherwise", () => {
+    const cut = "A flat view cut from a 360-degree photo.";
+    expect(renderToStaticMarkup(<ul><AssetRowCard row={row()} scan={scan} /></ul>)).toContain(cut);
+    expect(renderToStaticMarkup(<ul><AssetRowCard row={row({ how_seen: "Survey" })} scan={scan} /></ul>)).not.toContain(cut);
   });
 
   it("has no photo to credit when the photos settled nothing", () => {

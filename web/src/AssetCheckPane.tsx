@@ -70,6 +70,7 @@ export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan;
           ))}
         </dl>
         {row.evidence && <PhotoCredit evidence={row.evidence} />}
+        {row.how_seen === "Second look, newer photo" && <p className="credit">A flat view cut from a 360-degree photo.</p>}
         {onShow && <button type="button" className="link-button action-more-btn" onClick={onShow}>Show on the map</button>}
       </div>
     </li>

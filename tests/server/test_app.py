@@ -425,7 +425,7 @@ def asset_check_file(scan_id: int) -> dict:
            "seen_in_photo_on": "2025-07-11", "photo_newer_than_city_date": "yes", "city_condition": "", "lat": 37.5, "lng": 127.0,
            "position_source": "City record", "position_accuracy": "City record", "box": [1, 2, 3, 4], "evidence": photo}
     totals = {"in_view": 2, "seen": 1, "seen_by": {"Second look, newer photo": 1}, "not_determined": 1, "not_listed": 0,
-              "not_listed_unsure": 0, "newer": 1}
+              "not_listed_unsure": 0, "seen_unsure": 0, "newer": 1}
     return {"scan_id": scan_id, "city": "Testville", "totals": totals,
             "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **totals}],
             "rows": [row, {**row, "status": "Not determined", "how_seen": "", "city_record": "P2", "evidence": None,

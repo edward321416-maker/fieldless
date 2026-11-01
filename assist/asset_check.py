@@ -23,13 +23,14 @@ from assist.export import _cell
 from server import views
 
 NOT_DETERMINED, NOT_LISTED, SEEN = "Not determined", "Not on the city list", "Seen in photo"
+NEWER_PHOTO = "Second look, newer photo"
 SUMMARY_FIELDS = ("city", "items", "totals", "trust")
 COLUMNS = (("asset", "What the object is"),
            ("city_list", "The city list the record is on"),
            ("city_record", "The record's number on that list"),
            ("city_location", "The record's address, in the city's words"),
            ("status", f"{SEEN}, {NOT_DETERMINED} or {NOT_LISTED}"),
-           ("how_seen", "Survey, Second look, or Second look, newer photo"),
+           ("how_seen", "Survey, Second look, or Second look, newer photo (a flat view cut from a 360-degree photo)"),
            ("models_unsure", "yes when the models could not settle what the object is"),
            ("city_date", "The city's own date for the record, as year and month"),
            ("seen_in_photo_on", "The date of the photo. This is an observation, not an inspection"),
@@ -158,7 +159,7 @@ def _count(n: int, one: str, many: str | None = None) -> str:
 def seen_how(totals: dict) -> str:
     """How the seen records came to be seen, so the page's count lines up with the survey's."""
     words = (("Survey", "by the survey"), ("Second look", "on a second look"),
-             ("Second look, newer photo", "on a second look in newer photos"))
+             (NEWER_PHOTO, "on a second look in newer photos"))
     return ", ".join(f"{totals['seen_by'][how]} {text}" for how, text in words if totals["seen_by"].get(how))
 
 
@@ -172,7 +173,7 @@ def _action(row: dict) -> str:
 
 def examples(check: dict) -> list[dict]:
     """A few rows to show, each of a different asset (docs/design-rules.md R2): a photo of what each kind of row is."""
-    wanted = [(SEEN, "Second look, newer photo"), (SEEN, "Second look"), (SEEN, "Survey"), (NOT_LISTED, "")]
+    wanted = [(SEEN, NEWER_PHOTO), (SEEN, "Second look"), (SEEN, "Survey"), (NOT_LISTED, "")]
     shown: list[dict] = []
     for status, how in wanted:
         pick = next((r for r in check["rows"] if r["status"] == status and r["how_seen"] == how and r.get("evidence")
@@ -191,6 +192,8 @@ def _card(row: dict, logo: str, photo_base: str) -> str:
              ("How seen", row["how_seen"]), ("Seen in photo on", row["seen_in_photo_on"])]
     facts = "".join(f"<dt>{k}</dt><dd>{e(v)}</dd>" for k, v in cells if v)
     edited = "people and plates blurred, resized" if ev.get("blurred_regions") else "resized"
+    if row["how_seen"] == NEWER_PHOTO:
+        edited = f"cut from a 360-degree photo, {edited}"
     return f"""<article class="card">
   <figure><img src="{e(photo_base + ev['image'])}" alt="Street photo: {e(row['asset'])}" loading="lazy">{mark}</figure>
   <div class="body">
@@ -210,6 +213,11 @@ def _trust(check: dict) -> list[str]:
     if finds := trust.get("findings"):
         lines.append(f"<strong>Findings.</strong> An AI assistant checked {finds['n']} findings against their photos: "
                      f"{finds['yes']} right, {finds['no']} wrong and {finds['unclear']} could not be told.")
+    if totals.get("seen_unsure"):
+        lines.append(f"<strong>Models unsure.</strong> The models were unsure of {totals['seen_unsure']} of the "
+                     f"{totals['seen']} seen records. Those rows say so in the table.")
+    lines.append("<strong>Pairing.</strong> A finding is paired with a city record by the photo's position and viewing "
+                 "direction, not by a model comparing the two.")
     for c in trust["controls"]:
         lines.append(f"<strong>Control spots: {html.escape(c['photos'].lower())}.</strong> {_count(c['asked'], 'spot')} with "
                      f"no city record were asked the same way. Two models agreed on an object at {c['both_yes']} of them."

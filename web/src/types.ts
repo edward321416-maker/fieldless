@@ -149,6 +149,7 @@ export interface AssetCounts {
   not_determined: number; // does not mean missing
   not_listed: number;
   not_listed_unsure: number;
+  seen_unsure: number;
   newer: number; // records with a photo newer than the city's date
 }
 

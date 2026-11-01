@@ -36,7 +36,7 @@ def test_the_static_site_exports_an_asset_check_with_its_photos(tmp_path):
     (evidence / f"scan{scan_id}_look0_7.jpg").write_bytes(b"look")
     photo = {"image": f"scan{scan_id}_look0_7.jpg", "image_id": "7", "creator": "kev", "captured_at": "2025-07-11T00:00:00Z",
              "link": "https://www.mapillary.com/app/?pKey=7", "license": "CC BY-SA 4.0", "blurred_regions": 1}
-    totals = {"in_view": 1, "seen": 1, "seen_by": {}, "not_determined": 0, "not_listed": 0, "not_listed_unsure": 0, "newer": 0}
+    totals = {"in_view": 1, "seen": 1, "seen_by": {}, "not_determined": 0, "not_listed": 0, "not_listed_unsure": 0, "seen_unsure": 0, "newer": 0}
     row = {"item": "pole", "asset": "City pole", "city_list": "City poles", "city_record": "P1", "city_location": "",
            "status": "Seen in photo", "how_seen": "Second look", "models_unsure": "", "city_date": "",
            "seen_in_photo_on": "2025-07-11", "photo_newer_than_city_date": "", "city_condition": "", "lat": 1.0, "lng": 2.0,

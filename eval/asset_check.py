@@ -145,6 +145,7 @@ def tally(rows: list[dict]) -> dict:
             "seen_by": dict(Counter(r["how_seen"] for r in rows if r["status"] == SEEN)),
             "not_determined": status[NOT_DETERMINED], "not_listed": status[NOT_LISTED],
             "not_listed_unsure": sum(r["status"] == NOT_LISTED and r["models_unsure"] == "yes" for r in rows),
+            "seen_unsure": sum(r["status"] == SEEN and r["models_unsure"] == "yes" for r in rows),
             "newer": sum(r["photo_newer_than_city_date"] == "yes" for r in rows)}
 
 

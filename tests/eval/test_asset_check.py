@@ -61,7 +61,14 @@ def test_every_record_in_view_has_exactly_one_row():
     records = [r["city_record"] for r in out["rows"] if r["city_record"]]
     assert sorted(records) == ["C1", "P1", "P2", "P3", "P4"]
     assert out["totals"] == {"in_view": 5, "seen": 2, "seen_by": {"Survey": 1, "Second look, newer photo": 1},
-                             "not_determined": 3, "not_listed": 2, "not_listed_unsure": 1, "newer": 2}
+                             "not_determined": 3, "not_listed": 2, "not_listed_unsure": 1, "seen_unsure": 0, "newer": 2}
+
+
+def test_a_seen_record_the_models_were_unsure_of_is_counted_as_such():
+    data = {**DATA, "issues": [issue(1, "pole", "unclear"), *DATA["issues"][1:]]}
+    trust = {"controls": [], "looked_at": 0, "sent_back": 0}
+    out = asset_check.build(data, CHECK, TOWN, LAYERS, STANDARD, {}, trust)
+    assert out["totals"]["seen_unsure"] == 1 and row(out, "P1")["models_unsure"] == "yes"
 
 
 def test_a_record_with_no_look_stays_not_determined_and_keeps_the_citys_position():

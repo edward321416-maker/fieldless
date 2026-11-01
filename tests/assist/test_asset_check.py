@@ -24,7 +24,7 @@ ROWS = [row(), row(asset="Public can", how_seen="Second look, newer photo", city
             city_date="", photo_newer_than_city_date="", position_accuracy="Unknown (within 50 ft)",
             evidence={**EV, "image": "scan1_issue3_9.jpg"})]
 TOTALS = {"in_view": 3, "seen": 2, "seen_by": {"Survey": 1}, "not_determined": 1, "not_listed": 1, "not_listed_unsure": 1,
-          "newer": 1}
+          "seen_unsure": 1, "newer": 1}
 CHECK = {"scan_id": 1, "city": "Testville", "rows": ROWS, "totals": TOTALS,
          "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **TOTALS}],
          "trust": {"photo_months": ["2022-08", "2025-07"], "controls": [{"photos": "Newer panoramas", "asked": 10, "both_yes": 1, "note": "It was a real pole."}],
@@ -83,7 +83,13 @@ def test_every_photo_on_the_page_has_its_credit():
     page = asset_check.document(CHECK)
     shown = page.count("<figure>")
     assert shown == 2 and page.count("View on Mapillary") == shown and page.count("Photo by bea") == shown
-    assert page.count(", CC BY-SA 4.0. Edited: people and plates blurred, resized.") == shown
+    assert page.count(", CC BY-SA 4.0. Edited: ") == shown
+
+
+def test_a_view_cut_from_a_panorama_says_so():
+    page = asset_check.document(CHECK)
+    assert "Edited: cut from a 360-degree photo, people and plates blurred, resized." in page
+    assert "Edited: people and plates blurred, resized." in page  # the survey's own photo was not cut
 
 
 def test_a_photo_with_nothing_to_blur_does_not_say_it_was_blurred():
@@ -123,6 +129,12 @@ def test_the_page_never_gets_ahead_of_the_citys_decision():
     page = asset_check.document(CHECK).lower()
     for word in ("add to db", "add_to_city_db", "verified", "confirmed", "missing record", "patch", "approved", "passed"):
         assert word not in page
+
+
+def test_the_page_says_how_rows_were_paired_and_where_the_models_were_unsure():
+    page = asset_check.document(CHECK)
+    assert "by the photo's position and viewing direction, not by a model comparing the two" in page
+    assert "The models were unsure of 1 of the 2 seen records." in page
 
 
 def test_a_check_without_later_looks_still_makes_a_page():
