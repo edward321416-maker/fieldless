@@ -104,6 +104,19 @@ def read_looks(run_dir: Path, scan: int, frames: list[dict]) -> tuple[dict[str, 
                    "sent_back": len(sent_back)}
 
 
+def read_differs(run_dir: Path, scan: int) -> tuple[dict, dict | None]:
+    """The records a photo contradicts by (item, record), without those the AI assistant looked at and sent back
+    (look_review_scan<N>.json, "not_different"), and what eval.record_check says about itself."""
+    checked = _read(run_dir / f"record_check_scan{scan}.json")
+    if not checked:
+        return {}, None
+    review = _read(run_dir / f"look_review_scan{scan}.json") or {}
+    sent_back = {(r["item"], str(r["record"])) for r in review.get("not_different", [])}
+    differs = {(r["item"], r["record"]): {"city_says": r["city_says"], "photo_shows": r["photo_shows"]}
+               for r in checked["rows"] if r["differs"] and (r["item"], r["record"]) not in sent_back}
+    return differs, {**checked["summary"], "differ": len(differs), "sent_back": len(sent_back)}
+
+
 def evidence_of(looks: dict[str, dict], scan: int) -> dict[Path, str]:
     """The evidence file each look's photo goes to, numbered by photo so two records in one photo share it."""
     return {photo: f"scan{scan}_look{n}_{next(v['view']['image_id'] for v in looks.values() if v['photo'] == photo)}.jpg"
@@ -274,8 +287,11 @@ def main(argv=None) -> Path:
               for item in check_file["items"]}
     looks, trust = read_looks(run_dir, args.scan, data["frames"])
     spent = blur_looks(looks, run_dir, args.scan)
+    differs, record_trust = read_differs(run_dir, args.scan)
+    if record_trust:
+        trust["record_check"] = record_trust
     out = build(data, check_file, town, layers, survey_items.load(data["scan"]["jurisdiction"]), looks, trust,
-                _read(run_dir / f"precision_scan{args.scan}.json"))
+                _read(run_dir / f"precision_scan{args.scan}.json"), differs)
     path = run_dir / f"asset_check_scan{args.scan}.json"
     path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps({"totals": out["totals"], "trust": out["trust"]}, ensure_ascii=False, indent=1))
