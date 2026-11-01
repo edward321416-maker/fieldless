@@ -249,3 +249,11 @@ def test_a_counts_only_city_list_is_credited_and_never_called_a_list_the_finding
     assert "not in the city" not in actions
     assert "<th scope=\"col\">In the city&#x27;s list, not found by this survey</th></tr>" in actions
     assert "<tr><td>Streetlight pole</td><td>2</td></tr>" in actions  # the one count it has: 3 listed, 1 found
+
+
+def test_the_page_carries_a_citys_credit_for_its_records():
+    data = survey_scan.load()
+    data["city_check"] = {**CITY, "credit": "City records: Testville Open Data & co."}
+    s = report.summary(data, STANDARD, area="Pike & Pine", now=NOW)
+    assert "City records: Testville Open Data &amp; co." in report_doc.document(s)
+    assert "City records: Testville" not in report_doc.document(made(city=True)[1])

@@ -349,8 +349,8 @@ def _city_note(s: dict) -> str | None:
     cc = s.get("city_check")
     if not cc:
         return None
-    credit = f" {cc['credit']}" if cc.get("credit") else ""
-    return f"City record: {cc['method']} Measured {cc['measured_at']}.{report_doc.counts_only_note(cc)}{credit}"
+    return (f"City record: {cc['method']} Measured {cc['measured_at']}."
+            f"{report_doc.counts_only_note(cc)}{report_doc.credit_note(cc)}")
 
 
 def _item_cells(i: dict) -> list[str]:

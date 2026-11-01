@@ -143,6 +143,11 @@ def counts_only_note(cc: dict) -> str:
     return f" City list: counts only. Source: {cc['source']}." if cc.get("counts_only") else ""
 
 
+def credit_note(cc: dict) -> str:
+    """The words a city's data asks to be shown with its records, if any."""
+    return f" {cc['credit']}" if cc.get("credit") else ""
+
+
 def summary_text(s: dict) -> str:
     """The summary in code's words, when Muse Spark's is missing or was dropped."""
     t, a = s["totals"], s["actions"]
@@ -286,7 +291,7 @@ def _findings(s: dict, notes: dict | None) -> str:
                       f"{_h(_name(i['title']))}</h3>{para}{table}</article>")
     cc = s.get("city_check")
     note = (f'<p class="muted">City record: {_h(cc["method"])} Measured {_h(cc["measured_at"])}. '
-            f'<a href="{_h(cc["method_url"])}">Method</a>{_h(counts_only_note(cc))}</p>' if cc else
+            f'<a href="{_h(cc["method_url"])}">Method</a>{_h(counts_only_note(cc) + credit_note(cc))}</p>' if cc else
             '<p class="muted">No city record was checked against this survey.</p>')
     return _section("findings", "".join(blocks) + note)
 
