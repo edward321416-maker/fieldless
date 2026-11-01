@@ -16,7 +16,7 @@ def row(**over):
             "evidence": EV, **over}
 
 
-ROWS = [row(), row(asset="Public can", how_seen="Second look, newer photo", city_record="C1", city_date="",
+ROWS = [row(), row(asset="Public can", how_seen="Second look, panorama", city_record="C1", city_date="",
                photo_newer_than_city_date="", evidence={**EV, "image": "scan1_look0_7.jpg"}),
         row(asset="Street tree", status="Not determined", how_seen="", city_record="T1", seen_in_photo_on="",
             photo_newer_than_city_date="", evidence=None, box=None),
@@ -27,7 +27,7 @@ TOTALS = {"in_view": 3, "seen": 2, "seen_by": {"Survey": 1}, "not_determined": 1
           "seen_unsure": 1, "newer": 1}
 CHECK = {"scan_id": 1, "city": "Testville", "rows": ROWS, "totals": TOTALS,
          "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **TOTALS}],
-         "trust": {"photo_months": ["2022-08", "2025-07"], "controls": [{"photos": "Newer panoramas", "asked": 10, "both_yes": 1, "note": "It was a real pole."}],
+         "trust": {"photo_months": ["2022-08", "2025-07"], "controls": [{"photos": "Panoramas", "asked": 10, "both_yes": 1, "note": "It was a real pole."}],
                    "looked_at": 25, "sent_back": 3, "outside_view": 6, "findings": {"n": 88, "yes": 73, "no": 4, "unclear": 11}}}
 
 
@@ -111,8 +111,8 @@ def test_an_example_is_never_one_the_models_were_unsure_of():
 
 
 def test_the_page_says_how_the_seen_records_came_to_be_seen():
-    totals = {**TOTALS, "seen_by": {"Survey": 45, "Second look": 9, "Second look, newer photo": 16}}
-    assert asset_check.seen_how(totals) == "45 by the survey, 9 on a second look, 16 on a second look in newer photos"
+    totals = {**TOTALS, "seen_by": {"Survey": 45, "Second look": 9, "Second look, panorama": 16}}
+    assert asset_check.seen_how(totals) == "45 by the survey, 9 on a second look, 16 on a second look in panoramas"
     assert asset_check.seen_how({**TOTALS, "seen_by": {"Survey": 2}}) == "2 by the survey"
 
 

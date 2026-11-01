@@ -11,10 +11,10 @@ const STATUSES: { status: AssetRow["status"]; label: string; count: (s: AssetChe
   { status: "Not determined", label: "Not determined", count: (s) => s.totals.not_determined },
   { status: "Not on the city list", label: "Not on the list", count: (s) => s.totals.not_listed },
 ];
-const HOW_ORDER = ["Second look, newer photo", "Second look", "Survey", ""];
+const HOW_ORDER = ["Second look, panorama", "Second look", "Survey", ""];
 const SHOWN = 3;
 const HOW_WORDS: [string, string][] = [["Survey", "by the survey"], ["Second look", "on a second look"],
-  ["Second look, newer photo", "on a second look in newer photos"]];
+  ["Second look, panorama", "on a second look in panoramas"]];
 
 // How the seen records came to be seen, so the count lines up with the survey's own.
 export function seenHow(seenBy: Record<string, number>): string {
@@ -70,7 +70,7 @@ export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan;
           ))}
         </dl>
         {row.evidence && <PhotoCredit evidence={row.evidence} />}
-        {row.how_seen === "Second look, newer photo" && <p className="credit">A flat view cut from a 360-degree photo.</p>}
+        {row.how_seen === "Second look, panorama" && <p className="credit">A flat view cut from a 360-degree photo.</p>}
         {onShow && <button type="button" className="link-button action-more-btn" onClick={onShow}>Show on the map</button>}
       </div>
     </li>

@@ -31,7 +31,7 @@ from pipeline.parallel import run_parallel
 
 SEEN, NOT_DETERMINED, NOT_LISTED = "Seen in photo", "Not determined", "Not on the city list"
 STATUSES = (SEEN, NOT_DETERMINED, NOT_LISTED)
-BY_SURVEY, BY_LOOK, BY_NEWER_PHOTO = "Survey", "Second look", "Second look, newer photo"
+BY_SURVEY, BY_LOOK, BY_PANORAMA = "Survey", "Second look", "Second look, panorama"
 CITY_POSITION = {"position_source": "City record", "position_accuracy": "City record"}
 CAMERA_POSITION = {"position_source": "Camera position of the Mapillary photo",
                    "position_accuracy": "Unknown (within 50 ft)"}
@@ -94,9 +94,9 @@ def read_looks(run_dir: Path, scan: int, frames: list[dict]) -> tuple[dict[str, 
         for job in newer["jobs"]:
             if job["kind"] == "record" and (answer := _confirmed(job)):
                 view = answer["view"]
-                add(job, BY_NEWER_PHOTO, view, answer["spark"], run_dir / "pano_views" / f"{view['image_id']}_{view['yaw']:.0f}.jpg")
+                add(job, BY_PANORAMA, view, answer["spark"], run_dir / "pano_views" / f"{view['image_id']}_{view['yaw']:.0f}.jpg")
     controls = [{"photos": "Survey-date photos", "asked": flat_controls, "both_yes": flat_false},
-                {"photos": "Newer panoramas", "asked": pano_controls, "both_yes": pano_false,
+                {"photos": "Panoramas", "asked": pano_controls, "both_yes": pano_false,
                  **({"note": review["newer_control_note"]} if review.get("newer_control_note") else {})}]
     return looks, {"controls": [c for c in controls if c["asked"]], "looked_at": review.get("looked_at", 0),
                    "sent_back": len(sent_back)}

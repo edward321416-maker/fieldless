@@ -43,7 +43,7 @@ def issue(id_, item, label="yes", status="auto"):
 DATA = {"scan": {"id": 1}, "issues": [issue(1, "pole"), issue(2, "pole"), issue(3, "pole"), issue(4, "can", "unclear"),
                                       issue(5, "can", status="rejected")]}
 STANDARD = SimpleNamespace(check=lambda item: SimpleNamespace(target={"pole": "city pole", "can": "public can"}[item]))
-NEWER = {"how": asset_check.BY_NEWER_PHOTO, "box": [5, 6, 7, 8],
+NEWER = {"how": asset_check.BY_PANORAMA, "box": [5, 6, 7, 8],
          "evidence": {"image": "scan1_look0_7.jpg", "captured_at": "2025-07-11T00:00:00Z"}}
 
 
@@ -68,7 +68,7 @@ def test_every_record_in_view_has_exactly_one_row():
     out = result({asset_check.record_key({"UNITID": "P2"}): NEWER})
     records = [r["city_record"] for r in out["rows"] if r["city_record"]]
     assert sorted(records) == ["C1", "P1", "P2", "P3", "P4"]
-    assert out["totals"] == {"in_view": 5, "seen": 2, "seen_by": {"Survey": 1, "Second look, newer photo": 1},
+    assert out["totals"] == {"in_view": 5, "seen": 2, "seen_by": {"Survey": 1, "Second look, panorama": 1},
                              "not_determined": 3, "not_listed": 2, "not_listed_unsure": 1, "seen_unsure": 0, "newer": 2}
 
 
@@ -87,7 +87,7 @@ def test_a_record_with_no_look_stays_not_determined_and_keeps_the_citys_position
 
 def test_a_later_look_gives_the_row_its_photo_date_and_box():
     r = row(result({asset_check.record_key({"UNITID": "P2"}): NEWER}), "P2")
-    assert r["status"] == asset_check.SEEN and r["how_seen"] == asset_check.BY_NEWER_PHOTO
+    assert r["status"] == asset_check.SEEN and r["how_seen"] == asset_check.BY_PANORAMA
     assert r["seen_in_photo_on"] == "2025-07-11" and r["box"] == [5, 6, 7, 8]
     assert r["city_date"] == "2024-10" and r["photo_newer_than_city_date"] == "yes"
 
@@ -189,7 +189,7 @@ def test_a_look_sent_back_after_the_check_by_eye_does_not_count(run):
 def test_the_looks_say_how_their_control_spots_went(run):
     _, trust = asset_check.read_looks(run, 1, FRAMES)
     assert trust["controls"] == [{"photos": "Survey-date photos", "asked": 20, "both_yes": 0},
-                                 {"photos": "Newer panoramas", "asked": 10, "both_yes": 1, "note": "It was a real pole."}]
+                                 {"photos": "Panoramas", "asked": 10, "both_yes": 1, "note": "It was a real pole."}]
 
 
 def test_a_look_names_its_photo_and_its_creator(run):

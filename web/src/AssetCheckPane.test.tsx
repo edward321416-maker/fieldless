@@ -19,7 +19,7 @@ const evidence = { url: "/api/evidence/scan17_look0_7.jpg", creator: "kev", capt
 
 function row(over: Partial<AssetRow> = {}): AssetRow {
   return { item: "street_tree", asset: "Street tree", city_list: "SDOT street trees", city_record: "TRE-1", city_location: "1 Main St",
-    status: "Seen in photo", how_seen: "Second look, newer photo", models_unsure: "", city_date: "2019-03",
+    status: "Seen in photo", how_seen: "Second look, panorama", models_unsure: "", city_date: "2019-03",
     seen_in_photo_on: "2025-07-11", photo_newer_than_city_date: "yes", city_condition: "", lat: 47.6, lng: -122.3,
     position_source: "City record", position_accuracy: "City record", box: [100, 200, 300, 400], evidence, ...over };
 }
@@ -95,8 +95,8 @@ describe("AssetRowCard", () => {
 
 describe("seenHow", () => {
   it("lines the count up with the survey's own", () => {
-    expect(seenHow({ Survey: 45, "Second look": 9, "Second look, newer photo": 16 }))
-      .toBe("45 by the survey, 9 on a second look, 16 on a second look in newer photos");
+    expect(seenHow({ Survey: 45, "Second look": 9, "Second look, panorama": 16 }))
+      .toBe("45 by the survey, 9 on a second look, 16 on a second look in panoramas");
     expect(seenHow({ Survey: 2 })).toBe("2 by the survey");
   });
 });
