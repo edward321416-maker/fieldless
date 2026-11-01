@@ -133,7 +133,7 @@ def table_geojson(check: dict) -> bytes:
 
 
 def summary(check: dict) -> dict:
-    return {k: check[k] for k in SUMMARY_FIELDS}
+    return {**{k: check[k] for k in SUMMARY_FIELDS}, **({"credit": check["credit"]} if check.get("credit") else {})}
 
 
 def for_app(check: dict) -> dict:
@@ -329,7 +329,7 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
   <div class="tablewrap" style="margin-top:12px"><table class="columns"><tbody>{columns}</tbody></table></div>
 </section>
 
-<p class="meta" style="font-size:13px">Street photos: Mapillary contributors, CC BY-SA 4.0. City data: {e(check['city'])} open data.</p>
+<p class="meta" style="font-size:13px">Street photos: Mapillary contributors, CC BY-SA 4.0. {e(check.get('credit') or f"City data: {check['city']} open data.")}</p>
 </main></body></html>
 """
 

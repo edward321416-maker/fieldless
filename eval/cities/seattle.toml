@@ -16,6 +16,7 @@
 #   place_field      the record's address in the city's words
 #   condition_field  the record's condition in the city's words
 #   verified         checked_field says when the city last verified the record, not when the list was written
+#   credit           (top level) the words the city's data asks to be shown with its records
 #   [items.<id>.compare]  a yes/no field a photo can settle (eval.record_check): the field, its two values, the
 #                    question, and what each value says in words
 

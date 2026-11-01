@@ -190,3 +190,11 @@ def test_write_makes_the_three_files(tmp_path):
     asset_check.write(CHECK, tmp_path, area="Capitol Hill")
     assert sorted(p.name for p in tmp_path.iterdir()) == ["update_list.csv", "update_list.geojson", "update_list.html"]
     assert 'src="evidence/scan1_issue1_9.jpg"' in (tmp_path / "update_list.html").read_text(encoding="utf-8")
+
+
+def test_a_citys_own_credit_stands_in_for_the_plain_one():
+    credit = "City records: Testville Open Data, downloaded Nov 1, 2026."
+    check = {**CHECK, "credit": credit}
+    assert credit in asset_check.document(check) and "Testville open data." not in asset_check.document(check)
+    assert asset_check.summary(check)["credit"] == credit
+    assert "City data: Testville open data." in asset_check.document(CHECK)

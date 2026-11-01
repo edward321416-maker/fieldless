@@ -261,7 +261,8 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
     checked = next((r for r in precision.summary(labels) if r["item"] == "all"), None) if labels else None
     months = sorted({r["seen_in_photo_on"][:7] for r in rows if r["status"] == SEEN and r["seen_in_photo_on"]})
     no_visit = sum(bool(r["city_record"]) and r["action"] != VISIT for r in listed)
-    return {"scan_id": data["scan"]["id"], "city": town["city"], "items": items, "totals": tally(rows),
+    return {"scan_id": data["scan"]["id"], "city": town["city"], **({"credit": town["credit"]} if "credit" in town else {}),
+            "items": items, "totals": tally(rows),
             "actions": dict(Counter(r["action"] for r in listed)), "no_visit": no_visit, "left_out": dict(left_out),
             "rows": listed,
             "trust": {**trust, "photo_months": months, "outside_view": outside,

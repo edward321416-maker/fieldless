@@ -149,3 +149,15 @@ def test_a_record_field_a_photo_can_settle_is_named_in_the_citys_file(name):
 def test_only_a_date_that_records_a_verification_is_marked_verified(name):
     items = city_check.load_city(name)["items"]
     assert sorted(k for k, v in items.items() if v.get("verified")) == ["curb_ramp_warning", "street_tree"]
+
+
+@pytest.mark.parametrize("name", ["seattle", "seattle-ballard", "nyc"])
+def test_every_item_says_which_field_a_person_looks_a_record_up_by(name):
+    for item, cfg in city_check.load_city(name)["items"].items():
+        assert cfg.get("record_field") in [*cfg["id_fields"], cfg.get("record_field")] and cfg.get("record_field"), item
+
+
+def test_new_york_credits_its_records_as_its_open_data_terms_ask():
+    credit = city_check.load_city("nyc")["credit"]
+    assert "NYC Open Data" in credit and "Nov 1, 2026" in credit
+    assert "does not warrant them or endorse this survey" in credit

@@ -169,6 +169,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
         {shown.map((r) => <AssetRowCard key={`${r.item} ${r.city_record} ${r.evidence?.url ?? ""} ${r.lat}`} row={r} scan={scan} onShow={show(r)} />)}
       </ul>
       {action === VISIT && <p className="hint small">Not determined does not mean missing. These need a newer photo or a site visit.</p>}
+      {summary.credit && <p className="hint small">{summary.credit}</p>}
       <div className="action-foot asset-foot">
         {rows.length > SHOWN && (
           <button type="button" className="link-button action-more-btn" onClick={() => setExpanded((v) => !v)}>

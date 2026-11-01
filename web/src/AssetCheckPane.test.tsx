@@ -64,6 +64,14 @@ describe("AssetCheckPane", () => {
   });
 });
 
+describe("a city's credit for its records", () => {
+  it("is shown when the city's data asks for one", () => {
+    const credit = "City records: NYC Open Data.";
+    const html = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={{ ...summary, credit }} findings={[]} missed={[]} />);
+    expect(html).toContain(credit);
+  });
+});
+
 describe("the urls", () => {
   it("are files on the static demo", () => {
     expect(assetCheckReportUrl(17, false)).toBe("/api/scans/17/asset-check/report");

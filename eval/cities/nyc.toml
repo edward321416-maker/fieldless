@@ -20,6 +20,8 @@
 
 city = "New York"
 root = "nyc"
+# Shown with the records. NYC's Open Data terms can ask for the source, version and changes (Admin. Code 23-502(d)).
+credit = "City records: NYC Open Data (DOT, Parks, DSNY, DEP), downloaded Nov 1, 2026, clipped to the survey area. The City of New York does not warrant them or endorse this survey."
 
 [items.street_tree]
 layer = "assets/trees.geojson"
@@ -27,24 +29,28 @@ name = "NYC Parks Forestry Tree Points"
 inventory = true
 installed_field = "planteddate"
 id_fields = ["objectid", "globalid"]
+record_field = "objectid"
 
 [items.litter_can]
 layer = "assets/litter.geojson"
 name = "DSNY litter baskets"
 inventory = true
 id_fields = ["basketid", "objectid"]
+record_field = "basketid"
 
 [items.parking_pay_station]
 layer = "assets/paystations.geojson"
 name = "NYC DOT parking muni-meters"
 inventory = true
 id_fields = ["meter_number", "objectid"]
+record_field = "meter_number"
 
 [items.curb_ramp_warning]
 layer = "assets/ramps.geojson"
 name = "NYC DOT pedestrian ramps"
 inventory = false
 id_fields = ["cornerid", "rampid"]
+record_field = "rampid"
 
 # Assets NYC publishes that are not survey items yet (as in seattle.toml).
 [extra.bike_rack]

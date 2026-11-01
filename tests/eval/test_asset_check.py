@@ -342,3 +342,10 @@ def test_what_a_blur_found_is_kept_for_the_next_run(tmp_path, no_segments):
     looks = blurrable(tmp_path)
     asset_check.blur_looks(looks, tmp_path, 1, api=FakeSam())
     assert looks["a"]["evidence"]["blurred_regions"] == 0
+
+
+def test_a_citys_own_credit_for_its_records_comes_along():
+    trust = {"controls": [], "looked_at": 0, "sent_back": 0}
+    town = {**TOWN, "credit": "City records: Testville Open Data."}
+    assert asset_check.build(DATA, CHECK, town, LAYERS, STANDARD, {}, trust)["credit"] == "City records: Testville Open Data."
+    assert "credit" not in asset_check.build(DATA, CHECK, TOWN, LAYERS, STANDARD, {}, trust)
