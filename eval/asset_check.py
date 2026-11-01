@@ -247,7 +247,7 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
         rows += found
         kept = []
         for row in found:
-            label = judged.get(str(row["issue_id"]))
+            label = judged.get(str(row.pop("issue_id")))
             differ = (differs or {}).get((item, row["city_record"]))
             action = action_of(row, label, differ, bool(cfg.get("verified")))
             if action is None:

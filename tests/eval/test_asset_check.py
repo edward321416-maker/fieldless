@@ -107,6 +107,11 @@ def test_every_row_has_one_action_and_the_counts_add_up():
     assert sum(sum(i["actions"].values()) for i in out["items"]) == len(out["rows"])
 
 
+def test_a_row_names_no_finding_by_its_local_id():
+    # a finding's id changes when a survey goes into the live data, and this file goes up as it is
+    assert not [r for r in result()["rows"] if "issue_id" in r]
+
+
 def test_an_object_the_assistant_found_wrong_or_repeated_leaves_the_list_and_is_counted():
     labels = {"issues": {"3": {"item": "pole", "value": "yes", "dup_of": 1}, "4": {"item": "can", "value": "no"}}}
     out = result(labels=labels)
