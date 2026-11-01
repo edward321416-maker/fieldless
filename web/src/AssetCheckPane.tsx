@@ -134,7 +134,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
       <p className="action-lead">
         Of <strong>{totals.in_view}</strong> {summary.city} records in the photos' view, <strong>{summary.no_visit}</strong> need
         no site visit and <strong>{visits}</strong> {visits === 1 ? "does" : "do"}.
-        {objects > 0 && <> <strong>{objects}</strong> more objects are not on the city's lists.</>}
+        {objects > 0 && <> <strong>{objects}</strong> more objects are not on the city's lists{summary.compare_unsure > 0 ? `, ${summary.compare_unsure} of them not settled` : ""}.</>}
       </p>
       <p className="hint small">Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records.</p>
       <table className="asset-table">

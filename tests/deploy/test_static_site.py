@@ -44,7 +44,7 @@ def test_the_static_site_exports_an_asset_check_with_its_photos(tmp_path):
            "action": "No change", "city_says": "", "photo_shows": ""}
     actions = {"No change": 1}
     check = {"scan_id": scan_id, "city": "Testville", "totals": totals, "rows": [row], "actions": actions, "no_visit": 1,
-             "left_out": {"repeats": 0, "wrong": 0},
+             "compare_unsure": 0, "left_out": {"repeats": 0, "wrong": 0},
              "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **totals, "actions": actions}],
              "trust": {"photo_months": ["2025-07"], "controls": [], "looked_at": 0, "sent_back": 0, "outside_view": 0}}
     (config.run_dir("demo-asset") / f"asset_check_scan{scan_id}.json").write_text(json.dumps(check), encoding="utf-8")

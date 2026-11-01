@@ -429,7 +429,7 @@ def asset_check_file(scan_id: int) -> dict:
               "not_listed_unsure": 0, "seen_unsure": 0, "newer": 1}
     actions = {"Update the date": 1, "Visit on site": 1}
     return {"scan_id": scan_id, "city": "Testville", "totals": totals, "actions": actions, "no_visit": 1,
-            "left_out": {"repeats": 0, "wrong": 0},
+            "compare_unsure": 0, "left_out": {"repeats": 0, "wrong": 0},
             "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **totals, "actions": actions}],
             "rows": [row, {**row, "status": "Not determined", "how_seen": "", "city_record": "P2", "evidence": None,
                            "seen_in_photo_on": "", "photo_newer_than_city_date": "", "box": None, "action": "Visit on site",

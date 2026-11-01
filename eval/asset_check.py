@@ -34,6 +34,7 @@ STATUSES = (SEEN, NOT_DETERMINED, NOT_LISTED)
 BY_SURVEY, BY_LOOK, BY_PANORAMA = "Survey", "Second look", "Second look, panorama"
 FIX, DATE, SAME, VISIT, COMPARE = ("Correct the record", "Update the date", "No change", "Visit on site",
                                    "Compare with the list")
+NOT_SETTLED = "Not settled what this is"
 CITY_POSITION = {"position_source": "City record", "position_accuracy": "City record"}
 CAMERA_POSITION = {"position_source": "Camera position of the Mapillary photo",
                    "position_accuracy": "Unknown (within 50 ft)"}
@@ -154,24 +155,29 @@ def asset_name(standard, item: str) -> str:
     return target[:1].upper() + target[1:]
 
 
+def sure_of(row: dict, label: dict | None) -> bool:
+    """The models were sure, and the assistant's check, when there is one, agrees."""
+    return row["models_unsure"] != "yes" and (label is None or label.get("value") == "yes")
+
+
 def action_of(row: dict, label: dict | None, differs: dict | None, verified: bool) -> str | None:
     """What a city does with a row. None: the AI assistant found the object wrong or a repeat, so it leaves the list.
-    A row is sure when the models were and the assistant's check, when there is one, agrees. verified: the list's date
-    says when the city last verified the record, not just when the list was written."""
-    if row["status"] == NOT_LISTED and label and (label.get("dup_of") is not None or label.get("value") == "no"):
-        return None
-    sure = row["models_unsure"] != "yes" and (label is None or label.get("value") == "yes")
-    if row["status"] == NOT_DETERMINED or not sure:
-        return VISIT
+    A visit is always a city record, so one number means the same on every surface; an object on no list is to compare,
+    sure of or not. verified: the list's date says when the city last verified the record, not just when the list was
+    written."""
     if row["status"] == NOT_LISTED:
-        return COMPARE
+        return None if label and (label.get("dup_of") is not None or label.get("value") == "no") else COMPARE
+    if row["status"] == NOT_DETERMINED or not sure_of(row, label):
+        return VISIT
     if differs:
         return FIX
     return DATE if verified and row["photo_newer_than_city_date"] == "yes" else SAME
 
 
-def said(row: dict, action: str, differs: dict | None, cfg: dict) -> dict:
+def said(row: dict, action: str, differs: dict | None, cfg: dict, sure: bool = True) -> dict:
     """The two sides of a change. The city's own date stays in its column: a photo date never fills it."""
+    if action == COMPARE and not sure:
+        return {"city_says": "", "photo_shows": NOT_SETTLED}
     if action == FIX:
         return {"city_says": differs["city_says"], "photo_shows": differs["photo_shows"]}
     if action == DATE:
@@ -253,7 +259,7 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
             if action is None:
                 left_out["repeats" if label.get("dup_of") is not None else "wrong"] += 1
             else:
-                kept.append({**row, "action": action, **said(row, action, differ, cfg)})
+                kept.append({**row, "action": action, **said(row, action, differ, cfg, sure_of(row, label))})
         listed += kept
         items.append({"item": item, "asset": name, "city_list": info["layer"], **tally(found),
                       "actions": dict(Counter(r["action"] for r in kept))})
@@ -261,9 +267,11 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
     checked = next((r for r in precision.summary(labels) if r["item"] == "all"), None) if labels else None
     months = sorted({r["seen_in_photo_on"][:7] for r in rows if r["status"] == SEEN and r["seen_in_photo_on"]})
     no_visit = sum(bool(r["city_record"]) and r["action"] != VISIT for r in listed)
+    compare_unsure = sum(r["photo_shows"] == NOT_SETTLED for r in listed)
     return {"scan_id": data["scan"]["id"], "city": town["city"], **({"credit": town["credit"]} if "credit" in town else {}),
             "items": items, "totals": tally(rows),
-            "actions": dict(Counter(r["action"] for r in listed)), "no_visit": no_visit, "left_out": dict(left_out),
+            "actions": dict(Counter(r["action"] for r in listed)), "no_visit": no_visit, "compare_unsure": compare_unsure,
+            "left_out": dict(left_out),
             "rows": listed,
             "trust": {**trust, "photo_months": months, "outside_view": outside,
                       **({"findings": {k: checked[k] for k in ("n", "yes", "no", "unclear")}} if checked else {})}}

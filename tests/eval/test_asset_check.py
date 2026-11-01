@@ -91,7 +91,8 @@ def test_an_object_off_the_lists():
     off = row_of(asset_check.NOT_LISTED, newer="")
     assert asset_check.action_of(off, {"value": "yes"}, None, False) == asset_check.COMPARE
     assert asset_check.action_of(off, None, None, False) == asset_check.COMPARE
-    assert asset_check.action_of(off, {"value": "unclear"}, None, False) == asset_check.VISIT
+    assert asset_check.action_of(off, {"value": "unclear"}, None, False) == asset_check.COMPARE
+    assert asset_check.action_of(row_of(asset_check.NOT_LISTED, "yes", ""), None, None, False) == asset_check.COMPARE
     assert asset_check.action_of(off, {"value": "no"}, None, False) is None
     assert asset_check.action_of(off, {"value": "yes", "dup_of": 3}, None, False) is None
 
@@ -104,6 +105,7 @@ def test_every_row_has_one_action_and_the_counts_add_up():
     assert len(records) == out["totals"]["in_view"]
     visits = sum(r["action"] == asset_check.VISIT for r in records)
     assert out["no_visit"] == len(records) - visits
+    assert out["actions"][asset_check.VISIT] == visits  # a visit is a city record: one number on every surface
     assert sum(sum(i["actions"].values()) for i in out["items"]) == len(out["rows"])
 
 
@@ -349,3 +351,16 @@ def test_a_citys_own_credit_for_its_records_comes_along():
     town = {**TOWN, "credit": "City records: Testville Open Data."}
     assert asset_check.build(DATA, CHECK, town, LAYERS, STANDARD, {}, trust)["credit"] == "City records: Testville Open Data."
     assert "credit" not in asset_check.build(DATA, CHECK, TOWN, LAYERS, STANDARD, {}, trust)
+
+
+def test_an_object_nobody_is_sure_of_stays_to_compare_and_says_so():
+    out = result(labels={"issues": {"3": {"item": "pole", "value": "unclear"}}})
+    unsure = [r for r in out["rows"] if r["action"] == asset_check.COMPARE]
+    assert len(unsure) == 2 and out["compare_unsure"] == 2
+    assert {r["photo_shows"] for r in unsure} == {asset_check.NOT_SETTLED}
+
+
+def test_an_object_everyone_is_sure_of_has_nothing_to_add():
+    out = result(labels={"issues": {"3": {"item": "pole", "value": "yes"}}})
+    sure = next(r for r in out["rows"] if r["asset"] == "City pole" and r["status"] == asset_check.NOT_LISTED)
+    assert sure["photo_shows"] == "" and out["compare_unsure"] == 1  # the unsure can is still counted

@@ -24,12 +24,13 @@ ROWS = [row(), row(asset="Public can", how_seen="Second look, panorama", city_re
             photo_newer_than_city_date="", evidence=None, box=None, action="Visit on site", city_says="", photo_shows=""),
         row(asset="Street tree", status="Not on the city list", how_seen="", city_list="", city_record="", models_unsure="yes",
             city_date="", photo_newer_than_city_date="", position_accuracy="Unknown (within 50 ft)",
-            evidence={**EV, "image": "scan1_issue3_9.jpg"}, action="Visit on site", city_says="", photo_shows="")]
-ACTIONS = {"Update the date": 1, "No change": 1, "Visit on site": 2}
+            evidence={**EV, "image": "scan1_issue3_9.jpg"}, action="Compare with the list", city_says="",
+            photo_shows="Not settled what this is")]
+ACTIONS = {"Update the date": 1, "No change": 1, "Visit on site": 1, "Compare with the list": 1}
 TOTALS = {"in_view": 3, "seen": 2, "seen_by": {"Survey": 1}, "not_determined": 1, "not_listed": 1, "not_listed_unsure": 1,
           "seen_unsure": 1, "newer": 1}
 CHECK = {"scan_id": 1, "city": "Testville", "rows": ROWS, "totals": TOTALS, "actions": ACTIONS, "no_visit": 2,
-         "left_out": {"repeats": 6, "wrong": 1},
+         "compare_unsure": 1, "left_out": {"repeats": 6, "wrong": 1},
          "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **TOTALS, "actions": ACTIONS}],
          "trust": {"photo_months": ["2022-08", "2025-07"], "controls": [{"photos": "Panoramas", "asked": 10, "both_yes": 1, "note": "It was a real pole."}],
                    "looked_at": 25, "sent_back": 3, "outside_view": 6, "findings": {"n": 88, "yes": 73, "no": 4, "unclear": 11}}}
@@ -63,7 +64,8 @@ def test_the_geojson_puts_each_row_at_its_position():
 
 
 def test_the_app_gets_the_counts_apart_from_the_rows():
-    assert set(asset_check.summary(CHECK)) == {"city", "items", "totals", "trust", "actions", "no_visit", "left_out"}
+    assert set(asset_check.summary(CHECK)) == {"city", "items", "totals", "trust", "actions", "no_visit", "left_out",
+                                               "compare_unsure"}
 
 
 def test_the_app_gets_each_photo_at_the_servers_address():
@@ -93,12 +95,13 @@ def test_the_table_starts_with_what_to_do():
 def test_each_action_with_rows_has_its_line_and_none_without():
     page = asset_check.document(CHECK)
     assert 'id="next"' in page and "Update the date" in page and "Visit on site" in page
-    assert "Correct the record" not in page and "Compare with the list" not in page
+    assert "Compare with the list" in page and "Correct the record" not in page
 
 
-def test_a_visit_counts_records_and_objects_apart():
+def test_a_visit_is_a_city_record_and_an_unsure_object_is_counted_under_compare():
     page = asset_check.document(CHECK)
-    assert "1 city record and 1 object the photos did not settle" in page
+    assert "1 city record the photos did not settle" in page
+    assert "The models or the AI assistant could not settle 1 of these." in page
 
 
 def test_a_record_to_correct_shows_both_sides_first():

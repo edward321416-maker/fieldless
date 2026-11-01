@@ -301,7 +301,7 @@ describe("a city list shown as counts only", () => {
 describe("a survey with an update list", () => {
   const counts = { in_view: 94, seen: 53, seen_by: {}, not_determined: 41, not_listed: 33, not_listed_unsure: 3, seen_unsure: 4, newer: 52 };
   const actions = { "Update the date": 27, "Visit on site": 58 };
-  const withList = { ...mockScan, asset_check: { city: "Seattle", items: [], totals: counts, actions, no_visit: 43,
+  const withList = { ...mockScan, asset_check: { city: "Seattle", items: [], totals: counts, actions, no_visit: 43, compare_unsure: 0,
     left_out: { repeats: 6, wrong: 1 }, trust: { photo_months: [], controls: [], looked_at: 0, sent_back: 0, outside_view: 0 } } } as typeof mockScan;
 
   it("shows the list and neither of the tabs it stands in for", () => {

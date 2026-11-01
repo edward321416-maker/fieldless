@@ -159,6 +159,7 @@ export interface AssetCheckSummary {
   totals: AssetCounts;
   actions: Record<string, number>; // rows per action
   no_visit: number; // city records that need no site visit
+  compare_unsure: number; // objects on no list that nobody could settle
   credit?: string; // the words the city's data asks to be shown with its records
   left_out: { repeats: number; wrong: number };
   trust: {

@@ -28,7 +28,7 @@ NOT_DETERMINED, NOT_LISTED, SEEN = "Not determined", "Not on the city list", "Se
 PANORAMA = "Second look, panorama"
 FIX, DATE, SAME, VISIT, COMPARE = ("Correct the record", "Update the date", "No change", "Visit on site",
                                    "Compare with the list")
-SUMMARY_FIELDS = ("city", "items", "totals", "actions", "no_visit", "left_out", "trust")
+SUMMARY_FIELDS = ("city", "items", "totals", "actions", "no_visit", "compare_unsure", "left_out", "trust")
 COLUMNS = (("action", "What the city could do with this row"),
            ("asset", "What the object is"),
            ("city_list", "The city list the record is on"),
@@ -263,13 +263,13 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
     meta = [check["city"], *([f"{km:.2f} km of walked streets"] if km else []),
             *([f"{photo_count} public Mapillary photos"] if photo_count else []),
             f"Compared with {_count(len(check['items']), 'city asset list')}"]
-    objects = actions.get(VISIT, 0) - visits
+    unsettled = (f" The models or the AI assistant could not settle {check['compare_unsure']} of these."
+                 if check["compare_unsure"] else "")
     what = {FIX: "The photo and the city's record say different things. Two models agree on the photo.",
             DATE: "Seen in a photo newer than the city's verification date.",
             SAME: "Seen in a photo, with no verification date to update.",
-            VISIT: f"{_count(visits, 'city record')} and {_count(objects, 'object')} the photos did not settle. "
-                   "Not determined does not mean missing.",
-            COMPARE: "On no city list. Compare each with nearby records before adding anything."}
+            VISIT: f"{_count(visits, 'city record')} the photos did not settle. Not determined does not mean missing.",
+            COMPARE: f"On no city list. Compare each with nearby records before adding anything.{unsettled}"}
     shown = [a for a in ORDER if actions.get(a)]
     steps = "\n".join(f"<li><b>{actions[a]}</b><span><strong>{a}</strong>{e(what[a])}</span></li>" for a in shown)
     heads = "".join(f'<th scope="col">{a}</th>' for a in shown)

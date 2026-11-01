@@ -7,13 +7,14 @@ import type { Finding } from "./items";
 import type { AssetCheckSummary, AssetRow, Scan } from "./types";
 
 const counts = { in_view: 107, seen: 70, seen_by: {}, not_determined: 37, not_listed: 41, not_listed_unsure: 13, seen_unsure: 4, newer: 44 };
-const actions = { "Update the date": 27, "No change": 16, "Visit on site": 58, "Compare with the list": 19 };
+const actions = { "Update the date": 26, "No change": 17, "Visit on site": 64, "Compare with the list": 26 };
 const summary: AssetCheckSummary = {
   city: "Seattle",
   items: [{ item: "street_tree", asset: "Street tree", city_list: "SDOT street trees", ...counts, actions }],
   totals: counts,
   actions,
   no_visit: 43,
+  compare_unsure: 7,
   left_out: { repeats: 6, wrong: 1 },
   trust: { photo_months: ["2022-08", "2025-07"], controls: [], looked_at: 25, sent_back: 3, outside_view: 6 },
 };
@@ -35,17 +36,18 @@ describe("AssetCheckPane", () => {
   it("opens with how many places need no site visit", () => {
     expect(html).toContain("<strong>107</strong> Seattle records in the photos&#x27; view");
     expect(html).toContain("<strong>43</strong> need no site visit and <strong>64</strong> do");
-    expect(html).toContain("<strong>19</strong> more objects are not on the city&#x27;s lists");
+    expect(html).toContain("<strong>26</strong> more objects are not on the city&#x27;s lists, 7 of them not settled");
   });
 
   it("gives every asset the same row, in columns that fit the panel", () => {
-    expect(html).toContain('<th scope="row">Street tree</th><td>107</td><td>43</td><td>58</td><td>19</td>');
+    expect(html).toContain('<th scope="row">Street tree</th><td>107</td><td>43</td><td>64</td><td>26</td>');
     expect(html).not.toContain("Correct the record");
   });
 
   it("has one filter per action with rows, and opens on a list of several assets", () => {
     for (const label of ["Update the date", "No change", "Visit on site", "Compare with the list"]) expect(html).toContain(label);
-    expect(html).toContain('aria-pressed="true"><strong>27</strong><span>Update the date</span>');
+    expect(html).toContain('aria-pressed="true"><strong>26</strong><span>Update the date</span>');
+    expect(html).toContain("<strong>64</strong><span>Visit on site</span>"); // the same number as the sentence above
   });
 
   it("says a row is a suggestion", () => {
