@@ -65,6 +65,42 @@ export function parseNominatimResults(raw: unknown): PlaceOption[] {
   return out;
 }
 
+// Nominatim's usage policy forbids autocomplete: it is asked once per search, when the user
+// presses Enter, never while typing. This is the only place the component calls the network.
+export async function searchPlaces(trimmed: string): Promise<PlaceOption[]> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    return res.ok ? parseNominatimResults(await res.json()) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Preset places filter locally on every keystroke, with no network.
+export function filterPresets(query: string): PlaceOption[] {
+  const q = query.trim().toLowerCase();
+  return q
+    ? PRESET_PLACES.filter((p) => `${p.title} ${p.subtitle}`.toLowerCase().includes(q))
+    : PRESET_PLACES;
+}
+
+export type EnterAction =
+  | { kind: "choose"; place: PlaceOption }
+  | { kind: "search"; text: string }
+  | { kind: "none" };
+
+// What Enter does: open a preset typed in full, else open the first result already found for
+// this text, else ask the geocoder (only for text long enough to be a place name).
+export function decideEnter(query: string, results: PlaceOption[], presets: PlaceOption[]): EnterAction {
+  const trimmed = query.trim();
+  const preset = presets.find((p) => p.title.toLowerCase() === trimmed.toLowerCase());
+  if (preset) return { kind: "choose", place: preset };
+  if (results.length > 0) return { kind: "choose", place: results[0] };
+  if (trimmed.length >= 2) return { kind: "search", text: trimmed };
+  return { kind: "none" };
+}
+
 interface Props {
   demos: DemoArea[];
   activeScanId: number | null;
@@ -77,6 +113,7 @@ export default function PlaceSearch({ demos, activeScanId, onOpenDemo, onPickPla
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<PlaceOption[]>([]);
+  const [noPlace, setNoPlace] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,52 +126,50 @@ export default function PlaceSearch({ demos, activeScanId, onOpenDemo, onPickPla
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setResults([]);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      setLoading(true);
-      try {
-        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=${encodeURIComponent(trimmed)}`;
-        const res = await fetch(url, { headers: { Accept: "application/json" } });
-        if (!res.ok || cancelled) return;
-        const data: unknown = await res.json();
-        if (!cancelled) setResults(parseNominatimResults(data));
-      } catch {
-        if (!cancelled) setResults([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }, 280);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [query]);
-
-  const filteredPresets = query.trim()
-    ? PRESET_PLACES.filter((p) =>
-        `${p.title} ${p.subtitle}`.toLowerCase().includes(query.trim().toLowerCase()))
-    : PRESET_PLACES;
+  const filteredPresets = filterPresets(query);
 
   const shownPlaces = results.length > 0 ? results : filteredPresets;
 
+  // Bumped whenever the text changes, so an answer to an older search is dropped.
+  const searchSeq = useRef(0);
+
+  // New text (or a picked place) invalidates results found for the old text.
+  function setQueryText(text: string) {
+    searchSeq.current += 1;
+    setQuery(text);
+    setResults([]);
+    setNoPlace(false);
+    setLoading(false);
+  }
+
+  function changeQuery(text: string) {
+    setQueryText(text);
+    setOpen(true);
+  }
+
   function choosePlace(p: PlaceOption) {
-    setQuery(p.title);
+    setQueryText(p.title);
     setOpen(false);
     onPickPlace(p.bbox, p.title);
   }
 
+  async function search(trimmed: string) {
+    const seq = ++searchSeq.current;
+    setLoading(true);
+    setNoPlace(false);
+    const found = await searchPlaces(trimmed);
+    if (seq !== searchSeq.current) return;
+    setResults(found);
+    setOpen(true);
+    setNoPlace(found.length === 0);
+    setLoading(false);
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (shownPlaces.length > 0) {
-      choosePlace(shownPlaces[0]);
-    }
+    const action = decideEnter(query, results, filteredPresets);
+    if (action.kind === "choose") choosePlace(action.place);
+    else if (action.kind === "search" && !loading) void search(action.text);
   }
 
   return (
@@ -144,25 +179,18 @@ export default function PlaceSearch({ demos, activeScanId, onOpenDemo, onPickPla
         <input
           type="search"
           className="place-search-input"
-          placeholder="Search street, neighborhood, or city…"
+          placeholder="Search a street or city, then press Enter"
           aria-label="Search street, neighborhood, or city"
           value={query}
           onFocus={() => setOpen(true)}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
+          onChange={(e) => changeQuery(e.target.value)}
         />
         {query && (
           <button
             type="button"
             className="place-clear-btn"
             aria-label="Clear search"
-            onClick={() => {
-              setQuery("");
-              setResults([]);
-              setOpen(true);
-            }}
+            onClick={() => changeQuery("")}
           >
             ×
           </button>
@@ -177,6 +205,9 @@ export default function PlaceSearch({ demos, activeScanId, onOpenDemo, onPickPla
                 ? "OpenStreetMap places (click to jump & select area)"
                 : "Streets with Mapillary photos (click to select area)"}
           </div>
+          {noPlace && (
+            <p className="hint small" role="status">No place found. Try a street or neighborhood.</p>
+          )}
           <ul className="place-list">
             {shownPlaces.map((p) => (
               <li key={p.id}>
