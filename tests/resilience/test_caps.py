@@ -82,7 +82,7 @@ class SpendingApi(FakeApi):
 
 
 def test_the_cap_in_the_middle_of_a_survey_leaves_a_final_state_saved_spend_and_a_backup(tmp_path, monkeypatch):
-    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos: fake_frames())
+    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos, since=None: fake_frames())
     monkeypatch.setattr(runner.entrance_read, "original_photo", collect.photo_path)
     monkeypatch.setattr(jobs, "MetaApi", lambda log, meter: SpendingApi(meter))
     path = tmp_path / "t.db"

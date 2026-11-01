@@ -51,7 +51,7 @@ def down_api(monkeypatch, error):
 
 
 def two_surveys(tmp_path, monkeypatch):
-    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos: fake_frames())
+    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos, since=None: fake_frames())
     monkeypatch.setattr(runner.entrance_read, "original_photo", collect.photo_path)
     conn = db.connect(tmp_path / "t.db")
     first = db.create_scan(conn, "mapillary", SEATTLE, "US")
