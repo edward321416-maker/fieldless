@@ -24,6 +24,18 @@ export function PhotoCredit({ evidence }: { evidence: Evidence }) {
   );
 }
 
+// The same credit in one short line, for a small photo in a card or list. A card around it may be clickable or take
+// Enter: a click or a key on the credit stays here, so its links open their own pages and do nothing else.
+export function MiniCredit({ evidence }: { evidence: Evidence }) {
+  return (
+    <p className="credit credit-mini" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      {evidence.creator ?? "Mapillary contributor"} ·{" "}
+      <a href={evidence.link} target="_blank" rel="noreferrer"><MapillaryMark alt="Mapillary" /></a> ·{" "}
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">{evidence.license}</a>
+    </p>
+  );
+}
+
 // How far to enlarge and move the photo so the box fills about 80% of the frame (at most 4 times), as a CSS
 // transform with origin 0 0: a point p lands at s * p + t.
 export function zoomTransform(box: number[]): string {

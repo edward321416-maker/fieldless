@@ -1,9 +1,11 @@
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import ActionHub, { buildDispatchList, gisDiffGeoJson, workOrderCsv } from "./ActionHub";
 import type { MissedRecord } from "./cityMatch";
 import type { Finding } from "./items";
-import type { Scan } from "./types";
+import { MiniCredit } from "./Photo";
+import type { Evidence, Scan } from "./types";
 
 const mockScan = {
   id: 17,
@@ -40,6 +42,11 @@ const mockScan = {
   },
 } as unknown as Scan;
 
+const evidence = (key: string, creator: string | null = "pat"): Evidence => ({
+  url: `/api/evidence/${key}.jpg`, creator, captured_at: "2022-08-30T23:02:56Z",
+  link: `https://www.mapillary.com/app/?pKey=${key}`, license: "CC BY-SA 4.0", blurred: true,
+});
+
 const makeFinding = (id: number, item: string, badge: Finding["badge"] = null, status = "auto"): Finding => ({
   key: `issue:${id}`,
   item,
@@ -52,7 +59,7 @@ const makeFinding = (id: number, item: string, badge: Finding["badge"] = null, s
   title: badge === "defect" ? "Curb ramp without detectable warning" : "Street tree",
   picked: {
     kind: "issue",
-    item: { id, issue_type: item, durable: false, captured_at: "2022-08-30T23:02:56Z", evidence: { url: "/photo.jpg" } },
+    item: { id, issue_type: item, durable: false, captured_at: "2022-08-30T23:02:56Z", evidence: evidence(`p${id}`) },
   } as unknown as Finding["picked"],
 });
 
@@ -77,7 +84,7 @@ const makeEntrance = (id: number, stepCount: number): Finding => ({
       label: { icon: "step", text: `${stepCount} steps at entrance` },
       review_status: "needs_review",
       review_reasons: [],
-      evidence: { url: "/shop.jpg", creator: null, captured_at: null, link: "", license: "", blurred: false },
+      evidence: evidence("shop", null),
       captured_at: null,
       old_photo: false,
     },
@@ -119,7 +126,7 @@ describe("ActionHub work orders & GIS diff tools", () => {
   it("exports the work orders as a CSV, and text that starts like a formula stays text", () => {
     const list = buildDispatchList(findings, mockScan, { "issue:1": "East Pine Street" });
     const csv = workOrderCsv(list);
-    expect(csv).toContain("work_order_id,priority,asset_type,issue_description,street_address,latitude,longitude,recommended_action,status,photo_evidence_url");
+    expect(csv).toContain("work_order_id,priority,asset_type,issue_description,street_address,latitude,longitude,recommended_action,status,photo_evidence_url,photo_creator,photo_link,photo_license");
     expect(csv).toContain("P1 · Possible defect");
     expect(csv).toContain("East Pine Street");
     expect(csv).not.toContain("Inspect and repair");
@@ -187,5 +194,76 @@ describe("ActionHub work orders & GIS diff tools", () => {
     expect(html).toContain("Near 47.61400, -122.32000");
     expect(html).toContain("Differences (.geojson)");
     expect(html).not.toMatch(/>[+-]\d/); // no signed counts: the city decides what a difference means
+  });
+});
+
+describe("every photo carries its creator, the Mapillary logo and a link", () => {
+  const findings: Finding[] = [
+    makeFinding(1, "curb_ramp", "defect", "verified"),
+    makeEntrance(2, 2),
+    makeFinding(3, "street_tree", null, "needs_review"),
+  ];
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("exports each photo's creator, link and licence with a full address", () => {
+    vi.stubGlobal("window", { location: { origin: "https://fieldless.example" } });
+    const csv = workOrderCsv(buildDispatchList(findings, mockScan));
+    const [header, first, ...rest] = csv.split("\n");
+    expect(header).toContain("photo_evidence_url,photo_creator,photo_link,photo_license");
+    expect(csv).not.toMatch(/"\/api\/evidence/);
+    expect(first.endsWith(
+      `"https://fieldless.example/api/evidence/p1.jpg","pat","https://www.mapillary.com/app/?pKey=p1","CC BY-SA 4.0"`)).toBe(true);
+    expect(rest.some((line) => line.endsWith(`"https://fieldless.example/api/evidence/shop.jpg","","https://www.mapillary.com/app/?pKey=shop","CC BY-SA 4.0"`))).toBe(true);
+  });
+
+  it("leaves the photo's address as it is where there is no window to name the site", () => {
+    expect(typeof window).toBe("undefined");
+    const csv = workOrderCsv(buildDispatchList(findings, mockScan));
+    expect(csv).toContain('"/api/evidence/p1.jpg"');
+  });
+
+  it("leaves the columns empty for a finding with no photo", () => {
+    const bare = { ...findings[0], picked: { ...findings[0].picked, item: { ...findings[0].picked.item, evidence: null } } } as Finding;
+    const csv = workOrderCsv(buildDispatchList([bare], mockScan));
+    expect(csv.split("\n")[1].endsWith('"","","",""')).toBe(true);
+  });
+
+  it("puts the creator, link and licence on each difference's GeoJSON point, with a full address", () => {
+    vi.stubGlobal("window", { location: { origin: "https://fieldless.example" } });
+    const [point] = JSON.parse(gisDiffGeoJson([findings[0], findings[1]], [], mockScan)).features;
+    expect(point.properties).toMatchObject({
+      evidence_photo: "https://fieldless.example/api/evidence/p1.jpg", photo_creator: "pat",
+      photo_link: "https://www.mapillary.com/app/?pKey=p1", photo_license: "CC BY-SA 4.0",
+    });
+    const second = JSON.parse(gisDiffGeoJson([findings[1]], [], mockScan)).features[0];
+    expect(second.properties.photo_creator).toBeNull(); // a photo with no named creator
+  });
+
+  it("credits the photo on every dispatch card and every GIS diff card", () => {
+    for (const tab of ["dispatch", "gis"] as const) {
+      const html = renderToStaticMarkup(<ActionHub scan={mockScan} findings={findings} initialTab={tab} />);
+      const cards = html.match(/class="action-card"/g)?.length ?? 0;
+      expect(cards).toBeGreaterThan(0);
+      expect(html.match(/class="credit credit-mini"/g)?.length).toBe(cards);
+      expect(html).toContain("CC BY-SA 4.0</a>");
+      expect(html).toContain('class="mapillary-logo"');
+    }
+    const html = renderToStaticMarkup(<ActionHub scan={mockScan} findings={findings} initialTab="dispatch" />);
+    expect(html).toContain('href="https://www.mapillary.com/app/?pKey=p1"');
+    expect(html).toContain("Mapillary contributor ·"); // the entrance photo has no named creator
+  });
+
+  it("opens a credit's link by itself: neither its click nor its key reaches the card around it", () => {
+    const credit = MiniCredit({ evidence: evidence("p1") }) as ReactElement<{
+      onClick: (e: { stopPropagation: () => void }) => void; onKeyDown: (e: { key: string; stopPropagation: () => void }) => void;
+    }>;
+    const click = { stopPropagation: vi.fn() };
+    credit.props.onClick(click);
+    expect(click.stopPropagation).toHaveBeenCalledTimes(1);
+    for (const key of ["Enter", " "]) {
+      const press = { key, stopPropagation: vi.fn() };
+      credit.props.onKeyDown(press);
+      expect(press.stopPropagation).toHaveBeenCalledTimes(1);
+    }
   });
 });

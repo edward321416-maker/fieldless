@@ -5,13 +5,15 @@ import { cityTotals } from "./cityMatch";
 import { dollars } from "./format";
 import { capital, colourOf, itemName } from "./items";
 import { phraseJourney, secondOpinions } from "./overviewData";
+import { MiniCredit } from "./Photo";
 import { cityLine, headline, thumbPosition } from "./summary";
-import type { Issue, ItemRun, Scan } from "./types";
+import type { Evidence, Issue, ItemRun, Scan } from "./types";
 
 export interface Example {
   item: string;
   url: string; // the evidence photo
   box: number[] | null;
+  evidence: Evidence; // its creator, Mapillary link and licence: shown under the photo
 }
 
 interface Props {
@@ -125,6 +127,7 @@ export default function Overview(props: Props) {
                     </div>
                   </div>
                 )}
+                {heroEx && <MiniCredit evidence={heroEx.evidence} />}
                 <div className="showcase-stats-strip">
                   <div className="showcase-stat">
                     <strong>{totalFindings}</strong>
@@ -220,6 +223,7 @@ function ItemCards({ scan, counts, examples }: { scan: Scan; counts: Record<stri
                 <img src={photo.url} alt={`${label} in a street photo`} loading="lazy"
                   style={{ objectPosition: thumbPosition(photo.box) }} />
               ) : <span className="overview-no-photo" aria-hidden="true" />}
+              {photo && <MiniCredit evidence={photo.evidence} />}
               <span className="overview-item-name">
                 <span className="dot" style={{ background: colourOf(it.id, scan.items) }} aria-hidden="true" />
                 {label}
@@ -230,7 +234,6 @@ function ItemCards({ scan, counts, examples }: { scan: Scan; counts: Record<stri
           );
         })}
       </ul>
-      <p className="hint small">Photos: Mapillary contributors, CC BY-SA 4.0</p>
     </section>
   );
 }

@@ -3,6 +3,7 @@ import { cityStates as computeCityStates, cityTotals, missedRecords, type CitySt
 import { photoMonth } from "./format";
 import { colourOf, itemName, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
+import { MiniCredit } from "./Photo";
 import { thumbPosition } from "./summary";
 import type { Scan } from "./types";
 
@@ -54,12 +55,18 @@ export function buildDispatchList(findings: Finding[], scan: Scan, streets: Reco
   return rows.sort((a, b) => a.priority.localeCompare(b.priority) || turn.get(a)! - turn.get(b)!);
 }
 
+// A photo's full address: a path like /api/evidence/p.jpg means nothing in a spreadsheet or a GIS file. Where there is
+// no window to name the site (the tests), the path stays as it is.
+function fullAddress(url: string): string {
+  return typeof window === "undefined" ? url : new URL(url, window.location.origin).href;
+}
+
 export function workOrderCsv(rows: DispatchRow[]): string {
   // text that starts like a formula stays text in a spreadsheet: titles come from the models' answers
   const esc = (s: string) => `"${(/^[=+\-@\t\r]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`;
-  const header = "work_order_id,priority,asset_type,issue_description,street_address,latitude,longitude,recommended_action,status,photo_evidence_url";
+  const header = "work_order_id,priority,asset_type,issue_description,street_address,latitude,longitude,recommended_action,status,photo_evidence_url,photo_creator,photo_link,photo_license";
   const lines = rows.map((r) => {
-    const ev = r.finding.picked.item.evidence?.url ?? "";
+    const e = r.finding.picked.item.evidence;
     return [
       esc(r.workOrderId),
       esc(r.priority),
@@ -70,7 +77,10 @@ export function workOrderCsv(rows: DispatchRow[]): string {
       r.finding.lng.toFixed(6),
       esc(r.recommendedAction),
       esc(r.finding.status),
-      esc(ev),
+      esc(e ? fullAddress(e.url) : ""),
+      esc(e?.creator ?? ""),
+      esc(e?.link ?? ""),
+      esc(e?.license ?? ""),
     ].join(",");
   });
   return [header, ...lines].join("\n");
@@ -89,7 +99,10 @@ export function gisDiffGeoJson(
         category: itemName(f.item, scan.items),
         title: f.title,
         status: f.status,
-        evidence_photo: f.picked.item.evidence?.url ?? null,
+        evidence_photo: f.picked.item.evidence ? fullAddress(f.picked.item.evidence.url) : null,
+        photo_creator: f.picked.item.evidence?.creator ?? null,
+        photo_link: f.picked.item.evidence?.link ?? null,
+        photo_license: f.picked.item.evidence?.license ?? null,
       },
       geometry: { type: "Point", coordinates: [f.lng, f.lat] },
     })),
@@ -259,6 +272,7 @@ export default function ActionHub({
                           <div className="action-card-street">
                             <span>{r.street || `${r.finding.lat.toFixed(4)}, ${r.finding.lng.toFixed(4)}`}</span>
                           </div>
+                          {r.finding.picked.item.evidence && <MiniCredit evidence={r.finding.picked.item.evidence} />}
                           <div className="action-card-action-guide">
                             <span className="guide-label">Action:</span>
                             <span className="guide-val">{r.recommendedAction}</span>
@@ -370,6 +384,7 @@ export default function ActionHub({
                         <div className="action-card-street">
                           <span>{streets[f.key] || `${f.lat.toFixed(4)}, ${f.lng.toFixed(4)}`}</span>
                         </div>
+                        {f.picked.item.evidence && <MiniCredit evidence={f.picked.item.evidence} />}
                         <div className="action-card-action-guide">
                           <span className="guide-label">Action:</span>
                           <span className="guide-val">Check against the city's list</span>

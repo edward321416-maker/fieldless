@@ -1,6 +1,9 @@
+import base64
 import html
 import re
 from datetime import datetime, timezone
+
+import pytest
 
 from assist import report, report_doc, style
 from server import views
@@ -135,3 +138,56 @@ def test_city_records_the_survey_did_not_find_are_listed_by_the_citys_own_ids():
     assert "<td>1314010</td>" not in actions  # the first ten only
     assert f"2 more in survey_scan{s['scan_id']}_streetlight_pole_city_records_to_check.csv" in actions
     assert "SCLNR" not in str(report.facts(s))  # Spark reads counts, never the city's record ids
+
+
+@pytest.fixture
+def logo_dirs(tmp_path, monkeypatch):
+    """A web/ folder of the test's own for the report to look in, with the logo read afresh on each side."""
+    monkeypatch.setattr(report_doc, "WEB_DIR", tmp_path)
+    report_doc._logo_uri.cache_clear()
+    yield tmp_path
+    report_doc._logo_uri.cache_clear()
+
+
+def test_every_photo_entry_shows_the_mapillary_logo():
+    _, s = made()
+
+    page = report_doc.document(s)
+
+    entries = re.findall(r'<figure class="entry".*?</figure>', page, re.S)
+    credited = [e for e in entries if "Photo by" in e]
+    assert credited and all('<span class="mly" role="img" aria-label="Mapillary"></span></a>' in e for e in credited)
+    assert page.count('class="mly"') >= len(credited)
+    assert page.count("data:image/png;base64,") == 1  # the logo once, in the style, not in each of the entries
+    assert ".mly {" in page and "print-color-adjust: exact" in page and 'src="data:' not in page
+
+
+def test_the_logo_is_read_from_the_built_app_in_the_image_and_from_its_source_in_the_repo(logo_dirs):
+    (logo_dirs / "public").mkdir()
+    (logo_dirs / "public" / "mapillary-logo.png").write_bytes(b"source")
+    assert report_doc._logo_uri() == "data:image/png;base64," + base64.b64encode(b"source").decode("ascii")
+
+    report_doc._logo_uri.cache_clear()
+    (logo_dirs / "dist").mkdir()
+    (logo_dirs / "dist" / "mapillary-logo.png").write_bytes(b"built")
+    assert report_doc._logo_uri() == "data:image/png;base64," + base64.b64encode(b"built").decode("ascii")
+
+
+def test_the_real_logo_file_is_found_where_the_report_looks():
+    report_doc._logo_uri.cache_clear()
+
+    uri = report_doc._logo_uri()
+
+    assert uri is not None and uri.startswith("data:image/png;base64,") and len(uri) > 1000
+
+
+def test_without_the_logo_file_the_credit_names_mapillary_in_words(logo_dirs):
+    _, s = made()
+
+    page = report_doc.document(s)
+
+    assert report_doc._logo_uri() is None
+    assert 'class="mly"' not in page and ".mly {" not in page and "data:image" not in page
+    credited = [e for e in re.findall(r'<figure class="entry".*?</figure>', page, re.S) if "Photo by" in e]
+    assert credited and all(re.search(r'Photo by [^<]+, <a href="https://www.mapillary.com/[^"]+">Mapillary</a>, '
+                                      r"CC BY-SA 4.0", e) for e in credited)

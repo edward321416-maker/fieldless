@@ -2055,3 +2055,10 @@ kbd {
     left: 10px;
   }
 }
+
+/* One-line photo credit under a small photo (a card, a list row); on the overview's dark window it reads light. */
+.credit-mini { font-size: 11px; line-height: 1.3; margin: 2px 0 0; color: var(--muted, #5b6472); overflow-wrap: anywhere; }
+.credit-mini .mapillary-logo { height: 10px; vertical-align: -1px; }
+.showcase-window .credit-mini { color: #cbd5e1; margin: -4px 0 0; }
+.showcase-window .credit-mini a { color: #93c5fd; }
+.showcase-window .credit-mini .mapillary-logo { background: #f8fafc; padding: 2px 4px; border-radius: 3px; vertical-align: -3px; }

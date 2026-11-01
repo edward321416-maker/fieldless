@@ -291,7 +291,7 @@ export default function App() {
   // chosen by name), and how many findings it has, entrances included.
   const examples: Example[] = useMemo(() => items.flatMap((it) => {
     const f = findings.find((x) => x.item === it.id && x.picked.item.evidence);
-    return f ? [{ item: it.id, url: f.picked.item.evidence!.url, box: f.box }] : [];
+    return f ? [{ item: it.id, url: f.picked.item.evidence!.url, box: f.box, evidence: f.picked.item.evidence! }] : [];
   }), [items, findings]);
   const itemCounts = useMemo(() => Object.fromEntries(items.map((it) => [it.id, findings.filter((f) => f.item === it.id).length])),
     [items, findings]);

@@ -21,8 +21,12 @@ const issue = (id: number, item: string, over: Partial<Issue> = {}) =>
 const issues = [issue(1, "street_tree"), issue(2, "street_tree"), issue(3, "street_tree", { second_opinion: opinion } as Partial<Issue>),
   issue(4, "street_tree"), issue(5, "street_tree"), issue(6, "street_tree", { review_status: "rejected" }),
   issue(7, "utility_pole", { second_opinion: opinion } as Partial<Issue>)];
-const examples = [{ item: "utility_pole", url: "/api/evidence/p.jpg", box: [500, 100, 520, 600] },
-  { item: "street_tree", url: "/api/evidence/t.jpg", box: null }];
+const evidence = (key: string, creator: string | null) => ({
+  url: `/api/evidence/${key}.jpg`, creator, captured_at: "2022-08-30T23:02:56Z",
+  link: `https://www.mapillary.com/app/?pKey=${key}`, license: "CC BY-SA 4.0", blurred: true,
+});
+const examples = [{ item: "utility_pole", url: "/api/evidence/p.jpg", box: [500, 100, 520, 600], evidence: evidence("p", "pat") },
+  { item: "street_tree", url: "/api/evidence/t.jpg", box: null, evidence: evidence("t", null) }];
 const run = {
   id: 5, scan_id: 17, target: "fire hydrant", status: "done", photos: [], item: null, cost_usd: 0.613, error: null,
   created_at: "2026-10-30T00:25:44Z",
@@ -76,10 +80,22 @@ describe("the overview", () => {
     expect(html).toContain("5 findings");
     expect(html).toContain("2 of 5 in the city&#x27;s list");
     expect(html).toContain("No city list to compare");
-    expect(html).toContain("Photos: Mapillary contributors, CC BY-SA 4.0");
+    expect(html).not.toContain("Photos: Mapillary contributors, CC BY-SA 4.0"); // each photo carries its own credit
     const fewer = render({ counts: { utility_pole: 0, street_tree: 5 } });
     expect(count(fewer, 'class="overview-card overview-item"')).toBe(1);
     expect(fewer).not.toContain("Utility or streetlight pole in a street photo");
+  });
+  it("credits every photo it shows", () => {
+    expect(count(html, 'class="credit credit-mini"')).toBe(examples.length + 1); // the hero, each card
+    const fewer = render({ counts: { utility_pole: 0, street_tree: 5 } });
+    expect(count(fewer, 'class="credit credit-mini"')).toBe(2); // the hero and the one card left
+    expect(html).toContain("pat ·");
+    expect(html).toContain("Mapillary contributor ·"); // a photo with no named creator
+    expect(html).toContain('href="https://www.mapillary.com/app/?pKey=p"');
+    expect(html).toContain('href="https://www.mapillary.com/app/?pKey=t"');
+    expect(html).toContain('href="https://creativecommons.org/licenses/by-sa/4.0/"');
+    expect(count(html, "CC BY-SA 4.0</a>")).toBe(3);
+    expect(count(html, 'class="mapillary-logo"')).toBe(3); // the logo in every credit
   });
   it("draws how the rules, the city's records and the photos become three outcomes and go back to the city", () => {
     expect(html).toContain("How the pieces fit");

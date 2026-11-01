@@ -4,12 +4,18 @@ a cover, contents, six sections and an appendix, in one self-contained HTML page
 Muse Spark's sentences (assist.report.narrate) go where they were kept; everywhere else code writes its own sentence
 from the counts, so the report always comes out. Every number in the page comes from the summary. The report states
 what this survey found and what it cost; it does not compare itself with surveys on foot (user decision 2026-10-29,
-docs/ui-rules.md U1). Every photo carries its creator, Mapillary link and licence (Mapillary's terms)."""
+docs/ui-rules.md U1). Every photo carries its creator, the Mapillary logo with its link, and the licence
+(Mapillary's terms)."""
+import base64
+import functools
 import html
 import math
+from pathlib import Path
 
 from assist import style
 
+# The web app's folder: its built files (web/dist) are in the image, its source (web/public) in the repo.
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 M_PER_DEG = 111_320.0
 MAP_PAD = 24
 MAP_MAX_H = 420
@@ -76,6 +82,26 @@ a { color: #0b5cad; }
 
 def _h(text) -> str:
     return html.escape("" if text is None else str(text))
+
+
+@functools.lru_cache(maxsize=1)
+def _logo_uri() -> str | None:
+    """The Mapillary logo as a data URI, so the report keeps it when saved or zipped; None if the file is missing."""
+    for path in (WEB_DIR / "dist" / "mapillary-logo.png", WEB_DIR / "public" / "mapillary-logo.png"):
+        if path.exists():
+            return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    return None
+
+
+def _logo_rule() -> str:
+    """The one CSS rule that draws the logo in every credit, so the image is in the page once, not once per photo.
+    The logo is 561 by 141 pixels. print-color-adjust keeps it when the page is printed. Empty without the file."""
+    uri = _logo_uri()
+    if uri is None:
+        return ""
+    return ('.mly { display: inline-block; width: 40px; height: 10px; vertical-align: -1px; '
+            '-webkit-print-color-adjust: exact; print-color-adjust: exact; '
+            f'background: url("{uri}") left center / contain no-repeat; }}')
 
 
 def _duration(seconds: float) -> str:
@@ -305,7 +331,8 @@ def _entry(s: dict, e: dict, photo_base: str) -> str:
     else:
         photo = "<p>no photo</p>"
     who = e["creator"] or "a Mapillary contributor"
-    credit = (f'<span class="credit">Photo by {_h(who)}, <a href="{_h(e["photo_url"])}">Mapillary</a>, '
+    mark = '<span class="mly" role="img" aria-label="Mapillary"></span>' if _logo_uri() else "Mapillary"
+    credit = (f'<span class="credit">Photo by {_h(who)}, <a href="{_h(e["photo_url"])}">{mark}</a>, '
               f'{_h(e["license"])}</span>' if e["photo_url"] else f'<span class="credit">{_h(e["license"])}</span>')
     where = f"{e['lat']:.5f}, {e['lng']:.5f}" if e["lat"] is not None else "unknown"
     note = f"<br>Model note: {_h(e['note'])}" if e["note"] else ""
@@ -341,5 +368,5 @@ def document(s: dict, notes: dict | None = None, photo_base: str = "evidence/", 
              _ledger(s, photo_base), _limits(limits or []), _appendix(s)]
     return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-            f"<title>Street Survey Report — {_h(s['area'])}</title><style>{CSS}</style></head>"
+            f"<title>Street Survey Report — {_h(s['area'])}</title><style>{CSS}{_logo_rule()}</style></head>"
             f"<body><main>{''.join(parts)}</main></body></html>\n")
