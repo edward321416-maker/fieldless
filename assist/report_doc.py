@@ -148,6 +148,16 @@ def credit_note(cc: dict) -> str:
     return f" {cc['credit']}" if cc.get("credit") else ""
 
 
+def update_list_note(s: dict) -> str:
+    """The line between this report's numbers, the survey's own, and the Record Update List's, which add later looks."""
+    u = s.get("update_list")
+    if not u:
+        return ""
+    return (f"These are the survey's own numbers. The Record Update List adds later looks at the same records: of "
+            f"{u['in_view']} in the photos' view, {u['seen']} were seen in a photo and {u['not_determined']} were not "
+            "determined.")
+
+
 def summary_text(s: dict) -> str:
     """The summary in code's words, when Muse Spark's is missing or was dropped."""
     t, a = s["totals"], s["actions"]
@@ -249,7 +259,8 @@ def _summary(s: dict, notes: dict | None) -> str:
     body = (f'<div class="spark"><p>{_h(text)}</p><p class="muted">Written by Muse Spark from the survey\'s counts; '
             "every number in this report comes from the survey data.</p></div>" if text
             else f"<p>{_h(summary_text(s))}</p>")
-    return _section("summary", body)
+    note = f'<p class="muted">{_h(update_list_note(s))}</p>' if s.get("update_list") else ""
+    return _section("summary", body + note)
 
 
 def _scope(s: dict) -> str:

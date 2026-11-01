@@ -310,6 +310,8 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
         "km": km, "cost_usd": round(scan["cost_usd"], 2), "usd_per_km": app["usd_per_km"],
         "processing_seconds": round(scan["processing_seconds"]), "review_seconds": round(scan["review_seconds"]),
         "items": items, "defects": defects, "city_check": city_check, "ledger": ledger, "actions": actions,
+        **({"update_list": {k: check["totals"][k] for k in ("in_view", "seen", "not_determined")}}
+           if (check := scan_data.get("asset_check")) else {}),
         "second_opinions": second,
         "walks": _walks(frames), "made": (now or datetime.now(timezone.utc)).date().isoformat(),
         "styles": style.item_styles(views.items_json(standard)),
@@ -430,6 +432,7 @@ def to_markdown(s: dict, notes: dict | None = None) -> str:
     lines += ["## Items", "", "| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
     lines += ["| " + " | ".join(_md(c) for c in _row_cells(s, i)) + " |" for i in s["items"]]
     lines += ["", _city_note(s)] if _city_note(s) else []
+    lines += ["", report_doc.update_list_note(s)] if s.get("update_list") else []
     lines += ["", "## Confirmed defects", ""]
     if s["defects"]:
         lines += ["| Item | Finding | Photo |", "|---|---|---|"]

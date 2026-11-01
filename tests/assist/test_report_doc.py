@@ -257,3 +257,13 @@ def test_the_page_carries_a_citys_credit_for_its_records():
     s = report.summary(data, STANDARD, area="Pike & Pine", now=NOW)
     assert "City records: Testville Open Data &amp; co." in report_doc.document(s)
     assert "City records: Testville" not in report_doc.document(made(city=True)[1])
+
+
+def test_the_page_and_the_text_say_the_numbers_are_the_surveys_own():
+    data = survey_scan.load()
+    data["asset_check"] = {"totals": {"in_view": 94, "seen": 53, "not_determined": 41}}
+    s = report.summary(data, STANDARD, area="Pike & Pine", now=NOW)
+    assert "These are the survey&#x27;s own numbers." in report_doc.document(s) or "These are the survey's own numbers." in report_doc.document(s)
+    assert "These are the survey's own numbers." in report.to_markdown(s)
+    plain = report.summary(survey_scan.load(), STANDARD, area="Pike & Pine", now=NOW)
+    assert "own numbers" not in report_doc.document(plain) and "own numbers" not in report.to_markdown(plain)

@@ -527,3 +527,11 @@ def test_the_city_note_carries_the_citys_credit():
     cc = {"method": "Paired.", "measured_at": "2026-11-01", "credit": "City records: Testville Open Data."}
     assert report._city_note({"city_check": cc}) == "City record: Paired. Measured 2026-11-01. City records: Testville Open Data."
     assert report._city_note({"city_check": {k: v for k, v in cc.items() if k != "credit"}}) == "City record: Paired. Measured 2026-11-01."
+
+
+def test_the_report_says_its_numbers_are_the_surveys_own_when_there_is_an_update_list():
+    s = {"update_list": {"in_view": 94, "seen": 53, "not_determined": 41}}
+    assert report_doc.update_list_note(s) == ("These are the survey's own numbers. The Record Update List adds later "
+                                              "looks at the same records: of 94 in the photos' view, 53 were seen in a "
+                                              "photo and 41 were not determined.")
+    assert report_doc.update_list_note({}) == ""
