@@ -253,7 +253,7 @@ describe("every photo carries its creator, the Mapillary logo and a link", () =>
     expect(html).toContain("Mapillary contributor ·"); // the entrance photo has no named creator
   });
 
-  it("opens a credit's link by itself: neither its click nor its key reaches the card around it", () => {
+  it("opens a credit's link by itself: its click, Enter and Space do not reach the card around it", () => {
     const credit = MiniCredit({ evidence: evidence("p1") }) as ReactElement<{
       onClick: (e: { stopPropagation: () => void }) => void; onKeyDown: (e: { key: string; stopPropagation: () => void }) => void;
     }>;

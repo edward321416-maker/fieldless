@@ -759,6 +759,7 @@ details[open] > .accordion-summary::after { transform: rotate(90deg); }
 .photo-box-label.tag-right { left: auto; right: -2px; }
 .photo-box-label.tag-inside { bottom: auto; top: 0; border-radius: 0 0 4px 0; }
 .photo-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.photo-tools a:last-child { margin-left: auto; } /* "Open full size" stays right when Zoom to box is hidden */
 .evidence-meta-box {
   margin: 10px 0;
   padding: 10px 12px;
@@ -1090,7 +1091,7 @@ kbd {
 .overview-part > .hint { margin-top: 8px; }
 .overview-items { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 .overview-item { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; color: var(--ink-soft); }
-.overview-item img, .overview-no-photo {
+.overview-item > img, .overview-no-photo { /* the thumbnail only: not the Mapillary logo inside the credit line */
   display: block;
   width: 100%;
   aspect-ratio: 4 / 3;
