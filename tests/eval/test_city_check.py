@@ -113,6 +113,7 @@ def test_seoul_keeps_counts_and_source_but_no_records():
     item = out["items"]["street_tree"]
     assert (item["found"], item["covered"], item["layer"]) == (6, 23, "Seoul street trees")
     assert item["pairs"] == [] and item["missed"] == [] and item["id_fields"] == [] and item["matched_ids"] == []
+    assert item["rejected_at_city_point"] == []  # found by looking at a Seoul record's position
     assert out["counts_only"] is True and "KOGL Type 4" in out["source"]
     assert "성동구" not in str(out)
 

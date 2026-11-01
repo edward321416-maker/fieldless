@@ -724,7 +724,7 @@ SEOUL_CHECK = {"scan_id": 1, "city": "Seoul", "measured_at": "2026-10-28", "revi
                "method_url": "https://example.org/city.py",
                "items": {"utility_pole": {
                    "layer": "Seoul street trees", "found": 6, "covered": 23, "matched_ids": [1],
-                   "rejected_at_city_point": [], "id_fields": ["자치구", "노선"],
+                   "rejected_at_city_point": [3], "id_fields": ["자치구", "노선"],
                    "pairs": [{"issue_id": 1, "in_view": True, "dist_m": 5.0, "city": {"자치구": "성동구", "노선": "왕십리로"}}],
                    "missed": [{"lat": 37.5, "lng": 127.0, "city": {"자치구": "성동구", "노선": "왕십리로"}}]}}}
 
@@ -743,6 +743,7 @@ def test_seouls_records_never_leave_the_server_only_its_counts_and_source(make):
     item = scan["items"]["utility_pole"]
     assert (item["found"], item["covered"]) == (6, 23)
     assert item["pairs"] == item["missed"] == item["id_fields"] == item["matched_ids"] == []
+    assert item["rejected_at_city_point"] == []
 
     zipped = zipfile.ZipFile(io.BytesIO(client.get(f"/api/scans/{scan_id}/files.zip").content))
     everything = "".join(zipped.read(n).decode("utf-8-sig") for n in zipped.namelist() if not n.endswith(".jpg"))
@@ -751,3 +752,27 @@ def test_seouls_records_never_leave_the_server_only_its_counts_and_source(make):
         assert "성동구" not in text and "왕십리로" not in text
     assert not any(n.endswith("_city_records_to_check.csv") for n in zipped.namelist())
     assert "KOGL Type 4" in page  # the source is credited where the numbers are
+
+
+def test_saved_sentences_that_call_findings_missing_from_seouls_list_are_not_served(make):
+    """The prose saved for Seoul before its list became counts only says "found a few that are not on the list"."""
+    import io
+    import zipfile
+    client, _ = make()
+    conn, scan_id = finished_scan()
+    claim = ("The survey matched some of the city's recorded street trees on these streets and found a few that are "
+             "not on the list.")
+    db.set_report_text(conn, scan_id, {"summary": f"Poles were surveyed. {claim}", "items": {"utility_pole": claim},
+                                       "priorities": []}, "m")
+    path = config.run_dir("server") / f"city_check_scan{scan_id}.json"
+
+    path.write_text(json.dumps({**SEOUL_CHECK, "scan_id": scan_id}, ensure_ascii=False), encoding="utf-8")
+    page = client.get(f"/api/scans/{scan_id}/report").text
+    z = zipfile.ZipFile(io.BytesIO(client.get(f"/api/scans/{scan_id}/files.zip").content))
+    zipped = z.read("report.html").decode("utf-8") + z.read("report.md").decode("utf-8")
+    for text in (page, zipped):
+        assert "not on the list" not in text and "Poles were surveyed." in text
+
+    path.write_text(json.dumps({**SEOUL_CHECK, "city": "Seattle", "scan_id": scan_id}, ensure_ascii=False),
+                    encoding="utf-8")
+    assert "not on the list" in client.get(f"/api/scans/{scan_id}/report").text  # a list shown whole keeps its prose

@@ -33,7 +33,8 @@ def shareable(check: dict) -> dict:
     source = COUNTS_ONLY.get(check.get("city"))
     if source is None:
         return check
-    items = {k: {**v, "matched_ids": [], "id_fields": [], "pairs": [], "missed": []} for k, v in (check.get("items") or {}).items()}
+    blank = {"matched_ids": [], "rejected_at_city_point": [], "id_fields": [], "pairs": [], "missed": []}
+    items = {k: {**v, **blank} for k, v in (check.get("items") or {}).items()}
     return {**check, "items": items, "counts_only": True, "source": source}
 
 

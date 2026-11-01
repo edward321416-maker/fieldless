@@ -220,4 +220,6 @@ def test_a_counts_only_city_list_is_credited_and_never_called_a_list_the_finding
     actions = page.split('id="actions"')[1].split('<section class="sec"')[0]
     assert "KOGL Type 4" in page and "1 of 3 in the city" in page
     assert "the lists do not have" not in summary and "2 listed points the photos did not confirm" in summary
-    assert "not in the city" not in actions and "2" in actions  # only the count of listed points not confirmed
+    assert "not in the city" not in actions
+    assert "<th scope=\"col\">In the city&#x27;s list, not found by this survey</th></tr>" in actions
+    assert "<tr><td>Streetlight pole</td><td>2</td></tr>" in actions  # the one count it has: 3 listed, 1 found

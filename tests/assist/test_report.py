@@ -353,3 +353,109 @@ def test_the_city_check_the_report_reads_leaves_seouls_records_out(tmp_path):
 
     assert got["counts_only"] is True and "성동구" not in str(got) and got["items"]["street_tree"]["found"] == 6
     assert report.load_city_check(tmp_path, 2) is None
+
+
+SAVED_SEOUL = ("The survey matched some of the city's recorded street trees on these streets and found a few that are "
+               "not on the list.")
+
+
+def test_the_prompt_for_a_list_held_as_counts_only_makes_no_claim_about_findings_the_list_lacks():
+    _, seattle = made()
+    pole = next(i for i in seattle["items"] if i["item"] == "streetlight_pole")
+    pole["city"] = {"found": 1, "covered": 3, "not_seen": 2, "not_in_city": 1}
+    data = survey_scan.load()
+    data["city_check"] = SEOUL
+    seoul = report.summary(data, STANDARD, now=NOW)
+    sent = {}
+
+    def spark(key):
+        def ask(name, parts):
+            sent[key] = parts[0]["text"]
+            return GOOD
+        return ask
+
+    report.narrate(FakeApi(spark=spark("seattle")), seattle)
+    report.narrate(FakeApi(spark=spark("seoul")), seoul)
+
+    assert "found a few that are not on the list" in sent["seattle"] and "how many findings the list lacks" in sent["seattle"]
+
+    def prompt(template, summary):
+        return template.format(max_priorities=report.MAX_PRIORITIES,
+                               facts=json.dumps(report.facts(summary), ensure_ascii=False))
+
+    assert sent["seattle"] == prompt(report.NARRATE_PROMPT, seattle)  # Seattle's text as it was
+    for claim in ("found a few that are not on the list", "how many findings the list lacks", "not_in_city",
+                  "how many the list lacks"):
+        assert claim not in sent["seoul"]
+    assert "never say a finding is missing from the list" in sent["seoul"]
+    assert sent["seoul"] == prompt(report.NARRATE_PROMPT_COUNTS_ONLY, seoul)
+    assert all(old in report.NARRATE_PROMPT for old, _ in report.COUNTS_ONLY_EDITS)  # every edit finds its text
+
+
+def test_a_survey_with_no_city_list_gets_the_prompt_as_it_was():
+    _, s = made()
+    sent = []
+    report.narrate(FakeApi(spark=lambda name, parts: sent.append(parts[0]["text"]) or GOOD), s)
+    assert sent[0] == report.NARRATE_PROMPT.format(max_priorities=report.MAX_PRIORITIES,
+                                                   facts=json.dumps(report.facts(s), ensure_ascii=False))
+
+
+def test_a_sentence_saying_a_finding_is_missing_from_a_counts_only_list_is_cut_out():
+    notes = {"summary": f"Street trees were surveyed. {SAVED_SEOUL} Visit the unclear ones first.",
+             "items": {"streetlight_pole": SAVED_SEOUL, "entrance": "Entrances were found. Check them."},
+             "priorities": [{"item": "streetlight_pole", "reason": "Look up the trees the list lacks."},
+                            {"item": "entrance", "reason": "Visit the entrances."}]}
+
+    out = report.counts_only_notes(notes, SEOUL)
+
+    assert out == {"summary": "Street trees were surveyed. Visit the unclear ones first.",
+                   "items": {"entrance": "Entrances were found. Check them."},  # nothing left of the tree paragraph
+                   "priorities": [{"item": "entrance", "reason": "Visit the entrances."}]}
+    assert report.without_off_list_claims(SAVED_SEOUL) == ""
+    for said in ("A few are not on the city's list.", "Some are not on its list.", "Two are not on their list.",
+                 "The list lacks a few.", "A few are not in the city's records.", "The lists do not have them."):
+        assert report.without_off_list_claims(f"Trees were found. {said}") == "Trees were found."
+    assert report.without_off_list_claims("The survey matched about half of the city's recorded trees.") == (
+        "The survey matched about half of the city's recorded trees.")
+    assert notes["summary"].count("not on the list") == 1  # the saved notes themselves are not changed
+
+
+def test_the_same_saved_sentences_pass_untouched_beside_a_city_list_that_is_shown_whole_or_not_at_all():
+    notes = {"summary": SAVED_SEOUL, "items": {"streetlight_pole": SAVED_SEOUL}, "priorities": []}
+
+    assert report.counts_only_notes(notes, CITY) is notes
+    assert report.counts_only_notes(notes, None) is notes
+    assert report.counts_only_notes(None, SEOUL) is None
+
+
+def test_narrate_leaves_a_claim_about_a_counts_only_list_out_of_the_sentences_it_saves():
+    data = survey_scan.load()
+    data["city_check"] = SEOUL
+    s = report.summary(data, STANDARD, now=NOW)
+    answer = {"summary": f"Trees were surveyed. {SAVED_SEOUL}",
+              "items": [{"item": "streetlight_pole", "paragraph": SAVED_SEOUL},
+                        {"item": "entrance", "paragraph": "Entrances were found."}],
+              "priorities": [{"item": "streetlight_pole", "reason": "Look up what the list lacks."}]}
+
+    notes = report.narrate(FakeApi(spark=lambda name, parts: answer), s)
+
+    assert notes["summary"] == "Trees were surveyed."
+    assert notes["items"] == {"entrance": "Entrances were found."} and notes["priorities"] == []
+    assert any(d.startswith("streetlight_pole:") for d in notes["dropped"])
+    assert any(d.startswith("priority streetlight_pole:") for d in notes["dropped"])
+    assert "dropped" not in report.narrate(FakeApi(spark=lambda name, parts: GOOD), s)  # untouched when nothing claims it
+
+
+def test_the_report_beside_a_counts_only_list_shows_none_of_the_saved_claim_and_keeps_it_for_a_shown_whole_list(tmp_path):
+    notes = {"summary": f"Street trees were surveyed. {SAVED_SEOUL}",
+             "items": {"streetlight_pole": SAVED_SEOUL}, "priorities": []}
+    seoul = {**survey_scan.load(), "city_check": SEOUL}
+    seattle = {**survey_scan.load(), "city_check": CITY}
+
+    page = report.document(seoul, STANDARD, notes=notes, now=NOW)
+    report.write(seoul, STANDARD, tmp_path / "seoul", notes=notes)
+    files = "".join((tmp_path / "seoul" / n).read_text(encoding="utf-8") for n in ("report.md", "report.html"))
+
+    for text in (page, files):
+        assert "not on the list" not in text and "Street trees were surveyed." in text
+    assert "not on the list" in report.document(seattle, STANDARD, notes=notes, now=NOW)

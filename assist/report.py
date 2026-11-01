@@ -71,8 +71,7 @@ What the JSON holds: each item's "title" is what it records and "found" how many
 counts the answers to the item's "question"; "unclear" means the photo could not settle it. "city", when present,
 compares the survey with the city's own list along the photographed streets: "covered" is the city's records there,
 "found" how many of them the survey matched, "not_seen" how many it did not match, and "not_in_city" how many of the
-survey's findings have no city record nearby (left out where the city's records are not part of the survey, and
-then nothing is said of findings the list lacks). "in_words" gives each item's shares in words: of its findings, how
+survey's findings have no city record nearby. "in_words" gives each item's shares in words: of its findings, how
 many are unclear; of the city's records, how many the survey matched; of its findings, how many the list lacks. Use
 those words for shares. Never size how many were found ("a few poles", "most trees"): the report's table gives the
 counts beside your text.
@@ -97,6 +96,55 @@ survey, and do not write about costs or how this survey compares with other surv
 Return JSON only.
 
 {facts}"""
+
+# The same prompt for a city list the survey holds only the counts of (eval.city_check.COUNTS_ONLY): its facts have no
+# "not_in_city", so nothing may be said of findings the list lacks.
+COUNTS_ONLY_EDITS = (
+    ('"not_seen" how many it did not match, and "not_in_city" how many of the\n'
+     'survey\'s findings have no city record nearby. "in_words"',
+     '"not_seen" how many it did not match. The JSON holds none of the city\'s own records, so it says nothing of\n'
+     'findings the list lacks. "in_words"'),
+    ('how many the survey matched; of its findings, how many the list lacks. Use', 'how many the survey matched. Use'),
+    ('say how much of the list\n  the survey matched and how many findings the list lacks, for example "The survey '
+     'matched about half of the city\'s\n  recorded poles on these streets and found a few that are not on the list." '
+     'Never write that records were "not\n  seen", and never say the list is wrong or out of date:',
+     'say how much of the list\n  the survey matched, for example "The survey matched about half of the city\'s '
+     'recorded poles on these\n  streets." Never write that records were "not seen", never say a finding is missing '
+     'from the list, and never\n  say the list is wrong or out of date:'),
+)
+NARRATE_PROMPT_COUNTS_ONLY = NARRATE_PROMPT
+for _old, _new in COUNTS_ONLY_EDITS:
+    NARRATE_PROMPT_COUNTS_ONLY = NARRATE_PROMPT_COUNTS_ONLY.replace(_old, _new)
+
+# A sentence that says a finding is not on, or is missing from, the city's list. Where the city's records are not part
+# of the survey (COUNTS_ONLY) nothing can say that, whoever wrote it.
+OFF_LIST_CLAIM = re.compile(
+    r"not on (?:the|its|their)?\s*(?:city['\u2019]?s )?list|list lacks|lists? (?:does|do) not have|not in the city",
+    re.IGNORECASE)
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def without_off_list_claims(text: str) -> str:
+    """text without the sentences that say a finding is not on, or is missing from, the city's list."""
+    return " ".join(s for s in SENTENCE_END.split(text.strip()) if not OFF_LIST_CLAIM.search(s))
+
+
+def counts_only_notes(notes: dict | None, city_check: dict | None) -> dict | None:
+    """Saved report sentences (db.report_text) as they may be shown beside a city check. Seoul's list is held as counts
+    only, so a sentence saved before that, saying the survey "found a few that are not on the list", is cut out; a
+    piece with nothing left falls back to code's own sentence. Any other check, and no check, leaves the notes as
+    they are."""
+    if not notes or not (city_check or {}).get("counts_only"):
+        return notes
+    out = dict(notes)
+    if "summary" in notes:
+        out["summary"] = without_off_list_claims(notes["summary"] or "")
+    if "items" in notes:
+        out["items"] = {k: t for k, v in (notes["items"] or {}).items() if (t := without_off_list_claims(v))}
+    if "priorities" in notes:
+        out["priorities"] = [{**p, "reason": r} for p in notes["priorities"] or []
+                             if (r := without_off_list_claims(p["reason"]))]
+    return out
 
 
 def text_problem(text: str) -> str | None:
@@ -391,23 +439,35 @@ def narrate(api, s: dict) -> dict:
     Each piece is checked on its own (text_problem, known item ids); a piece that fails is left out and "dropped"
     says why, so the report puts code's own sentence in its place."""
     known = facts(s)
-    prompt = NARRATE_PROMPT.format(max_priorities=MAX_PRIORITIES, facts=json.dumps(known, ensure_ascii=False))
+    no_findings_count = any(i["city"] and "not_in_city" not in i["city"] for i in known["items"])
+    template = NARRATE_PROMPT_COUNTS_ONLY if no_findings_count else NARRATE_PROMPT
+    prompt = template.format(max_priorities=MAX_PRIORITIES, facts=json.dumps(known, ensure_ascii=False))
     answer = api.spark_json([text_part(prompt)], "survey_report_text", NARRATE_SCHEMA)
     items = {i["item"] for i in s["items"]}
     out: dict = {"summary": "", "items": {}, "priorities": []}
     dropped: list[str] = []
+    counts_only = bool((s.get("city_check") or {}).get("counts_only"))
+
+    def clean(label: str, text: str) -> str:
+        """text without a claim that a finding is missing from a list the survey holds only the counts of; a piece
+        with nothing left is noted as dropped."""
+        kept = without_off_list_claims(text) if counts_only else text
+        if text and not kept:
+            dropped.append(f"{label}: a finding said to be missing from the city's list")
+        return kept
+
     summary_text = (answer.get("summary") or "").strip()
     if summary_text and (problem := text_problem(summary_text)):
         dropped.append(f"summary: {problem}")
     else:
-        out["summary"] = summary_text
+        out["summary"] = clean("summary", summary_text)
     for entry in answer.get("items") or []:
         text = (entry.get("paragraph") or "").strip()
         if entry.get("item") not in items:
             dropped.append(f"unknown item {entry.get('item')!r}")
         elif problem := text_problem(text):
             dropped.append(f"{entry['item']}: {problem}")
-        elif text:
+        elif text and (text := clean(entry["item"], text)):
             out["items"][entry["item"]] = text
     for entry in (answer.get("priorities") or [])[:MAX_PRIORITIES]:
         reason = (entry.get("reason") or "").strip()
@@ -415,8 +475,8 @@ def narrate(api, s: dict) -> dict:
             dropped.append(f"unknown item {entry.get('item')!r}")
         elif problem := text_problem(reason):
             dropped.append(f"priority {entry['item']}: {problem}")
-        else:
-            out["priorities"].append({"item": entry["item"], "reason": reason})
+        elif (kept := clean(f"priority {entry['item']}", reason)) or not reason:
+            out["priorities"].append({"item": entry["item"], "reason": kept})
     if dropped:
         out["dropped"] = dropped
     return out
@@ -428,6 +488,7 @@ def document(scan_data: dict, standard: Standard, area: str | None = None, notes
              photo_base: str = "evidence/", now: datetime | None = None) -> str:
     """The report page for one scan (assist.report_doc), with the saved sentences when there are any."""
     s = summary(scan_data, standard, area=area, now=now)
+    notes = counts_only_notes(notes, s["city_check"])
     return report_doc.document(s, notes, photo_base=photo_base, limits=_limits(s))
 
 
@@ -437,6 +498,7 @@ def write(scan_data: dict, standard: Standard, out_dir: Path, area: str | None =
     out_dir = Path(out_dir)
     paths = export.write(scan_data, standard, out_dir)
     s = summary(scan_data, standard, area=area)
+    notes = counts_only_notes(notes, s["city_check"])
     paths["md"] = out_dir / "report.md"
     paths["html"] = out_dir / "report.html"
     paths["md"].write_text(to_markdown(s, notes), encoding="utf-8")
