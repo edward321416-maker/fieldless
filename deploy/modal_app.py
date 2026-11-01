@@ -35,7 +35,7 @@ SETTINGS = {
     "THRESHOLD_DATA": "/root/data",  # the container's own disk; BACKUP_DIR is the Volume
     "THRESHOLD_RUN": "demo",
     "BACKUP_DIR": "/backup",
-    "DEMO_SCANS": "30:Seattle (Ballard);17:Seattle (Capitol Hill)",  # scan 30: the 2026 survey, 17: its 2022 example
+    "DEMO_SCANS": "30:Seattle (Ballard);31:New York (Park Avenue South);17:Seattle (Capitol Hill)",  # 30, 31: 2026 photos
     "SCANS_PER_IP_PER_DAY": "0",
     "PUBLIC_COST_CAP_USD": "40",
     # Six processes decode SAM masks (pipeline/sam_output.py), within the CPU limit below. Decoding in place, a live
