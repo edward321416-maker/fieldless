@@ -18,6 +18,7 @@ import FindingList from "./FindingList";
 import { isFinished } from "./format";
 import HowMade from "./HowMade";
 import { findingsOf, itemName, keyOf, type Finding } from "./items";
+import LandingNav from "./LandingNav";
 import LensSwitch, { type Lens } from "./LensSwitch";
 import MapView from "./MapView";
 import PlaceSearch from "./PlaceSearch";
@@ -401,12 +402,7 @@ export default function App() {
       </h1>
       {intro ? (
         <>
-          <nav className="landing-nav" aria-label="Landing page sections">
-            <a href="#overview-items">What it finds</a>
-            <a href="#overview-flow">How it works</a>
-            <a href="#overview-checks">Validation</a>
-            <a href="#overview-cities">Cities</a>
-          </nav>
+          <LandingNav hasExamples={others.length > 0} />
           <button type="button" className="primary new-survey" onClick={seeExample}>
             Launch App →
           </button>
