@@ -20,7 +20,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from assist import report
+from assist import asset_check as asset_page, report
 from eval.city_check import shareable
 from pipeline import collect, config, db, mapillary, sam_output, survey_items
 from pipeline.runner import RESUME_MIN_USD
@@ -33,8 +33,9 @@ from server.store import DatasetStore, folder_store
 log = logging.getLogger(__name__)
 
 # used with fullmatch; scans before 2026-10-28 22:00 KST named the files without the photo id (runner.evidence_name)
-# item run rows (plan 12): scan<N>_item<run>-<n>_<photo id>.jpg
-EVIDENCE_NAME = re.compile(r"scan\d+_(entrance\d+|issue\d+|item\d+-\d+)(_\d+)?\.jpg", re.ASCII)
+# item run rows (plan 12): scan<N>_item<run>-<n>_<photo id>.jpg; a later look at a city record (eval.asset_check):
+# scan<N>_look<n>_<photo id>.jpg
+EVIDENCE_NAME = re.compile(r"scan\d+_(entrance\d+|issue\d+|item\d+-\d+|look\d+)(_\d+)?\.jpg", re.ASCII)
 
 
 class BboxBody(BaseModel):
@@ -342,11 +343,10 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             raise HTTPException(404, "no call record for this survey")
         return data
 
-    def city_check(scan_id: int) -> dict | None:
-        """The offline comparison with the city's records (eval, docs/specs/2026-10-28-ui-redesign-design.md 4.1),
-        if one was made for this scan, as eval.city_check.shareable lets it be shown: Seoul's list as counts and a
-        source only. A file that cannot be read is left out, not an error for the visitor."""
-        path = run_dir / f"city_check_scan{scan_id}.json"
+    def offline_file(name: str) -> dict | None:
+        """A file made for a scan outside the server (eval), if there is one. A file that cannot be read is left out,
+        not an error for the visitor."""
+        path = run_dir / name
         if not path.is_file():
             return None
         try:
@@ -354,7 +354,17 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         except (OSError, ValueError):
             log.exception("could not read %s", path)
             return None
-        return shareable(data) if isinstance(data, dict) else None
+        return data if isinstance(data, dict) else None
+
+    def city_check(scan_id: int) -> dict | None:
+        """The comparison with the city's records (docs/specs/2026-10-28-ui-redesign-design.md 4.1), as
+        eval.city_check.shareable lets it be shown: Seoul's list as counts and a source only."""
+        check = offline_file(f"city_check_scan{scan_id}.json")
+        return shareable(check) if check else None
+
+    def asset_check(scan_id: int) -> dict | None:
+        """The city's records one by one, with what the photos settled (eval.asset_check)."""
+        return offline_file(f"asset_check_scan{scan_id}.json")
 
     def headings(conn, scan_id: int) -> dict[int, float | None]:
         return {f["idx"]: f.get("compass") for f in db.frames(conn, scan_id)}
@@ -363,8 +373,10 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     def get_scan(scan_id: int):
         with connect() as conn:
             scan = found(db.get_scan, conn, scan_id, "scan")
+            check = asset_check(scan_id)
             return views.scan_json(scan, db.entrances(conn, scan_id), db.issues(conn, scan_id),
                                    km=views.surveyed_km(db.frames(conn, scan_id)), city_check=city_check(scan_id),
+                                   asset_check=asset_page.summary(check) if check else None,
                                    dropped=views.dropped_count(scan, len(db.dropped(conn, scan_id))))
 
     @app.get("/api/scans/{scan_id}/walks")
@@ -403,7 +415,7 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             raise HTTPException(409, "The survey is still running; its files are ready when it finishes.")
         return scan, {"scan": scan, "frames": db.frames(conn, scan_id), "issues": db.issues(conn, scan_id),
                       "entrances": db.entrances(conn, scan_id), "dropped": db.dropped(conn, scan_id),
-                      "city_check": city_check(scan_id)}
+                      "city_check": city_check(scan_id), "asset_check": asset_check(scan_id)}
 
     @app.get("/api/scans/{scan_id}/files.zip")
     def get_files(scan_id: int):
@@ -426,6 +438,38 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
         page = report.document(data, views.standard_of(scan), area=dict(settings.demo_scans).get(scan_id),
                                notes=notes, photo_base="../../evidence/")
         return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
+
+    def found_asset_check(scan_id: int) -> dict:
+        check = asset_check(scan_id)
+        if check is None:
+            raise HTTPException(404, "no Asset Check for this survey")
+        return check
+
+    @app.get("/api/scans/{scan_id}/asset-check")
+    def get_asset_check(scan_id: int):
+        return asset_page.for_app(found_asset_check(scan_id))
+
+    @app.get("/api/scans/{scan_id}/asset-check/report")
+    def get_asset_check_report(scan_id: int):
+        """The Asset Check page; its photos are the app's evidence photos, three folders up from this path, as on the
+        static site."""
+        check = found_asset_check(scan_id)
+        with connect() as conn:
+            scan = found(db.get_scan, conn, scan_id, "scan")
+            km = views.surveyed_km(db.frames(conn, scan_id))
+        page = asset_page.document(check, area=dict(settings.demo_scans).get(scan_id), km=km,
+                                   photo_count=scan["image_count"], photo_base="../../../evidence/")
+        return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
+
+    @app.get("/api/scans/{scan_id}/asset-check/table.csv")
+    def get_asset_check_csv(scan_id: int):
+        return Response(asset_page.table_csv(found_asset_check(scan_id)), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="asset-check-{scan_id}.csv"'})
+
+    @app.get("/api/scans/{scan_id}/asset-check/table.geojson")
+    def get_asset_check_geojson(scan_id: int):
+        return Response(asset_page.table_geojson(found_asset_check(scan_id)), media_type="application/geo+json",
+                        headers={"Content-Disposition": f'attachment; filename="asset-check-{scan_id}.geojson"'})
 
     @app.get("/api/evidence/{name}")
     def get_evidence(name: str):

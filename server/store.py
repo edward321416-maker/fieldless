@@ -27,7 +27,7 @@ PREVIOUS_DB = f"{DB_NAME}.prev"  # the backup before the last, for a restore tha
 GPU_LOG = "calls_glimmer.jsonl"  # Muse Glimmer's calls: kept so the server's GPU total survives a restart
 # offline files shown with a scan: the comparison with a city's records (eval) and the call record
 # (pipeline/call_stats.py)
-SCAN_FILES = ("city_check_scan*.json", "call_stats_scan*.json")
+SCAN_FILES = ("city_check_scan*.json", "call_stats_scan*.json", "asset_check_scan*.json")
 SAVE_DELAY_S = 20.0  # reviews come in bursts; one upload covers a burst
 SAVE_RETRY_MAX_S = 300.0  # a failed save is tried again, waiting twice as long each time, up to this
 RESTORE_ATTEMPTS = 3

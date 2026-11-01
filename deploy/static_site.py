@@ -72,12 +72,14 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
         paths += [f"/api/items/{r['id']}" for r in client.get(f"/api/scans/{scan_id}/items").json()]
         if client.get(f"/api/scans/{scan_id}/calls").status_code == 200:  # its call record, when one was made
             paths.append(f"/api/scans/{scan_id}/calls")
+        if client.get(f"/api/scans/{scan_id}/asset-check").status_code == 200:  # its Asset Check, likewise
+            paths += [f"/api/scans/{scan_id}/asset-check{end}" for end in ("", "/report", "/table.csv", "/table.geojson")]
     evidence = config.run_dir(run) / "evidence"
     written = []
     for path in paths:
         response = client.get(path)
         response.raise_for_status()
-        if path.endswith(".zip"):  # the download is served as it is, not as a JSON answer
+        if path.endswith((".zip", ".csv", ".geojson")):  # a download is served as it is, not as a JSON answer
             target = out / path.lstrip("/")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(response.content)
@@ -98,6 +100,8 @@ def export_api(run: str, scans: list[tuple[int, str]], out: Path) -> list[str]:
             rows = body
         elif path.startswith("/api/items/"):
             rows = body.get("issues") or []  # an agent item's rows
+        elif path.endswith("/asset-check"):
+            rows = body["rows"]  # the photos of later looks are no finding's
         else:
             rows = []
         for row in rows:

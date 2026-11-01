@@ -1,13 +1,15 @@
 """A finished survey as one zip a city can take (demo scene S8): assist.report's survey report (HTML and Markdown),
-assist.export's GeoJSON of every finding with a CSV per survey item, and the blurred evidence photo of each finding
-under evidence/, where the GeoJSON and CSV point. No model is called."""
+assist.export's GeoJSON of every finding with a CSV per survey item, the Asset Check's page and table when one was made
+(assist.asset_check), and the blurred evidence photo of each finding under evidence/, where the GeoJSON and CSV point.
+No model is called."""
 import io
 import tempfile
 import zipfile
 from pathlib import Path
 
-from assist import export, report
+from assist import asset_check, export, report
 from pipeline.survey_items import Standard
+from server import views
 
 # Every entry gets this time, so the same files make the same zip: the static site keeps each new zip it is given,
 # and zips that differed only in their entries' times filled its 1 GB (2026-10-30).
@@ -28,12 +30,16 @@ def survey_zip(scan_data: dict, standard: Standard, evidence_dir: Path, area: st
     original on Mapillary."""
     with tempfile.TemporaryDirectory() as tmp:
         report.write(scan_data, standard, Path(tmp), area=area, notes=notes)
-        photos = sorted({f["properties"]["evidence"] for f in export.features(scan_data, standard)} - {None})
+        photos = {f["properties"]["evidence"] for f in export.features(scan_data, standard)} - {None}
+        if check := scan_data.get("asset_check"):
+            asset_check.write(check, Path(tmp), area=area, km=views.surveyed_km(scan_data["frames"]),
+                              photo_count=scan_data["scan"].get("image_count"))
+            photos |= {f"evidence/{name}" for name in asset_check.photos(check)}
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for path in sorted(Path(tmp).iterdir()):
                 _add(z, path, path.name, zipfile.ZIP_DEFLATED)
-            for rel in photos:  # "evidence/<name>"; JPEGs are already compressed
+            for rel in sorted(photos):  # "evidence/<name>"; JPEGs are already compressed
                 source = Path(evidence_dir) / Path(rel).name
                 if source.is_file():
                     _add(z, source, rel, zipfile.ZIP_STORED)

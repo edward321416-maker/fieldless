@@ -114,7 +114,8 @@ def seed(run_dir: Path) -> None:
             src.close()
         with volume.batch_upload(force=True) as batch:
             batch.put_file(snapshot, "/threshold.db")
-            for pattern in ("city_check_scan*.json", "call_stats_scan*.json"):  # offline files shown with a scan
+            # offline files shown with a scan
+            for pattern in ("city_check_scan*.json", "call_stats_scan*.json", "asset_check_scan*.json"):
                 for check in run_dir.glob(pattern):
                     batch.put_file(check, f"/{check.name}")
             if (run_dir / "evidence").is_dir():
@@ -148,13 +149,24 @@ def merge(run_dir: Path, scan_ids: list[int]) -> None:
                     ids = written[scan_id]["ids"]["sidewalk_issue"]
                     moved.write_text(json.dumps(remap_city_check(data, ids), ensure_ascii=False), encoding="utf-8")
                     batch.put_file(moved, f"/{check.name}")
-                calls = run_dir / f"call_stats_scan{scan_id}.json"  # names no row: copied as it is
-                if calls.is_file():
-                    batch.put_file(calls, f"/{calls.name}")
+                for name in (f"call_stats_scan{scan_id}.json", f"asset_check_scan{scan_id}.json"):  # name no row: as they are
+                    if (run_dir / name).is_file():
+                        batch.put_file(run_dir / name, f"/{name}")
                 for photo in (run_dir / "evidence").glob(f"scan{scan_id}_*.jpg"):
                     batch.put_file(photo, f"/evidence/{photo.name}")
     print(f"merged {({k: v['counts'] for k, v in written.items()})} into the Volume; deploy again so the live "
           "container restores it")
+
+
+def asset_files(run_dir: Path, scan_ids: list[int]) -> None:
+    """Put these surveys' Asset Checks on the Volume, with the photos of their later looks. The live database is not
+    touched: the file names no row by id. Deploy again so the live container restores them."""
+    with volume.batch_upload(force=True) as batch:
+        for scan_id in scan_ids:
+            batch.put_file(run_dir / f"asset_check_scan{scan_id}.json", f"/asset_check_scan{scan_id}.json")
+            for photo in (run_dir / "evidence").glob(f"scan{scan_id}_look*.jpg"):
+                batch.put_file(photo, f"/evidence/{photo.name}")
+    print(f"put the Asset Checks of {scan_ids} on the Volume; deploy again so the live container restores them")
 
 
 if __name__ == "__main__":
@@ -162,11 +174,14 @@ if __name__ == "__main__":
     how = parser.add_mutually_exclusive_group(required=True)
     how.add_argument("--seed", type=Path, help="run folder with threshold.db and evidence/: replaces the live data")
     how.add_argument("--merge", type=Path, help="run folder whose --scan surveys go into the live data, the rest kept")
+    how.add_argument("--asset-files", type=Path, help="run folder whose --scan Asset Checks go up, the database untouched")
     parser.add_argument("--scan", type=int, action="append", default=[], help="with --merge: a survey id (repeat)")
     args = parser.parse_args()
-    if args.merge and not args.scan:
-        parser.error("--merge needs at least one --scan")
+    if (args.merge or args.asset_files) and not args.scan:
+        parser.error("--merge and --asset-files need at least one --scan")
     if args.merge:
         merge(args.merge, args.scan)
+    elif args.asset_files:
+        asset_files(args.asset_files, args.scan)
     else:
         seed(args.seed)

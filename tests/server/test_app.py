@@ -416,6 +416,87 @@ def test_a_finished_survey_downloads_as_one_zip_of_report_geojson_csv_and_eviden
     assert client.get(f"/api/scans/{scan_id}/files.zip").content == response.content  # the same bytes every time
 
 
+def asset_check_file(scan_id: int) -> dict:
+    """The file eval.asset_check writes, with one row of each kind."""
+    photo = {"image": f"scan{scan_id}_look0_7.jpg", "image_id": "7", "creator": "kev", "captured_at": "2025-07-11T00:00:00Z",
+             "link": "https://www.mapillary.com/app/?pKey=7", "license": "CC BY-SA 4.0", "blurred_regions": 1}
+    row = {"item": "pole", "asset": "City pole", "city_list": "City poles", "city_record": "P1", "city_location": "1 Main St",
+           "status": "Seen in photo", "how_seen": "Second look, newer photo", "models_unsure": "", "city_date": "2020-05",
+           "seen_in_photo_on": "2025-07-11", "photo_newer_than_city_date": "yes", "city_condition": "", "lat": 37.5, "lng": 127.0,
+           "position_source": "City record", "position_accuracy": "City record", "box": [1, 2, 3, 4], "evidence": photo}
+    totals = {"in_view": 2, "seen": 1, "seen_by": {"Second look, newer photo": 1}, "not_determined": 1, "not_listed": 0,
+              "not_listed_unsure": 0, "newer": 1}
+    return {"scan_id": scan_id, "city": "Testville", "totals": totals,
+            "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **totals}],
+            "rows": [row, {**row, "status": "Not determined", "how_seen": "", "city_record": "P2", "evidence": None,
+                           "seen_in_photo_on": "", "photo_newer_than_city_date": "", "box": None}],
+            "trust": {"photo_months": ["2025-07"], "controls": [], "looked_at": 1, "sent_back": 0, "outside_view": 0}}
+
+
+def with_asset_check(make):
+    scan_id, *_ = seed()
+    (config.run_dir("server") / f"asset_check_scan{scan_id}.json").write_text(json.dumps(asset_check_file(scan_id)), encoding="utf-8")
+    photos = config.run_dir("server") / "evidence"
+    photos.mkdir(parents=True, exist_ok=True)
+    (photos / f"scan{scan_id}_look0_7.jpg").write_bytes(b"look")
+    client, _ = make(demo_scans=((scan_id, "Capitol Hill"),))
+    return client, scan_id
+
+
+def test_a_survey_without_an_asset_check_has_none(make):
+    client, _ = make()
+    scan_id, *_ = seed()
+    assert "asset_check" not in client.get(f"/api/scans/{scan_id}").json()
+    for end in ("", "/report", "/table.csv", "/table.geojson"):
+        assert client.get(f"/api/scans/{scan_id}/asset-check{end}").status_code == 404
+
+
+def test_a_broken_asset_check_file_is_left_out(make):
+    client, _ = make()
+    scan_id, *_ = seed()
+    (config.run_dir("server") / f"asset_check_scan{scan_id}.json").write_text("{not json", encoding="utf-8")
+    assert "asset_check" not in client.get(f"/api/scans/{scan_id}").json()
+    assert client.get(f"/api/scans/{scan_id}/asset-check").status_code == 404
+
+
+def test_the_scan_carries_the_counts_and_the_rows_come_apart(make):
+    client, scan_id = with_asset_check(make)
+    brief = client.get(f"/api/scans/{scan_id}").json()["asset_check"]
+    assert brief["totals"]["seen"] == 1 and "rows" not in brief
+    rows = client.get(f"/api/scans/{scan_id}/asset-check").json()["rows"]
+    assert rows[0]["evidence"]["url"] == f"/api/evidence/scan{scan_id}_look0_7.jpg" and rows[1]["evidence"] is None
+
+
+def test_the_asset_check_page_reaches_the_evidence_photos(make):
+    client, scan_id = with_asset_check(make)
+    page = client.get(f"/api/scans/{scan_id}/asset-check/report")
+    assert page.headers["content-type"].startswith("text/html") and "Capitol Hill Asset Check" in page.text
+    assert f'src="../../../evidence/scan{scan_id}_look0_7.jpg"' in page.text
+    assert client.get(f"/api/evidence/scan{scan_id}_look0_7.jpg").content == b"look"  # the name passes the server's rule
+
+
+def test_the_asset_check_table_downloads_as_csv_and_geojson(make):
+    client, scan_id = with_asset_check(make)
+    table = client.get(f"/api/scans/{scan_id}/asset-check/table.csv")
+    assert table.headers["content-type"].startswith("text/csv")
+    assert f'filename="asset-check-{scan_id}.csv"' in table.headers["content-disposition"]
+    assert "Seen in photo" in table.content.decode("utf-8-sig")
+    shape = client.get(f"/api/scans/{scan_id}/asset-check/table.geojson")
+    assert shape.headers["content-type"].startswith("application/geo+json")
+    assert len(json.loads(shape.content)["features"]) == 2
+
+
+def test_the_survey_zip_carries_the_asset_check_and_its_photos(make):
+    import io
+    import zipfile
+    client, scan_id = with_asset_check(make)
+    body = client.get(f"/api/scans/{scan_id}/files.zip").content
+    z = zipfile.ZipFile(io.BytesIO(body))
+    assert {"asset_check.html", "asset_check.csv", "asset_check.geojson", f"evidence/scan{scan_id}_look0_7.jpg"} <= set(z.namelist())
+    assert f'src="evidence/scan{scan_id}_look0_7.jpg"' in z.read("asset_check.html").decode("utf-8")
+    assert client.get(f"/api/scans/{scan_id}/files.zip").content == body  # the same bytes every time
+
+
 def test_survey_files_wait_for_the_survey_to_finish(make):
     client, _ = make()
     assert client.get("/api/scans/999/files.zip").status_code == 404

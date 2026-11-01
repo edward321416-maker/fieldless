@@ -1,0 +1,247 @@
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import cv2
+import numpy as np
+import pytest
+
+from eval import asset_check
+from pipeline import evidence
+
+ID_FIELDS = ["UNITID"]
+TOWN = {"city": "Testville", "items": {
+    "pole": {"record_field": "UNITID", "checked_field": "CHECKED", "place_field": "PLACE", "condition_field": "COND"},
+    "can": {"record_field": "UNITID"}}}
+FAR = {"lat": 1.0, "lng": 2.0}
+
+
+def layer(*records):
+    return [{"properties": r, "geometry": {"type": "Point", "coordinates": [10.0 + n, 20.0 + n]}}
+            for n, r in enumerate(records)]
+
+
+LAYERS = {"pole": layer({"UNITID": "P1", "CHECKED": "2020-05-01", "PLACE": "1 Main St", "COND": "GOOD "},
+                        {"UNITID": "P2", "CHECKED": 1727740800000},  # 2024-10, epoch milliseconds
+                        {"UNITID": "P3", "CHECKED": ""}, {"UNITID": "P4"}, {"UNITID": "P5"}),
+          "can": layer({"UNITID": "C1"})}
+CHECK = {"items": {
+    "pole": {"layer": "City poles", "id_fields": ID_FIELDS,
+             "pairs": [{"issue_id": 1, "in_view": True, "city": {"UNITID": "P1"}},
+                       {"issue_id": 2, "in_view": False, "city": {"UNITID": "P5"}}],
+             "missed": [{"city": {"UNITID": "P2"}, **FAR}, {"city": {"UNITID": "P3"}, **FAR}, {"city": {"UNITID": "P4"}, **FAR}]},
+    "can": {"layer": "City cans", "id_fields": ID_FIELDS, "pairs": [],
+            "missed": [{"city": {"UNITID": "C1"}, **FAR}]}}}
+
+
+def issue(id_, item, label="yes", status="auto"):
+    return {"id": id_, "issue_type": item, "object_label": label, "review_status": status, "lat": 5.0, "lng": 6.0,
+            "model_outputs": {"check": {"box": [1, 2, 3, 4]}},
+            "evidence": {"image": f"scan1_issue{id_}_9.jpg", "captured_at": "2022-08-30T00:00:00Z", "creator": "a"}}
+
+
+DATA = {"scan": {"id": 1}, "issues": [issue(1, "pole"), issue(2, "pole"), issue(3, "pole"), issue(4, "can", "unclear"),
+                                      issue(5, "can", status="rejected")]}
+STANDARD = SimpleNamespace(check=lambda item: SimpleNamespace(target={"pole": "city pole", "can": "public can"}[item]))
+NEWER = {"how": asset_check.BY_NEWER_PHOTO, "box": [5, 6, 7, 8],
+         "evidence": {"image": "scan1_look0_7.jpg", "captured_at": "2025-07-11T00:00:00Z"}}
+
+
+def result(looks=None, labels=None):
+    trust = {"controls": [{"photos": "x", "asked": 10, "both_yes": 1}], "looked_at": 2, "sent_back": 1}
+    return asset_check.build(DATA, CHECK, TOWN, LAYERS, STANDARD, looks or {}, trust, labels)
+
+
+def row(out, record):
+    return next(r for r in out["rows"] if r["city_record"] == record)
+
+
+def test_every_record_in_view_has_exactly_one_row():
+    out = result({asset_check.record_key({"UNITID": "P2"}): NEWER})
+    records = [r["city_record"] for r in out["rows"] if r["city_record"]]
+    assert sorted(records) == ["C1", "P1", "P2", "P3", "P4"]
+    assert out["totals"] == {"in_view": 5, "seen": 2, "seen_by": {"Survey": 1, "Second look, newer photo": 1},
+                             "not_determined": 3, "not_listed": 2, "not_listed_unsure": 1, "newer": 2}
+
+
+def test_a_record_with_no_look_stays_not_determined_and_keeps_the_citys_position():
+    r = row(result(), "P3")
+    assert r["status"] == asset_check.NOT_DETERMINED and r["evidence"] is None and r["seen_in_photo_on"] == ""
+    assert (r["lng"], r["lat"]) == (12.0, 22.0) and r["position_source"] == "City record"
+
+
+def test_a_later_look_gives_the_row_its_photo_date_and_box():
+    r = row(result({asset_check.record_key({"UNITID": "P2"}): NEWER}), "P2")
+    assert r["status"] == asset_check.SEEN and r["how_seen"] == asset_check.BY_NEWER_PHOTO
+    assert r["seen_in_photo_on"] == "2025-07-11" and r["box"] == [5, 6, 7, 8]
+    assert r["city_date"] == "2024-10" and r["photo_newer_than_city_date"] == "yes"
+
+
+def test_a_photo_older_than_the_citys_date_is_not_called_newer():
+    looks = {asset_check.record_key({"UNITID": "P2"}): {**NEWER, "evidence": {"captured_at": "2022-08-30T00:00:00Z"}}}
+    assert row(result(looks), "P2")["photo_newer_than_city_date"] == ""
+
+
+def test_a_city_list_without_a_date_has_nothing_to_compare():
+    r = row(result({asset_check.record_key({"UNITID": "C1"}): NEWER}), "C1")
+    assert r["city_date"] == "" and r["photo_newer_than_city_date"] == ""
+
+
+def test_an_object_not_on_the_list_carries_the_cameras_position_and_says_so():
+    rows = [r for r in result()["rows"] if r["status"] == asset_check.NOT_LISTED]
+    assert [r["asset"] for r in rows] == ["City pole", "Public can"]
+    assert rows[0]["position_accuracy"] == "Unknown (within 50 ft)" and rows[0]["city_record"] == ""
+    assert rows[1]["models_unsure"] == "yes"
+
+
+def test_a_finding_paired_outside_the_view_is_on_neither_side_and_is_counted():
+    out = result()
+    assert out["trust"]["outside_view"] == 1
+    assert "P5" not in [r["city_record"] for r in out["rows"]]
+    assert "scan1_issue2_9.jpg" not in [(r["evidence"] or {}).get("image") for r in out["rows"]]
+
+
+def test_a_rejected_finding_is_not_a_row():
+    assert "scan1_issue5_9.jpg" not in [(r["evidence"] or {}).get("image") for r in result()["rows"]]
+
+
+def test_each_items_counts_stand_on_their_own():
+    pole, can = result()["items"]
+    assert (pole["asset"], pole["city_list"], pole["in_view"], pole["seen"]) == ("City pole", "City poles", 4, 1)
+    assert (can["in_view"], can["not_determined"], can["not_listed"]) == (1, 1, 1)
+
+
+def test_the_city_fields_are_kept_in_the_citys_words():
+    r = row(result(), "P1")
+    assert r["city_location"] == "1 Main St" and r["city_condition"] == "GOOD" and r["city_list"] == "City poles"
+
+
+def test_the_assistants_check_of_the_findings_is_carried_when_there_is_one():
+    labels = {"issues": {"1": {"item": "pole", "value": "yes"}, "2": {"item": "pole", "value": "no"},
+                         "3": {"item": "pole", "value": "unclear"}}}
+    assert result(labels=labels)["trust"]["findings"] == {"n": 3, "yes": 1, "no": 1, "unclear": 1}
+    assert "findings" not in result()["trust"]
+
+
+@pytest.mark.parametrize("value, expected", [(1727740800000, "2024-10"), ("2020-05-01", "2020-05"), ("", ""), (None, ""), ("  ", "")])
+def test_city_dates_become_months(value, expected):
+    assert asset_check.month(value) == expected
+
+
+def write_looks(run: Path, cache: Path) -> None:
+    (run / "second_look_scan1.json").write_text(json.dumps({
+        "summary": {"controls": 20, "controls_both_yes": 0},
+        "spots": [{"kind": "record", "city": {"UNITID": "P2"}, "spark": {"answer": "yes", "visible": True, "box": [1, 2, 3, 4]},
+                   "open": {"answer": "yes", "visible": True}, "view": {"image_id": "11", "captured_at": "2022-08-30T00:00:00Z"}},
+                  {"kind": "record", "city": {"UNITID": "P3"}, "spark": {"answer": "yes"}, "open": {"answer": "no"},
+                   "view": {"image_id": "12", "captured_at": "2022-08-30T00:00:00Z"}},
+                  {"kind": "control", "spark": {"answer": "yes"}, "open": {"answer": "yes"},
+                   "view": {"image_id": "13", "captured_at": "2022-08-30T00:00:00Z"}}]}), encoding="utf-8")
+    view = {"image_id": "21", "captured_at": "2025-07-11T00:00:00Z", "creator": "kev", "yaw": 12.4}
+    (run / "pano_look_scan1.json").write_text(json.dumps({
+        "summary": {"controls": 10, "controls_seen": 1},
+        "jobs": [{"kind": "record", "city": {"UNITID": "P4"}, "answers": [
+                     {"view": view, "spark": {"answer": "yes", "box": [5, 6, 7, 8]}, "open": {"answer": "yes"}}]},
+                 {"kind": "record", "city": {"UNITID": "C1"}, "answers": [
+                     {"view": {**view, "image_id": "22"}, "spark": {"answer": "yes", "box": [5, 6, 7, 8]}, "open": {"answer": "yes"}}]}]}),
+        encoding="utf-8")
+    (run / "look_review_scan1.json").write_text(json.dumps({"looked_at": 3, "newer_control_note": "It was a real pole.", "sent_back": [
+        {"item": "can", "record": "C1", "image_id": "22", "why": "the box sits on something else"}]}), encoding="utf-8")
+
+
+@pytest.fixture
+def run(tmp_path, monkeypatch):
+    monkeypatch.setattr(asset_check.config, "photo_cache", lambda: tmp_path / "photos")
+    (tmp_path / "photos").mkdir()
+    write_looks(tmp_path, tmp_path / "photos")
+    return tmp_path
+
+
+FRAMES = [{"image_id": "11", "creator": "bea"}]
+
+
+def test_only_records_both_models_saw_come_back_from_the_looks(run):
+    looks, _ = asset_check.read_looks(run, 1, FRAMES)
+    assert set(looks) == {asset_check.record_key({"UNITID": "P2"}), asset_check.record_key({"UNITID": "P4"})}
+
+
+def test_a_look_sent_back_after_the_check_by_eye_does_not_count(run):
+    looks, trust = asset_check.read_looks(run, 1, FRAMES)
+    assert asset_check.record_key({"UNITID": "C1"}) not in looks
+    assert trust["looked_at"] == 3 and trust["sent_back"] == 1
+
+
+def test_the_looks_say_how_their_control_spots_went(run):
+    _, trust = asset_check.read_looks(run, 1, FRAMES)
+    assert trust["controls"] == [{"photos": "Survey-date photos", "asked": 20, "both_yes": 0},
+                                 {"photos": "Newer panoramas", "asked": 10, "both_yes": 1, "note": "It was a real pole."}]
+
+
+def test_a_look_names_its_photo_and_its_creator(run):
+    looks, _ = asset_check.read_looks(run, 1, FRAMES)
+    flat = looks[asset_check.record_key({"UNITID": "P2"})]
+    pano = looks[asset_check.record_key({"UNITID": "P4"})]
+    assert flat["view"]["creator"] == "bea" and flat["photo"] == run / "photos" / "11.jpg"
+    assert pano["view"]["creator"] == "kev" and pano["photo"] == run / "pano_views" / "21_12.jpg"
+
+
+def test_no_later_looks_at_all_is_an_empty_answer(tmp_path):
+    assert asset_check.read_looks(tmp_path, 1, []) == ({}, {"controls": [], "looked_at": 0, "sent_back": 0})
+
+
+class FakeSam:
+    def __init__(self):
+        self.asked = []
+
+    def sam_image(self, concept, photo):
+        self.asked.append((concept, Path(photo).name))
+        return {"objects": []}
+
+
+def blurrable(tmp_path):
+    photo = tmp_path / "21.jpg"
+    cv2.imwrite(str(photo), np.zeros((60, 80, 3), np.uint8))
+    return {"a": {"how": asset_check.BY_LOOK, "photo": photo, "box": None,
+                  "view": {"image_id": "21", "creator": "kev", "captured_at": "2025-07-11T00:00:00Z"}},
+            "b": {"how": asset_check.BY_LOOK, "photo": photo, "box": None,
+                  "view": {"image_id": "21", "creator": "kev", "captured_at": "2025-07-11T00:00:00Z"}}}
+
+
+@pytest.fixture
+def no_segments(monkeypatch):
+    monkeypatch.setattr(evidence, "parse_away", lambda *a, **k: [])
+
+
+def test_two_records_in_one_photo_share_one_blurred_photo(tmp_path, no_segments):
+    looks, sam = blurrable(tmp_path), FakeSam()
+    asset_check.blur_looks(looks, tmp_path, 1, api=sam)
+    assert (tmp_path / "evidence" / "scan1_look0_21.jpg").is_file()
+    assert len(sam.asked) == len(evidence.BLUR_CONCEPTS)
+    assert looks["a"]["evidence"] == looks["b"]["evidence"]
+    assert looks["a"]["evidence"]["link"] == evidence.mapillary_link("21")
+    assert looks["a"]["evidence"]["creator"] == "kev" and looks["a"]["evidence"]["license"] == evidence.LICENSE
+
+
+def test_a_photo_already_blurred_is_not_sent_again(tmp_path, no_segments):
+    asset_check.blur_looks(blurrable(tmp_path), tmp_path, 1, api=FakeSam())
+    again = FakeSam()
+    looks = blurrable(tmp_path)
+    asset_check.blur_looks(looks, tmp_path, 1, api=again)
+    assert again.asked == [] and looks["a"]["evidence"]["image"] == "scan1_look0_21.jpg"
+
+
+def test_a_failed_blur_leaves_no_photo(tmp_path):
+    class Broken:
+        def sam_image(self, concept, photo):
+            raise RuntimeError("no answer")
+
+    with pytest.raises(RuntimeError):
+        asset_check.blur_looks(blurrable(tmp_path), tmp_path, 1, api=Broken())
+    assert not (tmp_path / "evidence").exists()
+
+
+def test_what_a_blur_found_is_kept_for_the_next_run(tmp_path, no_segments):
+    asset_check.blur_looks(blurrable(tmp_path), tmp_path, 1, api=FakeSam())
+    looks = blurrable(tmp_path)
+    asset_check.blur_looks(looks, tmp_path, 1, api=FakeSam())
+    assert looks["a"]["evidence"]["blurred_regions"] == 0

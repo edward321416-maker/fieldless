@@ -216,9 +216,9 @@ def dropped_count(scan: dict, picks: int) -> int | None:
 
 
 def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float | None = None,
-              city_check: dict | None = None, dropped: int | None = 0) -> dict:
+              city_check: dict | None = None, dropped: int | None = 0, asset_check: dict | None = None) -> dict:
     """city_check: the offline comparison with the city's own records (eval, city_check_scan<N>.json), if one was
-    made for this scan; left out otherwise."""
+    made for this scan; left out otherwise. asset_check: the counts of its Asset Check, likewise."""
     std = standard_of(scan)
     live = [i for i in issues if i["review_status"] != "rejected"]
     defects = sum(std.is_defect(i) for i in live)
@@ -236,6 +236,7 @@ def scan_json(scan: dict, entrances: list[dict], issues: list[dict], km: float |
     return {**{k: scan[k] for k in SCAN_FIELDS},
             "standard": std.code, "checks": checks, "items": items_json(std),
             **({"city_check": city_check} if city_check is not None else {}),
+            **({"asset_check": asset_check} if asset_check is not None else {}),
             "km": km,
             "usd_per_km": round(scan["cost_usd"] / km, 2) if km else None,
             "counts": {"defects": defects, "obstructions": obstructions, "entrances": len(entrances),

@@ -25,6 +25,38 @@ def test_the_static_site_exports_each_surveys_report_page(tmp_path):
     assert f"/api/scans/{scan_id}/calls" not in written  # no call record was made for this survey
 
 
+def test_the_static_site_exports_an_asset_check_with_its_photos(tmp_path):
+    scan_id = survey_scan.build("demo-asset")
+    conn = db.connect(config.run_dir("demo-asset") / "threshold.db")
+    db.update_scan(conn, scan_id, status="done")
+    conn.close()
+    evidence = config.run_dir("demo-asset") / "evidence"
+    evidence.mkdir(parents=True, exist_ok=True)
+    (evidence / f"scan{scan_id}_issue1.jpg").write_bytes(b"jpg")
+    (evidence / f"scan{scan_id}_look0_7.jpg").write_bytes(b"look")
+    photo = {"image": f"scan{scan_id}_look0_7.jpg", "image_id": "7", "creator": "kev", "captured_at": "2025-07-11T00:00:00Z",
+             "link": "https://www.mapillary.com/app/?pKey=7", "license": "CC BY-SA 4.0", "blurred_regions": 1}
+    totals = {"in_view": 1, "seen": 1, "seen_by": {}, "not_determined": 0, "not_listed": 0, "not_listed_unsure": 0, "newer": 0}
+    row = {"item": "pole", "asset": "City pole", "city_list": "City poles", "city_record": "P1", "city_location": "",
+           "status": "Seen in photo", "how_seen": "Second look", "models_unsure": "", "city_date": "",
+           "seen_in_photo_on": "2025-07-11", "photo_newer_than_city_date": "", "city_condition": "", "lat": 1.0, "lng": 2.0,
+           "position_source": "City record", "position_accuracy": "City record", "box": None, "evidence": photo}
+    check = {"scan_id": scan_id, "city": "Testville", "totals": totals, "rows": [row],
+             "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **totals}],
+             "trust": {"photo_months": ["2025-07"], "controls": [], "looked_at": 0, "sent_back": 0, "outside_view": 0}}
+    (config.run_dir("demo-asset") / f"asset_check_scan{scan_id}.json").write_text(json.dumps(check), encoding="utf-8")
+    site = tmp_path / "site"
+
+    static_site.export_api("demo-asset", [(scan_id, "Pike & Pine")], site)
+
+    folder = site / "api" / "scans" / str(scan_id)
+    assert json.loads((folder / "asset-check.json").read_text())["rows"][0]["city_record"] == "P1"
+    assert "Pike &amp; Pine Asset Check" in (folder / "asset-check" / "report.html").read_text(encoding="utf-8")
+    assert (folder / "asset-check" / "table.csv").read_bytes().startswith(b"\xef\xbb\xbf")
+    assert json.loads((folder / "asset-check" / "table.geojson").read_text())["features"]
+    assert (site / "api" / "evidence" / f"scan{scan_id}_look0_7.jpg").read_bytes() == b"look"
+
+
 def test_the_static_site_exports_a_surveys_call_record_when_one_was_made(tmp_path):
     scan_id = survey_scan.build("demo-calls")
     conn = db.connect(config.run_dir("demo-calls") / "threshold.db")

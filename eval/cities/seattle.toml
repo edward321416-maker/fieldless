@@ -9,6 +9,12 @@
 #   installed_field  install date, epoch milliseconds: a point installed after its photo is not counted
 #   truth_field      a field that holds the same yes/no the survey's question asks, and its values (truth_yes/no)
 #   id_fields        the fields that name one record in the city's system
+#
+# eval.asset_check reads these too, to write a row per record:
+#   record_field     the id a person would look a record up by
+#   checked_field    when the city last touched or checked the record; a layer without one has no date to compare
+#   place_field      the record's address in the city's words
+#   condition_field  the record's condition in the city's words
 
 city = "Seattle"
 root = "seattle"
@@ -18,6 +24,8 @@ layer = "assets/poles.geojson"
 name = "Seattle City Light poles"
 inventory = true
 id_fields = ["SCLNR", "ASSET_ID"]
+record_field = "ASSET_ID"
+checked_field = "DATEUPDATED"
 
 [items.street_tree]
 layer = "assets/trees.geojson"
@@ -25,18 +33,24 @@ name = "SDOT street trees"
 inventory = true
 installed_field = "PLANTED_DATE"
 id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
+record_field = "UNITID"
+checked_field = "LAST_VERIFY_DATE"
+place_field = "UNITDESC"
+condition_field = "CONDITION"
 
 [items.litter_can]
 layer = "assets/litter.geojson"
 name = "SPU public litter cans"
 inventory = true
 id_fields = ["pc_sp_id"]
+record_field = "pc_sp_id"
 
 [items.parking_pay_station]
 layer = "assets/paystations.geojson"
 name = "SDOT pay stations"
 inventory = true
 id_fields = ["OBJECTID"]  # the downloaded layer carries no other number for a pay station
+record_field = "OBJECTID"
 
 [items.curb_ramp_warning]
 layer = "ramps_capitolhill.geojson"
@@ -47,6 +61,10 @@ truth_field = "DETWARN_EXISTS"
 truth_yes = "Y"
 truth_no = "N"
 id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
+record_field = "UNITID"
+checked_field = "VERIFICATION_DATE"
+place_field = "UNITDESC"
+condition_field = "CONDITION"
 
 # Assets Seattle publishes that are not survey items yet: an item the agent writes in the app for one of these is
 # tested on the city's own positions instead of a person's answers (docs/specs/2026-10-29-agent-items-design.md 1).
