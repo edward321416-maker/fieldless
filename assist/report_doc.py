@@ -26,9 +26,6 @@ STATUS_ORDER = ("auto", "needs_review", "field_check", "verified", "rejected")
 MISSED_SHOWN = 10  # city records listed per item in 4.3; the rest are in the item's records-to-check CSV
 STATUS_WORDS = {"auto": "found by the models", "needs_review": "models unsure", "field_check": "check on site",
                 "verified": "confirmed", "rejected": "rejected"}
-HOW_MADE = ("SAM 3.1 found each survey item in public Mapillary street photos, and Muse Spark judged each one on the "
-            "best photo against the item's question. Defect findings were judged again by Muse Spark Open. What the "
-            "models could not settle is marked for a site visit.")
 SECTIONS = (("summary", "1. Summary"), ("scope", "2. Scope and method"), ("findings", "3. Findings by item"),
             ("actions", "4. Actions"), ("ledger", "5. Photo ledger"), ("limits", "6. Limits"),
             ("appendix", "Appendix: data and credits"))
@@ -78,6 +75,14 @@ a { color: #0b5cad; }
   .entry, tr, h3 { break-inside: avoid; }
 }
 """
+
+
+def how_made(standard_id: str) -> str:
+    """How the findings were made. Only the US items go through the second opinion."""
+    again = " Defect findings were judged again by Muse Spark Open." if standard_id == "US" else ""
+    return ("SAM 3.1 found each survey item in public Mapillary street photos, and Muse Spark judged each one on the "
+            f"best photo against the item's question.{again} What the models could not settle is marked for a site "
+            "visit.")
 
 
 def _h(text) -> str:
@@ -243,7 +248,7 @@ def _scope(s: dict) -> str:
             + '<p class="muted">Grey lines: the walks the photos were taken on. Dots: findings, at the position of '
               "their photo, in the item's colour; a red ring marks a possible defect.</p>"
             + f"<p><b>Area.</b> {_h(s['area'])}: {s['km']} km of street, {s['photos']} photos{_h(taken)}.</p>"
-            + f"<p><b>Method.</b> {_h(HOW_MADE)}</p>"
+            + f"<p><b>Method.</b> {_h(how_made(s['standard']))}</p>"
             + f"<p><b>Survey items ({_h(s['standard'])} standard)</b> and the question asked of each photo:</p>"
             + f"<ul>{questions}</ul>"
             + f"<p><b>This survey's processing.</b> {_duration(s['processing_seconds'])} of processing; model cost "

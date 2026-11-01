@@ -191,3 +191,18 @@ def test_without_the_logo_file_the_credit_names_mapillary_in_words(logo_dirs):
     credited = [e for e in re.findall(r'<figure class="entry".*?</figure>', page, re.S) if "Photo by" in e]
     assert credited and all(re.search(r'Photo by [^<]+, <a href="https://www.mapillary.com/[^"]+">Mapillary</a>, '
                                       r"CC BY-SA 4.0", e) for e in credited)
+
+
+def test_second_opinion_is_only_claimed_for_the_us_standard():
+    assert "Muse Spark Open" in report_doc.how_made("US")
+    assert "Muse Spark Open" not in report_doc.how_made("KR")
+
+
+def test_the_scope_section_states_the_method_of_the_surveys_own_standard():
+    _, s = made()
+
+    us = report_doc.document(s)
+    kr = report_doc.document({**s, "standard": "KR"})
+
+    assert "judged again by Muse Spark Open" in us
+    assert "Muse Spark Open" not in kr and "SAM 3.1 found each survey item" in kr

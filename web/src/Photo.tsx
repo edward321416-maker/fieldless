@@ -40,11 +40,20 @@ export function MiniCredit({ evidence }: { evidence: Evidence }) {
   );
 }
 
+// How many times to enlarge the photo so the box fills about 80% of the frame (1 to 4).
+export function zoomScale(box: number[]): number {
+  const [x1, y1, x2, y2] = box.map((v) => v / 1000);
+  return Math.min(4, Math.max(1, 0.8 / Math.max(x2 - x1, y2 - y1, 0.01)));
+}
+
+// Below this, zooming to the box would hardly change the photo, so the button is not offered.
+const MIN_USEFUL_ZOOM = 1.3;
+
 // How far to enlarge and move the photo so the box fills about 80% of the frame (at most 4 times), as a CSS
 // transform with origin 0 0: a point p lands at s * p + t.
 export function zoomTransform(box: number[]): string {
   const [x1, y1, x2, y2] = box.map((v) => v / 1000);
-  const s = Math.min(4, Math.max(1, 0.8 / Math.max(x2 - x1, y2 - y1, 0.01)));
+  const s = zoomScale(box);
   const cx = (x1 + x2) / 2;
   const cy = (y1 + y2) / 2;
   const tx = Math.min(0, Math.max(1 - s, 0.5 - s * cx)) * 100; // keep the photo covering the frame
@@ -75,7 +84,8 @@ export function tagOverflows(tagRight: number, frameRight: number): boolean {
 // (docs/ui-rules.md U5).
 export function EvidencePhoto({ evidence, box, boxLabel, colour, alt, large = false }: Props) {
   const [zoom, setZoom] = useState(false);
-  const zoomed = zoom && box !== null;
+  const canZoom = box !== null && zoomScale(box) >= MIN_USEFUL_ZOOM;
+  const zoomed = zoom && canZoom;
   const frame = useRef<HTMLDivElement>(null);
   const tag = useRef<HTMLSpanElement>(null);
   const boxKey = `${box?.join(",")}|${boxLabel}`;
@@ -106,13 +116,12 @@ export function EvidencePhoto({ evidence, box, boxLabel, colour, alt, large = fa
         </div>
       </div>
       <div className="photo-tools">
-        {box ? (
+        {canZoom && (
           <button type="button" aria-pressed={zoom} onClick={() => setZoom((z) => !z)}>
             {zoom ? "Show the whole photo" : "Zoom to box"}
           </button>
-        ) : (
-          <span className="hint small">The model did not mark where it is.</span>
         )}
+        {!box && <span className="hint small">The model did not mark where it is.</span>}
         <a href={evidence.url} target="_blank" rel="noreferrer">Open full size</a>
       </div>
     </figure>
