@@ -1,6 +1,6 @@
 """Build the read-only public demo: the web app plus the API answers for the demo surveys, as static files.
 
-  python -m deploy.static_site --run RUN --scan 3:Seongsu [--scan 7:Myeongdong] --out DIR [--space USER/fieldless]
+  python -m deploy.static_site --run RUN --scan 17:"Seattle (Capitol Hill)" [--scan N:NAME] --out DIR [--space USER/fieldless]
 
 Every answer comes from the real server app (server.app, in-process), so the demo shows exactly what the live server
 shows: GET /api/x is written to DIR/api/x.json, and each evidence photo is copied as it is. The web app is built with

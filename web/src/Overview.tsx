@@ -210,7 +210,9 @@ export default function Overview(props: Props) {
           <Flow scan={scan} issues={props.issues} />
           <Checks scan={scan} issues={props.issues} others={props.others} />
           {props.runs.length > 0 && <Runs runs={props.runs} onOpenRun={props.onOpenRun} />}
-          <Surveys first={{ scan, name: name ?? `Survey ${scan.id}` }} others={props.others} onOpenScan={props.onOpenScan} />
+          {props.others.length > 0 && (
+            <Surveys first={{ scan, name: name ?? `Survey ${scan.id}` }} others={props.others} onOpenScan={props.onOpenScan} />
+          )}
           <p className="overview-foot">Built with Mapillary, SAM 3.1, Muse Spark, Muse Spark Open and Muse Glimmer</p>
         </>
       )}
@@ -411,7 +413,7 @@ function Surveys({ first, others, onOpenScan }: { first: Props["others"][number]
   onOpenScan: Props["onOpenScan"] }) {
   return (
     <section className="overview-part" aria-labelledby="overview-cities">
-      <h3 id="overview-cities">Two cities, two rulebooks</h3>
+      <h3 id="overview-cities">Example surveys</h3>
       <ul className="overview-grid overview-cities">
         {[first, ...others].map(({ scan, name }) => {
           const list = firstList(scan);

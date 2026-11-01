@@ -50,13 +50,12 @@ def test_second_opinion_is_claimed_for_the_us_items_only():
     assert "every possible defect is asked again" not in text
 
 
-def test_seoul_is_counts_and_source_only():
+def test_seongsu_is_out_of_the_readme_and_the_korean_standard_stays_as_code():
     text = readme()
-    assert "Seoul's tree list (Open Data Plaza OA-23040) is KOGL Type 4, so only counts are shown, with the source." in text
+    assert "Seongsu" not in text and "OA-23040" not in text
     assert "eval.city_check.shareable" not in text  # an internal name; the README says what a visitor gets
-    assert text.count("OA-23040") == 1
-    row = next(l for l in text.splitlines() if l.startswith("| Another country's rules"))
-    assert "counts and source only" in row
+    assert "`kr.toml` holds a Korean standard tried during the build; it is not part of the demo." in text
+    assert "kr.toml" in text
 
 
 def test_place_search_asks_only_on_enter():

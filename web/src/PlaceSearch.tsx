@@ -29,12 +29,6 @@ export const PRESET_PLACES: PlaceOption[] = [
     subtitle: "University District, Seattle · retail corridor",
     bbox: bboxAroundPoint(-122.3132, 47.6612),
   },
-  {
-    id: "preset-seongsu",
-    title: "Yeonmujang-gil, Seongsu-dong",
-    subtitle: "Seongdong-gu, Seoul · shared street",
-    bbox: [127.055161, 37.546707, 127.058991, 37.550062],
-  },
 ];
 
 interface NominatimItem {

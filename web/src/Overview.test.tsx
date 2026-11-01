@@ -165,7 +165,8 @@ describe("the overview", () => {
     expect(html).toContain("See it on the map");
   });
   it("offers each example survey with its rulebook, cost per km, photos and first city line", () => {
-    expect(html).toContain("Two cities, two rulebooks");
+    expect(html).toContain("Example surveys");
+    expect(html).not.toContain("Two cities, two rulebooks");
     expect(html).toContain("US standard");
     expect(html).toContain("Korean standard");
     expect(html).toContain("$2.52 per km");
@@ -216,6 +217,16 @@ describe("what the overview leaves out", () => {
     const other = render({ scan: { ...scan, id: 4 } as Scan });
     expect(other).not.toContain("Checked photo by photo");
     expect(other).not.toContain("73 of 86");
+  });
+  it("shows the example surveys only when there is another survey to put beside the open one", () => {
+    const alone = render({ others: [] });
+    expect(alone).not.toContain("Example surveys");
+    expect(alone).not.toContain("overview-cities");
+    expect(count(alone, '<button type="button"')).toBe(3); // see, survey, one run
+    expect(render()).toContain("Example surveys");
+    const two = render({ others: [{ scan: { ...scan, id: 18 } as Scan, name: "Second survey" }] });
+    expect(two).toContain("Example surveys");
+    expect(two).toContain("Second survey");
   });
   it("leaves out another city whose survey has no city list", () => {
     const html = render({ others: [{ scan: { ...seongsu, city_check: undefined } as Scan, name: "Seongsu" }] });

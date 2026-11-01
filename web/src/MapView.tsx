@@ -22,7 +22,7 @@ const MAPILLARY_CREDIT =
 // OpenFreeMap positron: grey, with no shop icons, so only the survey's markers carry colour (docs/ui-rules.md U4).
 // OSM vector tiles, no key; the style brings its own OSM and OpenFreeMap attribution.
 const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
-const START: [number, number] = [127.0571, 37.5484]; // Seongsu street_b, where D1 checked tactile paving
+const START: [number, number] = [-122.320, 47.6152]; // Capitol Hill, Seattle: where the map opens before a survey loads
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 const TARGET_M = SIDEWALK_OFFSET_M; // the object is drawn this far along its bearing: the distance is not measured (approximate)
 const ACCENT = "#1d4ed8";
