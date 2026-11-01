@@ -312,6 +312,8 @@ def main(argv=None) -> dict:
     parser.add_argument("--city", required=True)
     parser.add_argument("--dry-run", action="store_true", help="choose the spots and stop: no model is called")
     parser.add_argument("--pilot", type=int, help="ask the area question on this many records the first pass missed")
+    parser.add_argument("--cap-usd", type=float, default=COST_CAP_USD,
+                        help=f"a lower cost cap for this run; it cannot go above ${COST_CAP_USD:.0f}")
     args = parser.parse_args(argv)
     run_dir = config.run_dir(args.run)
     if args.pilot:
@@ -333,7 +335,7 @@ def main(argv=None) -> dict:
     open_model = second_opinion.from_env(run_dir)
     if open_model is None:
         raise SystemExit("BASETEN_API_KEY is not set: there is no second model to confirm a yes")
-    meter = CostMeter(COST_CAP_USD)
+    meter = CostMeter(min(args.cap_usd, COST_CAP_USD))
     api = MetaApi(run_dir / "calls_second_look.jsonl", meter)
     out = run_dir / f"second_look_scan{args.scan}.json"
 
