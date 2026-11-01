@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { photoMonth } from "./format";
 import { inkOn } from "./items";
 import type { Evidence } from "./types";
@@ -25,10 +25,14 @@ export function PhotoCredit({ evidence }: { evidence: Evidence }) {
 }
 
 // The same credit in one short line, for a small photo in a card or list. A card around it may be clickable or take
-// Enter: a click or a key on the credit stays here, so its links open their own pages and do nothing else.
+// Enter or Space: a click, Enter or Space on the credit stays here, so its links open their own pages and do nothing
+// else. Other keys (Escape, the arrows) still reach the window's handlers.
 export function MiniCredit({ evidence }: { evidence: Evidence }) {
+  const keepKey = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+  };
   return (
-    <p className="credit credit-mini" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <p className="credit credit-mini" onClick={(e) => e.stopPropagation()} onKeyDown={keepKey}>
       {evidence.creator ?? "Mapillary contributor"} ·{" "}
       <a href={evidence.link} target="_blank" rel="noreferrer"><MapillaryMark alt="Mapillary" /></a> ·{" "}
       <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">{evidence.license}</a>

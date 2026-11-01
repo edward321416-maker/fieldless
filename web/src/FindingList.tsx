@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { photoMonth } from "./format";
 import { colourOf, itemName, STATUS_SENTENCE, type Finding } from "./items";
+import { MapillaryMark } from "./Photo";
 import { cityLine, itemNote, thumbPosition } from "./summary";
 import type { Scan } from "./types";
 
@@ -81,7 +82,7 @@ export default function FindingList(props: Props) {
           Show {findings.length - shown.length} more
         </button>
       )}
-      <p className="hint small">Photos: Mapillary contributors, CC BY-SA 4.0</p>
+      <p className="hint small">Photos: <MapillaryMark alt="Mapillary" /> contributors, CC BY-SA 4.0. Open a row for its creator and link.</p>
     </section>
   );
 }

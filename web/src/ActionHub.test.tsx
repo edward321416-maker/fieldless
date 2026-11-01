@@ -265,5 +265,10 @@ describe("every photo carries its creator, the Mapillary logo and a link", () =>
       credit.props.onKeyDown(press);
       expect(press.stopPropagation).toHaveBeenCalledTimes(1);
     }
+    for (const key of ["Escape", "ArrowDown", "Tab"]) { // the rest reach the window's own handlers
+      const press = { key, stopPropagation: vi.fn() };
+      credit.props.onKeyDown(press);
+      expect(press.stopPropagation).not.toHaveBeenCalled();
+    }
   });
 });
