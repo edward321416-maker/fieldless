@@ -54,7 +54,7 @@ def test_the_static_site_exports_an_asset_check_with_its_photos(tmp_path):
 
     folder = site / "api" / "scans" / str(scan_id)
     assert json.loads((folder / "asset-check.json").read_text())["rows"][0]["city_record"] == "P1"
-    assert "Pike &amp; Pine Asset Check" in (folder / "asset-check" / "report.html").read_text(encoding="utf-8")
+    assert "Pike &amp; Pine Record Update List" in (folder / "asset-check" / "report.html").read_text(encoding="utf-8")
     assert (folder / "asset-check" / "table.csv").read_bytes().startswith(b"\xef\xbb\xbf")
     assert json.loads((folder / "asset-check" / "table.geojson").read_text())["features"]
     assert (site / "api" / "evidence" / f"scan{scan_id}_look0_7.jpg").read_bytes() == b"look"
