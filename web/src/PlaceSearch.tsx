@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { bboxAroundPoint } from "./bbox";
 import type { Bbox, DemoArea } from "./types";
 
@@ -67,14 +67,12 @@ export function parseNominatimResults(raw: unknown): PlaceOption[] {
 
 // Nominatim's usage policy forbids autocomplete: it is asked once per search, when the user
 // presses Enter, never while typing. This is the only place the component calls the network.
+// It rejects when the request fails or Nominatim answers with an error status.
 export async function searchPlaces(trimmed: string): Promise<PlaceOption[]> {
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=${encodeURIComponent(trimmed)}`;
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
-    return res.ok ? parseNominatimResults(await res.json()) : [];
-  } catch {
-    return [];
-  }
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=${encodeURIComponent(trimmed)}`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`Nominatim answered ${res.status}`);
+  return parseNominatimResults(await res.json());
 }
 
 // Preset places filter locally on every keystroke, with no network.
@@ -101,6 +99,65 @@ export function decideEnter(query: string, results: PlaceOption[], presets: Plac
   return { kind: "none" };
 }
 
+export interface SearchState {
+  results: PlaceOption[];
+  loading: boolean;
+  noPlace: boolean;
+  open: boolean;
+  // Numbers the latest search; bumped by typing and picking too, so an older answer is dropped.
+  seq: number;
+}
+
+export type SearchAction =
+  | { type: "typed" } // the text changed or was cleared
+  | { type: "started" } // Enter asked the geocoder
+  | { type: "answered"; seq: number; found: PlaceOption[] }
+  | { type: "failed"; seq: number }
+  | { type: "picked" } // a place was chosen
+  | { type: "opened" }
+  | { type: "closed" };
+
+export const initialSearchState: SearchState = {
+  results: [],
+  loading: false,
+  noPlace: false,
+  open: false,
+  seq: 0,
+};
+
+// One search at a time: Nominatim allows about one request per second.
+export function canStartSearch(state: SearchState): boolean {
+  return !state.loading;
+}
+
+export function searchReducer(state: SearchState, action: SearchAction): SearchState {
+  switch (action.type) {
+    case "typed":
+      return { ...state, results: [], loading: false, noPlace: false, open: true, seq: state.seq + 1 };
+    case "picked":
+      return { ...state, results: [], loading: false, noPlace: false, open: false, seq: state.seq + 1 };
+    case "started":
+      if (!canStartSearch(state)) return state;
+      return { ...state, loading: true, noPlace: false, seq: state.seq + 1 };
+    case "answered":
+      if (action.seq !== state.seq) return state;
+      return {
+        ...state,
+        results: action.found,
+        loading: false,
+        noPlace: action.found.length === 0,
+        open: true,
+      };
+    case "failed":
+      if (action.seq !== state.seq) return state;
+      return { ...state, results: [], loading: false, noPlace: true, open: true };
+    case "opened":
+      return { ...state, open: true };
+    case "closed":
+      return { ...state, open: false };
+  }
+}
+
 interface Props {
   demos: DemoArea[];
   activeScanId: number | null;
@@ -110,16 +167,14 @@ interface Props {
 
 export default function PlaceSearch({ demos, activeScanId, onOpenDemo, onPickPlace }: Props) {
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<PlaceOption[]>([]);
-  const [noPlace, setNoPlace] = useState(false);
+  const [state, dispatch] = useReducer(searchReducer, initialSearchState);
+  const { results, loading, noPlace, open } = state;
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        dispatch({ type: "closed" });
       }
     };
     document.addEventListener("mousedown", onDocClick);
@@ -130,46 +185,32 @@ export default function PlaceSearch({ demos, activeScanId, onOpenDemo, onPickPla
 
   const shownPlaces = results.length > 0 ? results : filteredPresets;
 
-  // Bumped whenever the text changes, so an answer to an older search is dropped.
-  const searchSeq = useRef(0);
-
-  // New text (or a picked place) invalidates results found for the old text.
-  function setQueryText(text: string) {
-    searchSeq.current += 1;
-    setQuery(text);
-    setResults([]);
-    setNoPlace(false);
-    setLoading(false);
-  }
-
   function changeQuery(text: string) {
-    setQueryText(text);
-    setOpen(true);
+    setQuery(text);
+    dispatch({ type: "typed" });
   }
 
   function choosePlace(p: PlaceOption) {
-    setQueryText(p.title);
-    setOpen(false);
+    setQuery(p.title);
+    dispatch({ type: "picked" });
     onPickPlace(p.bbox, p.title);
   }
 
   async function search(trimmed: string) {
-    const seq = ++searchSeq.current;
-    setLoading(true);
-    setNoPlace(false);
-    const found = await searchPlaces(trimmed);
-    if (seq !== searchSeq.current) return;
-    setResults(found);
-    setOpen(true);
-    setNoPlace(found.length === 0);
-    setLoading(false);
+    const seq = state.seq + 1;
+    dispatch({ type: "started" });
+    try {
+      dispatch({ type: "answered", seq, found: await searchPlaces(trimmed) });
+    } catch {
+      dispatch({ type: "failed", seq });
+    }
   }
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const action = decideEnter(query, results, filteredPresets);
     if (action.kind === "choose") choosePlace(action.place);
-    else if (action.kind === "search" && !loading) void search(action.text);
+    else if (action.kind === "search" && canStartSearch(state)) void search(action.text);
   }
 
   return (
@@ -182,7 +223,7 @@ export default function PlaceSearch({ demos, activeScanId, onOpenDemo, onPickPla
           placeholder="Search a street or city, then press Enter"
           aria-label="Search street, neighborhood, or city"
           value={query}
-          onFocus={() => setOpen(true)}
+          onFocus={() => dispatch({ type: "opened" })}
           onChange={(e) => changeQuery(e.target.value)}
         />
         {query && (
@@ -231,7 +272,7 @@ export default function PlaceSearch({ demos, activeScanId, onOpenDemo, onPickPla
                       type="button"
                       className={`place-option${d.scan_id === activeScanId ? " place-option-active" : ""}`}
                       onClick={() => {
-                        setOpen(false);
+                        dispatch({ type: "closed" });
                         onOpenDemo(d.scan_id);
                       }}
                     >
