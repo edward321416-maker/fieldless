@@ -54,6 +54,7 @@ def test_seoul_is_counts_and_source_only():
     text = readme()
     assert "Seoul's tree list (Open Data Plaza OA-23040) is KOGL Type 4, so only counts are shown, with the source." in text
     assert "eval.city_check.shareable" not in text  # an internal name; the README says what a visitor gets
+    assert text.count("OA-23040") == 1
     row = next(l for l in text.splitlines() if l.startswith("| Another country's rules"))
     assert "counts and source only" in row
 
@@ -70,11 +71,25 @@ def test_every_meta_model_says_what_it_does_and_where_it_runs():
     header = next(l for l in table.splitlines() if l.startswith("| Meta technology"))
     assert "Runs on" in header
     rows = {l.split("|")[1].strip(): l for l in table.splitlines() if l.startswith("| **")}
-    for name, where in (("SAM 3.1", "Meta Model API"), ("Muse Spark", "Meta Model API"),
-                        ("Muse Spark Open", "Baseten"), ("Muse Glimmer", "Modal")):
-        row = next(r for n, r in rows.items() if n.startswith(f"**{name}"))
-        cells = row.split("|")
+    for name, where in (("**SAM 3.1**", "Meta Model API"), ("**Muse Spark**", "Meta Model API"),
+                        ("**Muse Spark Open** (open weights)", "Baseten"),
+                        ("**Muse Glimmer** (open weights)", "Modal")):
+        cells = rows[name].split("|")  # exact row name: "Muse Spark" must not stand in for "Muse Spark Open"
         assert cells[2].strip() and where in cells[3], name
+
+
+def test_each_meta_model_says_which_key_it_needs():
+    text = readme()
+    setup = text[text.index("### Setup"):text.index("### Survey items from a rule")]
+    assert "`MODEL_API_KEY` (the Meta Model API: SAM 3.1 and Muse Spark)" in setup and "`MAPILLARY_TOKEN`" in setup
+    assert "`BASETEN_API_KEY` (Muse Spark Open) is optional" in setup
+    table = text[text.index("## Meta AI used"):text.index("In the recorded Seattle survey")]
+    rows = {l.split("|")[1].strip(): l.split("|")[3] for l in table.splitlines() if l.startswith("| **")}
+    assert "`MODEL_API_KEY`" in rows["**SAM 3.1**"] and "`MODEL_API_KEY`" in rows["**Muse Spark**"]
+    assert "`BASETEN_API_KEY`" in rows["**Muse Spark Open** (open weights)"]
+    glimmer = rows["**Muse Glimmer** (open weights)"]
+    assert "modal deploy deploy/modal_glimmer.py" in glimmer and "`GLIMMER_URL`" in glimmer
+    assert "`--glimmer`" in glimmer and "`MODEL_API_KEY`" in glimmer  # its own key is derived from MODEL_API_KEY
 
 
 def test_commands_are_ones_that_run():
@@ -94,8 +109,7 @@ def test_the_cost_caps_are_stated_without_a_false_breach():
     assert "ran locally with a $5 cap" in text and "$4.21 is not a limit breach" in text
 
 
-def test_the_invite_code_is_not_in_the_repo_text():
-    # the README names the variable, never a value
+def test_readme_names_the_invite_code_variables_but_gives_no_value():
     for line in readme().splitlines():
         if "INVITE_CODE" in line:
             assert not re.search(r"INVITE_CODE\s*=\s*\S", line), line

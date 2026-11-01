@@ -82,10 +82,10 @@ For "bike rack" on the Seattle survey, it settled on the phrase "metal bike hold
 | Meta technology | What it does | Runs on |
 |---|---|---|
 | **Mapillary** | The input: open pedestrian-view street photos (CC BY-SA 4.0) | Mapillary API v4; the photos are downloaded and never committed |
-| **SAM 3.1** | Finds every survey item by name (text prompts), tracks objects across a sequence (video), outlines a step from Spark's box (box prompt), and blurs people and plates | Meta Model API (`api.meta.ai`), hosted by Meta |
-| **Muse Spark** | Watches photo sequences as video, judges each item in a fixed JSON format with a box and a reason, writes and tests new survey items as an agent that calls SAM 3.1 as a tool, reads a rule PDF, and writes the report's text | Meta Model API (`api.meta.ai`), hosted by Meta |
-| **Muse Spark Open** (open weights) | Gives the answers a new item is tested against, and a second opinion on every possible defect on the US survey items | Baseten (`meta-models/muse-spark-open-1026`); optional, needs `BASETEN_API_KEY`. Without it surveys run on Muse Spark alone |
-| **Muse Glimmer** (open weights) | Takes the street-asset checks in large runs (`--glimmer`); Spark covers its unclear answers and audits 10%. On a busy GPU a check costs about $0.00075 against $0.012 on Muse Spark (measured, 300 checks at 32 in flight). Re-judging a Seattle scan, it matched 12 of 29 of the city's poles where Spark matched 13 of 31 (the points in view differ by run); litter cans and pay stations came out the same, and 6 of 7 Spark audits agreed. In a small survey it is slower and no cheaper, because starting the GPU takes four to six minutes, so the live site uses Muse Spark | Served by us on one Modal H100 with vLLM (`deploy/modal_glimmer.py`, scales to zero); used only in runs started with `--glimmer` and `GLIMMER_URL` |
+| **SAM 3.1** | Finds every survey item by name (text prompts), tracks objects across a sequence (video), outlines a step from Spark's box (box prompt), and blurs people and plates | Meta Model API (`api.meta.ai`), hosted by Meta; key `MODEL_API_KEY` |
+| **Muse Spark** | Watches photo sequences as video, judges each item in a fixed JSON format with a box and a reason, writes and tests new survey items as an agent that calls SAM 3.1 as a tool, reads a rule PDF, and writes the report's text | Meta Model API (`api.meta.ai`), hosted by Meta; key `MODEL_API_KEY` |
+| **Muse Spark Open** (open weights) | Gives the answers a new item is tested against, and a second opinion on every possible defect on the US survey items | Baseten (`meta-models/muse-spark-open-1026`); optional, key `BASETEN_API_KEY`. Without it surveys run on Muse Spark alone |
+| **Muse Glimmer** (open weights) | Takes the street-asset checks in large runs (`--glimmer`); Spark covers its unclear answers and audits 10%. On a busy GPU a check costs about $0.00075 against $0.012 on Muse Spark (measured, 300 checks at 32 in flight). Re-judging a Seattle scan, it matched 12 of 29 of the city's poles where Spark matched 13 of 31 (the points in view differ by run); litter cans and pay stations came out the same, and 6 of 7 Spark audits agreed. In a small survey it is slower and no cheaper, because starting the GPU takes four to six minutes, so the live site uses Muse Spark | Served by us on one Modal H100 with vLLM (`deploy/modal_glimmer.py`, scales to zero); used only in runs started with `--glimmer`. `modal deploy deploy/modal_glimmer.py` prints the server's URL: set it as `GLIMMER_URL`, which those runs need. Its own key is derived from `MODEL_API_KEY`, so there is nothing else to add |
 
 In the recorded Seattle survey, SAM 3.1 answered 643 calls, Muse Spark 171 and Muse Spark Open 1, for $4.21 in all: the item checks alone were 282 SAM 3.1 calls and 144 Muse Spark calls ($2.48).
 
@@ -103,7 +103,7 @@ All numbers are measured by us with the code in `eval/` (city check, precision) 
 
 - Photos come from [Mapillary](https://www.mapillary.com) under CC BY-SA 4.0. Every evidence photo shows its creator, the Mapillary logo and a link. Downloaded photos are never committed.
 - Faces and licence plates are blurred, and blurring is only ever added.
-- City inventories used for checking are the City of Seattle's open GIS layers (SDOT curb ramps, trees, pay stations and bike racks; Seattle City Light poles; Seattle Public Utilities litter cans) and Seoul's street-tree list (Seoul Open Data Plaza, OA-23040; `eval/seoul_trees.py` turns it into a layer). Seoul's tree list (Open Data Plaza OA-23040) is KOGL Type 4, so only counts are shown, with the source. Seattle's carry no stated licence, only the City's notice that it makes no warranty of accuracy. The repo keeps only the city point IDs that label the small test sets in `assist/testsets/`, not the layers.
+- City inventories used for checking are the City of Seattle's open GIS layers (SDOT curb ramps, trees, pay stations and bike racks; Seattle City Light poles; Seattle Public Utilities litter cans) and Seoul's street-tree list (Seoul Open Data Plaza; `eval/seoul_trees.py` turns it into a layer). Seoul's tree list (Open Data Plaza OA-23040) is KOGL Type 4, so only counts are shown, with the source. Seattle's carry no stated licence, only the City's notice that it makes no warranty of accuracy. The repo keeps only the city point IDs that label the small test sets in `assist/testsets/`, not the layers.
 - This is not a navigation app and not an enforcement tool. It records facts so they can be fixed.
 
 ## Limits
@@ -137,7 +137,7 @@ python -m venv .venv
 .venv/Scripts/python -m pytest -q                                            # offline tests, no API calls
 ```
 
-Copy `.env.example` to `.env` and fill in the two required keys. It can sit in the repo root (git-ignored) or in any parent folder.
+Copy `.env.example` to `.env` and fill in `MODEL_API_KEY` (the Meta Model API: SAM 3.1 and Muse Spark) and `MAPILLARY_TOKEN`. `BASETEN_API_KEY` (Muse Spark Open) is optional. The `.env` can sit in the repo root (git-ignored) or in any parent folder.
 
 ### Survey items from a rule (Muse Spark agent)
 
