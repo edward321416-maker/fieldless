@@ -521,3 +521,9 @@ def test_the_report_shows_no_not_seen_sentence_and_falls_back_to_code_sentences(
         s = report.summary(data, STANDARD, now=NOW)
         assert html.escape(report_doc.summary_text(s)) in page  # the summary fell back: nothing of it was left
         assert "Poles were surveyed." in report.document(data, STANDARD, notes=clean, now=NOW)  # a clean one stays
+
+
+def test_the_city_note_carries_the_citys_credit():
+    cc = {"method": "Paired.", "measured_at": "2026-11-01", "credit": "City records: Testville Open Data."}
+    assert report._city_note({"city_check": cc}) == "City record: Paired. Measured 2026-11-01. City records: Testville Open Data."
+    assert report._city_note({"city_check": {k: v for k, v in cc.items() if k != "credit"}}) == "City record: Paired. Measured 2026-11-01."

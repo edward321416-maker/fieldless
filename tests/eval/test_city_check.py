@@ -161,3 +161,13 @@ def test_new_york_credits_its_records_as_its_open_data_terms_ask():
     credit = city_check.load_city("nyc")["credit"]
     assert "NYC Open Data" in credit and "Nov 1, 2026" in credit
     assert "does not warrant them or endorse this survey" in credit
+
+
+def test_the_comparison_carries_the_citys_credit_when_it_has_one(tmp_path):
+    layer = {"type": "FeatureCollection", "features": [point(1, 0, 10)]}
+    (tmp_path / "p.geojson").write_text(json.dumps(layer), encoding="utf-8")
+    layers = {"pole": {"layer": "p.geojson", "name": "p", "inventory": True}}
+    data = {"issues": [], "frames": [], "entrances": [], "scan": {"id": 1}}
+    with_credit = city_check.build(data, layers, tmp_path, measured_at="2026-11-01", credit="City records: Testville.")
+    assert with_credit["credit"] == "City records: Testville."
+    assert "credit" not in city_check.build(data, layers, tmp_path, measured_at="2026-11-01")

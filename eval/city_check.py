@@ -72,8 +72,10 @@ def extra_layer(city: dict, target: str) -> dict | None:
 SEATTLE = load_city("seattle")["items"]  # the layers data/seattle/city_eval_all.sh scores, relative to data/seattle
 
 
-def build(data: dict, layers: dict[str, dict], root: Path, measured_at: str, city_name: str = "Seattle") -> dict:
-    """data as eval.store.load_scan returns it; layers maps item ids to their layer settings (SEATTLE's shape)."""
+def build(data: dict, layers: dict[str, dict], root: Path, measured_at: str, city_name: str = "Seattle",
+          credit: str | None = None) -> dict:
+    """data as eval.store.load_scan returns it; layers maps item ids to their layer settings (SEATTLE's shape);
+    credit: the words the city's data asks to be shown with its records, if any."""
     items = {}
     for item, cfg in layers.items():
         layer = json.loads((Path(root) / cfg["layer"]).read_text(encoding="utf-8"))
@@ -99,7 +101,7 @@ def build(data: dict, layers: dict[str, dict], root: Path, measured_at: str, cit
             items[item]["answer_field"] = {"name": cfg["truth_field"], "yes": cfg["truth_yes"], "no": cfg["truth_no"]}
     waiting = any(r.get("review_status") == "needs_review" for r in [*data["issues"], *data["entrances"]])
     return {"scan_id": data["scan"]["id"], "city": city_name, "measured_at": measured_at, "reviewed": not waiting,
-            "method": METHOD, "method_url": METHOD_URL, "items": items}
+            "method": METHOD, "method_url": METHOD_URL, **({"credit": credit} if credit else {}), "items": items}
 
 
 def main(argv=None) -> Path:
@@ -120,7 +122,8 @@ def main(argv=None) -> Path:
         data = load_scan(conn, args.scan)
     finally:
         conn.close()
-    out = build(data, town["items"], Path(args.root or LEDGER.parent / town["root"]), args.measured_at, town["city"])
+    out = build(data, town["items"], Path(args.root or LEDGER.parent / town["root"]), args.measured_at, town["city"],
+                town.get("credit"))
     path = run_dir / f"city_check_scan{args.scan}.json"
     path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     for item, r in out["items"].items():
