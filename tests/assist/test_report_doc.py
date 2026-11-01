@@ -75,6 +75,7 @@ def test_actions_list_repairs_site_visits_and_city_updates():
 
     actions = page.split('id="actions"')[1].split('<section class="sec"')[0]
     assert actions.count('class="repair"') == 2 and actions.count('class="visit"') == 1
+    assert "<h3>4.1 Possible defects</h3>" in actions and "Repairs" not in actions
     assert "In the photos, not in the city&#x27;s list" in actions and "<td>2</td>" in actions
 
 
@@ -118,8 +119,9 @@ def test_names_are_capitalised_every_item_has_a_question_and_rejections_are_said
     assert "Curb ramp</h3>" in page and "<b>Shop entrance</b>: How many steps are at the shop entrance?" in page
     assert "1 found by the models, 1 models unsure, 1 confirmed; 1 more rejected by a person (not counted)" in page
     text = html.escape(report_doc.summary_text(s))
-    assert ("against the city&#x27;s lists, 1 find the lists do not have and 2 listed points the photos did not "
-            "confirm") in text and "may need updating" not in text and "4.3 City records to check" in page
+    assert ("against the city&#x27;s lists, 1 find the lists do not have and 2 listed points the survey did not "
+            "find") in text and "may need updating" not in text and "4.3 City records to check" in page
+    assert "the photos did not confirm" not in text
 
 
 def test_city_records_the_survey_did_not_find_are_listed_by_the_citys_own_ids():
@@ -137,6 +139,9 @@ def test_city_records_the_survey_did_not_find_are_listed_by_the_citys_own_ids():
     assert "<th scope=\"col\">SCLNR</th>" in actions and "<td>000NE</td>" in actions and "<td>1314009</td>" in actions
     assert "<td>1314010</td>" not in actions  # the first ten only
     assert f"2 more in survey_scan{s['scan_id']}_streetlight_pole_city_records_to_check.csv" in actions
+    # records are in the photos' view by position; the models never saw them, so none is "shown" or "not seen"
+    assert "city records in the photos' view that the survey did not find</p>" in actions
+    assert "showed" not in actions and "not seen" not in actions
     assert "SCLNR" not in str(report.facts(s))  # Spark reads counts, never the city's record ids
 
 
@@ -193,18 +198,39 @@ def test_without_the_logo_file_the_credit_names_mapillary_in_words(logo_dirs):
                                       r"CC BY-SA 4.0", e) for e in credited)
 
 
-def test_second_opinion_is_only_claimed_for_the_us_standard():
-    assert "Muse Spark Open" in report_doc.how_made("US")
-    assert "Muse Spark Open" not in report_doc.how_made("KR")
+def test_second_opinion_is_named_only_when_the_survey_holds_one():
+    assert "judged again by Muse Spark Open" in report_doc.how_made(True)
+    assert "Muse Spark Open" not in report_doc.how_made(False)
 
 
-def test_the_scope_section_states_the_method_of_the_surveys_own_standard():
+def with_second_opinion(**opinion) -> dict:
+    """The fixture scan with Muse Spark Open's record on its first issue row (what second_opinion.apply writes)."""
+    data = survey_scan.load()
+    row = data["issues"][0]
+    row["model_outputs"] = {**(row.get("model_outputs") or {}), "second_opinion": opinion}
+    return data
+
+
+def test_the_scope_section_names_the_second_opinion_only_when_a_row_really_has_one():
+    """BASETEN_API_KEY is optional, so a US survey may have run on Muse Spark alone; the rows tell, not the standard."""
+    answered = {"model": "meta-models/muse-spark-open-1026", "answer": "no", "agree": True}
+    alone = report.summary(survey_scan.load(), STANDARD, area="Pike & Pine", now=NOW)
+    failed = report.summary(with_second_opinion(model="m", error="timeout"), STANDARD, now=NOW)  # a call that failed
+    asked = report.summary(with_second_opinion(**answered), STANDARD, now=NOW)
+
+    assert (alone["standard"], alone["second_opinions"], failed["second_opinions"], asked["second_opinions"]) == (
+        "US", 0, 0, 1)
+    for no_second in (alone, failed):
+        page = report_doc.document(no_second)
+        assert "Muse Spark Open" not in page and "SAM 3.1 found each survey item" in page
+    assert "Defect findings were judged again by Muse Spark Open." in report_doc.document(asked)
+
+
+def test_a_kr_survey_never_claims_a_second_opinion():
     _, s = made()
 
-    us = report_doc.document(s)
     kr = report_doc.document({**s, "standard": "KR"})
 
-    assert "judged again by Muse Spark Open" in us
     assert "Muse Spark Open" not in kr and "SAM 3.1 found each survey item" in kr
 
 
@@ -219,7 +245,7 @@ def test_a_counts_only_city_list_is_credited_and_never_called_a_list_the_finding
 
     actions = page.split('id="actions"')[1].split('<section class="sec"')[0]
     assert "KOGL Type 4" in page and "1 of 3 in the city" in page
-    assert "the lists do not have" not in summary and "2 listed points the photos did not confirm" in summary
+    assert "the lists do not have" not in summary and "2 listed points the survey did not find" in summary
     assert "not in the city" not in actions
     assert "<th scope=\"col\">In the city&#x27;s list, not found by this survey</th></tr>" in actions
     assert "<tr><td>Streetlight pole</td><td>2</td></tr>" in actions  # the one count it has: 3 listed, 1 found

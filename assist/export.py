@@ -20,7 +20,7 @@ Why it is built this way:
   2026-10-29-city-fields-design.md): the layer, whether a record was paired, the fields that name it (UNITID,
   COMPKEY, ...), and, where the city keeps the survey's own question as a field (DETWARN_EXISTS), the survey's answer
   in the city's values. An unclear answer leaves that field empty. The city's inspection dates are never filled: a
-  photo is not the city's inspection. The records the photos showed but the survey did not find get a CSV to check.
+  photo is not the city's inspection. The records in the photos' view that the survey did not find get a CSV to check.
 """
 import csv
 import json

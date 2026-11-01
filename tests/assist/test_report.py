@@ -1,10 +1,11 @@
+import html
 import json
 import re
 from datetime import datetime, timezone
 
 import pytest
 
-from assist import export, report
+from assist import export, report, report_doc
 from pipeline import config
 from server import views
 from tests.assist import survey_scan
@@ -110,6 +111,10 @@ def test_narrate_keeps_a_paragraph_written_from_the_summary():
      lambda n: n["items"] == {}, "curb_ramp_warning: a number"),
     ({**GOOD, "summary": "Two ramps are a violation of the rules."},
      lambda n: n["summary"] == "", "summary: the word 'violation'"),
+    ({**GOOD, "summary": "Most entries were not seen in photos."},
+     lambda n: n["summary"] == "" and len(n["items"]) == 2, "summary: the phrase 'not seen'"),
+    ({**GOOD, "items": [{"item": "curb_ramp_warning", "paragraph": "Some records were Not Seen in the photos."}]},
+     lambda n: n["items"] == {}, "curb_ramp_warning: the phrase 'not seen'"),
 ])
 def test_narrate_drops_only_the_paragraph_with_an_unknown_item_a_number_or_a_banned_word(answer, kept, problem):
     _, s = made()
@@ -198,7 +203,7 @@ def test_a_row_a_person_could_not_tell_stays_and_is_listed_for_a_site_visit():
 
     assert s["totals"]["field_check"] == 1 and s["totals"]["needs_review"] == 1
     assert "A person could not tell from the photo either: 1. These need a site visit" in text
-    assert "Confirmed / to review / check on site / rejected" in text
+    assert "Confirmed / models unsure / check on site / rejected" in text and "to review" not in text
 
 
 def test_finds_the_models_set_aside_are_counted_and_listed_with_their_spot_check():
@@ -459,3 +464,60 @@ def test_the_report_beside_a_counts_only_list_shows_none_of_the_saved_claim_and_
     for text in (page, files):
         assert "not on the list" not in text and "Street trees were surveyed." in text
     assert "not on the list" in report.document(seattle, STANDARD, notes=notes, now=NOW)
+
+
+UNSEEN = "Most entries were not seen in photos."
+
+
+def test_text_problem_refuses_not_seen_and_lets_a_clean_sentence_through():
+    assert report.text_problem(UNSEEN) == "the phrase 'not seen'"
+    assert report.text_problem("Some records were Not Seen in the photos.") == "the phrase 'not seen'"
+    assert report.text_problem("The survey matched about half of the city's recorded poles.") is None
+    assert report.text_problem("A seen pole was noted; nothing was unseen.") is None  # only the phrase, not its words
+
+
+def test_saved_sentences_saying_not_seen_are_cut_beside_every_city_check_and_none():
+    """Scan 17's saved text said entries were "not seen in photos" under "Written by Muse Spark"."""
+    clean = "The survey matched about half of the city's recorded poles."
+    notes = {"summary": f"Poles were surveyed. {UNSEEN} Visit the unclear ones first.",
+             "items": {"streetlight_pole": f"{UNSEEN} Check them.", "curb_ramp_warning": UNSEEN, "entrance": clean},
+             "priorities": [{"item": "streetlight_pole", "reason": UNSEEN},
+                            {"item": "entrance", "reason": "Visit the entrances."}]}
+    expected = {"summary": "Poles were surveyed. Visit the unclear ones first.",
+                "items": {"streetlight_pole": "Check them.", "entrance": clean},  # nothing left of the ramp paragraph
+                "priorities": [{"item": "entrance", "reason": "Visit the entrances."}]}
+
+    for check in (CITY, SEOUL, None):
+        assert report.shown_notes(notes, check) == expected
+    assert UNSEEN in notes["summary"] and "curb_ramp_warning" in notes["items"]  # the saved notes are not changed
+    assert report.without_unseen_claims(f"Poles were found. {UNSEEN}") == "Poles were found."
+    assert report.without_unseen_claims(UNSEEN) == ""
+    assert report.without_unseen_claims(clean) == clean
+
+
+def test_clean_saved_sentences_pass_untouched_and_the_seoul_cut_still_applies_first():
+    assert report.shown_notes(NOTES, CITY) is NOTES and report.shown_notes(NOTES, None) is NOTES
+    assert report.shown_notes(None, SEOUL) is None
+    both = {"summary": f"Trees were surveyed. {SAVED_SEOUL} {UNSEEN}", "items": {}, "priorities": []}
+
+    assert report.shown_notes(both, SEOUL)["summary"] == "Trees were surveyed."
+    assert report.shown_notes(both, CITY)["summary"] == f"Trees were surveyed. {SAVED_SEOUL}"  # Seoul's cut is Seoul's
+
+
+def test_the_report_shows_no_not_seen_sentence_and_falls_back_to_code_sentences(tmp_path):
+    notes = {"summary": UNSEEN, "items": {"streetlight_pole": UNSEEN, "entrance": "Entrances were found."},
+             "priorities": [{"item": "entrance", "reason": "Visit the entrances."}]}
+    clean = {"summary": "Poles were surveyed.", "items": {"entrance": "Entrances were found."}, "priorities": []}
+
+    for city in (CITY, SEOUL, None):
+        data = {**survey_scan.load(), "city_check": city}
+        out = tmp_path / str(city and city["city"])
+        page = report.document(data, STANDARD, notes=notes, now=NOW)
+        report.write(data, STANDARD, out, notes=notes)
+        written = "".join((out / n).read_text(encoding="utf-8") for n in ("report.md", "report.html"))
+
+        for text in (page, written):
+            assert "not seen" not in text and "Entrances were found." in text and "Visit the entrances." in text
+        s = report.summary(data, STANDARD, now=NOW)
+        assert html.escape(report_doc.summary_text(s)) in page  # the summary fell back: nothing of it was left
+        assert "Poles were surveyed." in report.document(data, STANDARD, notes=clean, now=NOW)  # a clean one stays

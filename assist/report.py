@@ -50,7 +50,7 @@ LIMITS_FIXED = (
     "Each finding is placed at the position of its photo, not of the object itself.",
     "Inventory items list what was found and are never counted as defects.",
 )
-ITEM_HEADERS = ("Item", "Kind", "Found", "Results", "Confirmed / to review / check on site / rejected",
+ITEM_HEADERS = ("Item", "Kind", "Found", "Results", "Confirmed / models unsure / check on site / rejected",
                 "Defects confirmed / to confirm")
 
 NARRATE_SCHEMA = {
@@ -121,12 +121,40 @@ for _old, _new in COUNTS_ONLY_EDITS:
 OFF_LIST_CLAIM = re.compile(
     r"not on (?:the|its|their)?\s*(?:city['\u2019]?s )?list|list lacks|lists? (?:does|do) not have|not in the city",
     re.IGNORECASE)
+# A sentence that says city records were "not seen" in the photos. A record is in the photos' view by its position; the
+# models were never shown it, so they did not see or miss it (scan 17's saved text said so under "Written by Muse Spark").
+UNSEEN_CLAIM = re.compile(r"\bnot seen\b", re.IGNORECASE)
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def _without(text: str, claim: re.Pattern) -> str:
+    return " ".join(s for s in SENTENCE_END.split(text.strip()) if not claim.search(s))
 
 
 def without_off_list_claims(text: str) -> str:
     """text without the sentences that say a finding is not on, or is missing from, the city's list."""
-    return " ".join(s for s in SENTENCE_END.split(text.strip()) if not OFF_LIST_CLAIM.search(s))
+    return _without(text, OFF_LIST_CLAIM)
+
+
+def without_unseen_claims(text: str) -> str:
+    """text without the sentences that say something was "not seen" in the photos."""
+    return _without(text, UNSEEN_CLAIM)
+
+
+def _cut_notes(notes: dict | None, cut) -> dict | None:
+    """notes with cut(text) applied to the summary, each item paragraph and each priority's reason, for sentences kept
+    in the database that are not to be shown. A piece with nothing left is left out, so the report puts code's own
+    sentence in its place. The notes themselves are not changed."""
+    if not notes:
+        return notes
+    out = dict(notes)
+    if "summary" in notes:
+        out["summary"] = cut(notes["summary"] or "")
+    if "items" in notes:
+        out["items"] = {k: t for k, v in (notes["items"] or {}).items() if (t := cut(v))}
+    if "priorities" in notes:
+        out["priorities"] = [{**p, "reason": r} for p in notes["priorities"] or [] if (r := cut(p["reason"]))]
+    return out
 
 
 def counts_only_notes(notes: dict | None, city_check: dict | None) -> dict | None:
@@ -136,24 +164,34 @@ def counts_only_notes(notes: dict | None, city_check: dict | None) -> dict | Non
     they are."""
     if not notes or not (city_check or {}).get("counts_only"):
         return notes
-    out = dict(notes)
-    if "summary" in notes:
-        out["summary"] = without_off_list_claims(notes["summary"] or "")
-    if "items" in notes:
-        out["items"] = {k: t for k, v in (notes["items"] or {}).items() if (t := without_off_list_claims(v))}
-    if "priorities" in notes:
-        out["priorities"] = [{**p, "reason": r} for p in notes["priorities"] or []
-                             if (r := without_off_list_claims(p["reason"]))]
-    return out
+    return _cut_notes(notes, without_off_list_claims)
+
+
+def shown_notes(notes: dict | None, city_check: dict | None) -> dict | None:
+    """The saved sentences as the report may show them, beside any city check: counts_only_notes, then without the
+    sentences saying something was "not seen" (narrate no longer lets one through, text saved earlier still holds some).
+    Where nothing is cut the notes come back as they are."""
+    notes = counts_only_notes(notes, city_check)
+    if not notes or not any(UNSEEN_CLAIM.search(t) for t in _texts(notes)):
+        return notes
+    return _cut_notes(notes, without_unseen_claims)
+
+
+def _texts(notes: dict) -> list[str]:
+    """Every sentence of the notes the report would print."""
+    return [notes.get("summary") or "", *(notes.get("items") or {}).values(),
+            *(p["reason"] for p in notes.get("priorities") or [])]
 
 
 def text_problem(text: str) -> str | None:
-    """Why a sentence from the model cannot go into the report, or None: a digit (every number comes from code) or a
-    word that judges instead of describing."""
+    """Why a sentence from the model cannot go into the report, or None: a digit (every number comes from code), a
+    word that judges instead of describing, or "not seen", which says of a city record what the models never saw."""
     if DIGIT.search(text):
         return "a number"
     banned = BANNED.search(text)
-    return f"the word {banned.group(0).lower()!r}" if banned else None
+    if banned:
+        return f"the word {banned.group(0).lower()!r}"
+    return "the phrase 'not seen'" if UNSEEN_CLAIM.search(text) else None
 
 
 def _date(stamp: str | None) -> str | None:
@@ -211,9 +249,9 @@ def _walks(frames: list[dict]) -> list[list[tuple[float, float]]]:
 
 
 def _missed(city_check: dict, item: str) -> dict:
-    """The city's records of an item that the photos showed but the survey did not find, by the city's own ids
-    (id_fields, e.g. a tree's UNITID), so staff can look each one up. Only the report lists them; Spark never reads
-    them (facts)."""
+    """The city's records of an item in the photos' view (by position) that the survey did not find, by the city's own
+    ids (id_fields, e.g. a tree's UNITID), so staff can look each one up. Only the report lists them; Spark never
+    reads them (facts)."""
     c = city_check["items"][item]
     missed = [m.get("city") or {} for m in c.get("missed") or []]
     return {"id_fields": list(c.get("id_fields") or sorted({k for m in missed for k in m})), "missed": missed}
@@ -259,6 +297,10 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
     app = views.scan_json(scan, scan_data["entrances"], scan_data["issues"], km=km)
     dates = sorted(f["captured_at"] for f in frames if f.get("captured_at"))
     live = [r for _, r in export.rows(scan_data) if r["review_status"] != "rejected"]
+    # Muse Spark Open's answers, counted from the rows themselves: its key is optional, so the standard says nothing.
+    # A failed call stores an error and no answer; Spark's audit of a Glimmer judge is another model's.
+    second = sum("answer" in ((r.get("model_outputs") or {}).get("second_opinion") or {})
+                 for _, r in export.rows(scan_data))
     return {
         "scan_id": scan["id"], "area": area or f"scan {scan['id']}", "standard": standard.code,
         "bbox": scan.get("bbox"), "photos": len(frames),
@@ -268,6 +310,7 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
         "km": km, "cost_usd": round(scan["cost_usd"], 2), "usd_per_km": app["usd_per_km"],
         "processing_seconds": round(scan["processing_seconds"]), "review_seconds": round(scan["review_seconds"]),
         "items": items, "defects": defects, "city_check": city_check, "ledger": ledger, "actions": actions,
+        "second_opinions": second,
         "walks": _walks(frames), "made": (now or datetime.now(timezone.utc)).date().isoformat(),
         "styles": style.item_styles(views.items_json(standard)),
         "totals": {"found": sum(i["found"] for i in items),
@@ -488,7 +531,7 @@ def document(scan_data: dict, standard: Standard, area: str | None = None, notes
              photo_base: str = "evidence/", now: datetime | None = None) -> str:
     """The report page for one scan (assist.report_doc), with the saved sentences when there are any."""
     s = summary(scan_data, standard, area=area, now=now)
-    notes = counts_only_notes(notes, s["city_check"])
+    notes = shown_notes(notes, s["city_check"])
     return report_doc.document(s, notes, photo_base=photo_base, limits=_limits(s))
 
 
@@ -498,7 +541,7 @@ def write(scan_data: dict, standard: Standard, out_dir: Path, area: str | None =
     out_dir = Path(out_dir)
     paths = export.write(scan_data, standard, out_dir)
     s = summary(scan_data, standard, area=area)
-    notes = counts_only_notes(notes, s["city_check"])
+    notes = shown_notes(notes, s["city_check"])
     paths["md"] = out_dir / "report.md"
     paths["html"] = out_dir / "report.html"
     paths["md"].write_text(to_markdown(s, notes), encoding="utf-8")

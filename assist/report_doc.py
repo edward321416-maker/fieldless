@@ -77,9 +77,10 @@ a { color: #0b5cad; }
 """
 
 
-def how_made(standard_id: str) -> str:
-    """How the findings were made. Only the US items go through the second opinion."""
-    again = " Defect findings were judged again by Muse Spark Open." if standard_id == "US" else ""
+def how_made(second_opinion: bool) -> str:
+    """How the findings were made. The second opinion (Muse Spark Open, key BASETEN_API_KEY) is optional and only the
+    US items go through it, so it is named only when this survey holds a row it answered (summary["second_opinions"])."""
+    again = " Defect findings were judged again by Muse Spark Open." if second_opinion else ""
     return ("SAM 3.1 found each survey item in public Mapillary street photos, and Muse Spark judged each one on the "
             f"best photo against the item's question.{again} What the models could not settle is marked for a site "
             "visit.")
@@ -155,11 +156,11 @@ def summary_text(s: dict) -> str:
         lacking = ("" if s["city_check"].get("counts_only")  # the list's records are not here to tell
                    else f"{new} {_plural(new, 'find')} the lists do not have and ")
         city = (f" and, against the city's lists, {lacking}"
-                f"{unconfirmed} listed {_plural(unconfirmed, 'point')} the photos did not confirm")
+                f"{unconfirmed} listed {_plural(unconfirmed, 'point')} the survey did not find")
     else:
         city = ""
     return (f"This survey covered {s['km']} km of street from {s['photos']} public street photos{taken}. It recorded "
-            f"{t['found']} findings ({what}). {len(a['repairs'])} possible repairs, {len(a['site_visits'])} findings "
+            f"{t['found']} findings ({what}). {len(a['repairs'])} possible defects, {len(a['site_visits'])} findings "
             f"for a site visit{city} are listed in section 4 for a check.")
 
 
@@ -255,7 +256,7 @@ def _scope(s: dict) -> str:
             + '<p class="muted">Grey lines: the walks the photos were taken on. Dots: findings, at the position of '
               "their photo, in the item's colour; a red ring marks a possible defect.</p>"
             + f"<p><b>Area.</b> {_h(s['area'])}: {s['km']} km of street, {s['photos']} photos{_h(taken)}.</p>"
-            + f"<p><b>Method.</b> {_h(how_made(s['standard']))}</p>"
+            + f"<p><b>Method.</b> {_h(how_made(bool(s.get('second_opinions'))))}</p>"
             + f"<p><b>Survey items ({_h(s['standard'])} standard)</b> and the question asked of each photo:</p>"
             + f"<ul>{questions}</ul>"
             + f"<p><b>This survey's processing.</b> {_duration(s['processing_seconds'])} of processing; model cost "
@@ -318,20 +319,20 @@ def _actions(s: dict, notes: dict | None) -> str:
     priorities = ("<ol>" + "".join(f"<li><b>{_h(titles.get(p['item'], p['item']))}</b>: {_h(p['reason'])}</li>"
                                    for p in prio) + '</ol><p class="muted">Ordered by Muse Spark from the counts.</p>'
                   if prio else "<p>See 4.1 to 4.3.</p>")
-    body = (f"<h3>4.1 Repairs</h3>{repairs}<h3>4.2 Site visits</h3>{visits}"
+    body = (f"<h3>4.1 Possible defects</h3>{repairs}<h3>4.2 Site visits</h3>{visits}"
             f"<h3>4.3 City records to check</h3>{city}<h3>4.4 Priorities</h3>{priorities}")
     return _section("actions", body)
 
 
 def _missed(s: dict, c: dict) -> str:
-    """The city's records the photos showed but the survey did not find, by the city's own ids, for staff to look
-    up: the first MISSED_SHOWN, then where the rest are."""
+    """The city's records in the photos' view (by position) that the survey did not find, by the city's own ids, for
+    staff to look up: the first MISSED_SHOWN, then where the rest are."""
     fields = c["id_fields"]
     rows = [[_h(m.get(f, "")) for f in fields] for m in c["missed"][:MISSED_SHOWN]]
     more = len(c["missed"]) - MISSED_SHOWN
     rest = (f'<p class="muted">{more} more in survey_scan{s["scan_id"]}_{_h(c["item"])}_city_records_to_check.csv.</p>'
             if more > 0 else "")
-    return (f"<p><b>{_h(_name(c['title']))}</b>: city records the photos showed but the survey did not find</p>"
+    return (f"<p><b>{_h(_name(c['title']))}</b>: city records in the photos' view that the survey did not find</p>"
             + _table(fields, rows) + rest)
 
 
