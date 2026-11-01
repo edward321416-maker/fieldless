@@ -56,6 +56,14 @@ def row(out, record):
     return next(r for r in out["rows"] if r["city_record"] == record)
 
 
+def test_a_list_with_nothing_in_view_still_counts_as_compared():
+    check = {**CHECK, "items": {**CHECK["items"], "can": {**CHECK["items"]["can"], "pairs": [], "missed": []}}}
+    data = {**DATA, "issues": [i for i in DATA["issues"] if i["issue_type"] != "can"]}
+    out = asset_check.build(data, check, TOWN, LAYERS, STANDARD, {}, {"controls": [], "looked_at": 0, "sent_back": 0})
+    can = next(i for i in out["items"] if i["item"] == "can")
+    assert (can["asset"], can["in_view"], can["not_listed"]) == ("Public can", 0, 0)
+
+
 def test_every_record_in_view_has_exactly_one_row():
     out = result({asset_check.record_key({"UNITID": "P2"}): NEWER})
     records = [r["city_record"] for r in out["rows"] if r["city_record"]]

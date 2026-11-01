@@ -196,9 +196,10 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
     rows, items = [], []
     issues = [i for i in data["issues"] if i["review_status"] != "rejected"]
     for item, info in check_file["items"].items():
-        found = item_rows(item, info, town["items"][item], layers[item], asset_name(standard, item), issues, looks)
+        name = asset_name(standard, item)
+        found = item_rows(item, info, town["items"][item], layers[item], name, issues, looks)
         rows += found
-        items.append({"item": item, "asset": found[0]["asset"], "city_list": info["layer"], **tally(found)})
+        items.append({"item": item, "asset": name, "city_list": info["layer"], **tally(found)})
     outside = sum(not p.get("in_view") for info in check_file["items"].values() for p in info["pairs"])
     checked = next((r for r in precision.summary(labels) if r["item"] == "all"), None) if labels else None
     months = sorted({r["seen_in_photo_on"][:7] for r in rows if r["status"] == SEEN and r["seen_in_photo_on"]})
