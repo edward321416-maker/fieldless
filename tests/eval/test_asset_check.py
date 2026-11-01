@@ -11,7 +11,8 @@ from pipeline import evidence
 
 ID_FIELDS = ["UNITID"]
 TOWN = {"city": "Testville", "items": {
-    "pole": {"record_field": "UNITID", "checked_field": "CHECKED", "place_field": "PLACE", "condition_field": "COND"},
+    "pole": {"record_field": "UNITID", "checked_field": "CHECKED", "verified": True, "place_field": "PLACE",
+             "condition_field": "COND"},
     "can": {"record_field": "UNITID"}}}
 FAR = {"lat": 1.0, "lng": 2.0}
 
@@ -54,6 +55,82 @@ def result(looks=None, labels=None):
 
 def row(out, record):
     return next(r for r in out["rows"] if r["city_record"] == record)
+
+
+def row_of(status, unsure="", newer="yes"):
+    return {"status": status, "models_unsure": unsure, "photo_newer_than_city_date": newer}
+
+
+def test_a_record_the_photos_did_not_settle_is_a_visit():
+    assert asset_check.action_of(row_of(asset_check.NOT_DETERMINED), None, None, True) == asset_check.VISIT
+
+
+def test_a_seen_record_nobody_is_sure_of_is_a_visit():
+    assert asset_check.action_of(row_of(asset_check.SEEN, "yes"), None, None, True) == asset_check.VISIT
+    assert asset_check.action_of(row_of(asset_check.SEEN), {"value": "unclear"}, None, True) == asset_check.VISIT
+    assert asset_check.action_of(row_of(asset_check.SEEN), {"value": "no"}, None, True) == asset_check.VISIT
+
+
+def test_a_seen_record_with_a_verified_date_older_than_the_photo_gets_a_new_date():
+    assert asset_check.action_of(row_of(asset_check.SEEN), {"value": "yes"}, None, True) == asset_check.DATE
+    assert asset_check.action_of(row_of(asset_check.SEEN), None, None, True) == asset_check.DATE
+
+
+def test_a_date_that_is_not_a_verification_is_left_alone():
+    assert asset_check.action_of(row_of(asset_check.SEEN), None, None, False) == asset_check.SAME
+    assert asset_check.action_of(row_of(asset_check.SEEN, newer=""), None, None, True) == asset_check.SAME
+
+
+def test_a_record_the_photo_contradicts_is_to_correct_unless_nobody_is_sure_of_it():
+    differs = {"city_says": "No", "photo_shows": "Yes"}
+    assert asset_check.action_of(row_of(asset_check.SEEN), None, differs, True) == asset_check.FIX
+    assert asset_check.action_of(row_of(asset_check.SEEN, "yes"), None, differs, True) == asset_check.VISIT
+
+
+def test_an_object_off_the_lists():
+    off = row_of(asset_check.NOT_LISTED, newer="")
+    assert asset_check.action_of(off, {"value": "yes"}, None, False) == asset_check.COMPARE
+    assert asset_check.action_of(off, None, None, False) == asset_check.COMPARE
+    assert asset_check.action_of(off, {"value": "unclear"}, None, False) == asset_check.VISIT
+    assert asset_check.action_of(off, {"value": "no"}, None, False) is None
+    assert asset_check.action_of(off, {"value": "yes", "dup_of": 3}, None, False) is None
+
+
+def test_every_row_has_one_action_and_the_counts_add_up():
+    out = result({asset_check.record_key({"UNITID": "P2"}): NEWER})
+    assert all(r["action"] for r in out["rows"])
+    assert sum(out["actions"].values()) == len(out["rows"])
+    records = [r for r in out["rows"] if r["city_record"]]
+    assert len(records) == out["totals"]["in_view"]
+    visits = sum(r["action"] == asset_check.VISIT for r in records)
+    assert out["no_visit"] == len(records) - visits
+    assert sum(sum(i["actions"].values()) for i in out["items"]) == len(out["rows"])
+
+
+def test_an_object_the_assistant_found_wrong_or_repeated_leaves_the_list_and_is_counted():
+    labels = {"issues": {"3": {"item": "pole", "value": "yes", "dup_of": 1}, "4": {"item": "can", "value": "no"}}}
+    out = result(labels=labels)
+    assert out["left_out"] == {"repeats": 1, "wrong": 1}
+    assert not [r for r in out["rows"] if r["status"] == asset_check.NOT_LISTED]
+    assert out["totals"]["not_listed"] == 2  # what the photos held, whatever is left out of the list
+
+
+def test_a_new_date_names_the_citys_field_and_never_fills_it():
+    out = result({asset_check.record_key({"UNITID": "P2"}): NEWER})
+    r = row(out, "P2")
+    assert r["action"] == asset_check.DATE
+    assert r["city_says"] == "CHECKED 2024-10"
+    assert r["photo_shows"] == "Seen in a photo of 2025-07-11"
+    assert r["city_date"] == "2024-10"
+
+
+def test_a_record_to_correct_says_both_sides():
+    differs = {("pole", "P2"): {"city_says": "No light", "photo_shows": "A light"}}
+    trust = {"controls": [], "looked_at": 0, "sent_back": 0}
+    looks = {asset_check.record_key({"UNITID": "P2"}): NEWER}
+    out = asset_check.build(DATA, CHECK, TOWN, LAYERS, STANDARD, looks, trust, None, differs)
+    r = row(out, "P2")
+    assert (r["action"], r["city_says"], r["photo_shows"]) == (asset_check.FIX, "No light", "A light")
 
 
 def test_a_list_with_nothing_in_view_still_counts_as_compared():

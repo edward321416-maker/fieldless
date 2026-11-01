@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from eval import city_check
 from pipeline import geo
 
@@ -132,3 +134,18 @@ def test_seattle_is_unchanged():
 def test_a_city_whose_list_goes_by_counts_is_not_listed_record_by_record():
     assert city_check.lists_records("Seattle") is True
     assert city_check.lists_records("Seoul") is False
+
+
+@pytest.mark.parametrize("name", ["seattle", "seattle-ballard"])
+def test_a_record_field_a_photo_can_settle_is_named_in_the_citys_file(name):
+    items = city_check.load_city(name)["items"]
+    compared = {k: v["compare"] for k, v in items.items() if "compare" in v}
+    assert len(compared) == 2
+    for compare in compared.values():
+        assert {"field", "yes", "no", "ask", "says_yes", "says_no"} <= compare.keys()
+
+
+@pytest.mark.parametrize("name", ["seattle", "seattle-ballard"])
+def test_only_a_date_that_records_a_verification_is_marked_verified(name):
+    items = city_check.load_city(name)["items"]
+    assert sorted(k for k, v in items.items() if v.get("verified")) == ["curb_ramp_warning", "street_tree"]

@@ -12,6 +12,14 @@ id_fields = ["SCLNR", "ASSET_ID"]
 record_field = "ASSET_ID"
 checked_field = "DATEUPDATED"
 
+[items.utility_pole.compare]
+field = "IS_STREETLIGHT"
+yes = "YES"
+no = "NO"
+ask = "Look at the marked pole. Does it hold a street light: a lamp on an arm or on top of the pole? Answer yes if you can see one. Answer no only if the top of the pole is in view and holds no lamp. Answer unclear if the top of the pole is cut off, hidden or too far away."
+says_yes = "Holds a street light"
+says_no = "Holds no street light"
+
 [items.street_tree]
 layer = "street_trees.geojson"
 name = "SDOT street trees"
@@ -20,6 +28,7 @@ installed_field = "PLANTED_DATE"
 id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
 record_field = "UNITID"
 checked_field = "LAST_VERIFY_DATE"
+verified = true
 place_field = "UNITDESC"
 condition_field = "CONDITION"
 
@@ -48,5 +57,15 @@ truth_no = "N"
 id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
 record_field = "UNITID"
 checked_field = "VERIFICATION_DATE"
+verified = true
 place_field = "UNITDESC"
 condition_field = "CONDITION"
+
+[items.curb_ramp_warning.compare]
+field = "DETWARN_EXISTS"
+yes = "Y"
+no = "N"
+ask = "Look at the marked curb ramp. Does it have a detectable warning surface (a panel of raised truncated domes) at its bottom edge? Answer yes if you can see one. Answer no only if the bottom edge is in view and has none. Answer unclear if the bottom edge is too far away, too small or hidden."
+says_yes = "Has a detectable warning surface"
+says_no = "Has no detectable warning surface"
+

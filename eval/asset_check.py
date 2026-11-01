@@ -32,6 +32,8 @@ from pipeline.parallel import run_parallel
 SEEN, NOT_DETERMINED, NOT_LISTED = "Seen in photo", "Not determined", "Not on the city list"
 STATUSES = (SEEN, NOT_DETERMINED, NOT_LISTED)
 BY_SURVEY, BY_LOOK, BY_PANORAMA = "Survey", "Second look", "Second look, panorama"
+FIX, DATE, SAME, VISIT, COMPARE = ("Correct the record", "Update the date", "No change", "Visit on site",
+                                   "Compare with the list")
 CITY_POSITION = {"position_source": "City record", "position_accuracy": "City record"}
 CAMERA_POSITION = {"position_source": "Camera position of the Mapillary photo",
                    "position_accuracy": "Unknown (within 50 ft)"}
@@ -139,6 +141,32 @@ def asset_name(standard, item: str) -> str:
     return target[:1].upper() + target[1:]
 
 
+def action_of(row: dict, label: dict | None, differs: dict | None, verified: bool) -> str | None:
+    """What a city does with a row. None: the AI assistant found the object wrong or a repeat, so it leaves the list.
+    A row is sure when the models were and the assistant's check, when there is one, agrees. verified: the list's date
+    says when the city last verified the record, not just when the list was written."""
+    if row["status"] == NOT_LISTED and label and (label.get("dup_of") is not None or label.get("value") == "no"):
+        return None
+    sure = row["models_unsure"] != "yes" and (label is None or label.get("value") == "yes")
+    if row["status"] == NOT_DETERMINED or not sure:
+        return VISIT
+    if row["status"] == NOT_LISTED:
+        return COMPARE
+    if differs:
+        return FIX
+    return DATE if verified and row["photo_newer_than_city_date"] == "yes" else SAME
+
+
+def said(row: dict, action: str, differs: dict | None, cfg: dict) -> dict:
+    """The two sides of a change. The city's own date stays in its column: a photo date never fills it."""
+    if action == FIX:
+        return {"city_says": differs["city_says"], "photo_shows": differs["photo_shows"]}
+    if action == DATE:
+        return {"city_says": f"{cfg['checked_field']} {row['city_date']}",
+                "photo_shows": f"Seen in a photo of {row['seen_in_photo_on']}"}
+    return {"city_says": "", "photo_shows": ""}
+
+
 def tally(rows: list[dict]) -> dict:
     status = Counter(r["status"] for r in rows)
     return {"in_view": status[SEEN] + status[NOT_DETERMINED], "seen": status[SEEN],
@@ -164,6 +192,7 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
         seen_on = str((ev or {}).get("captured_at") or "")[:10]
         return {**base, "city_list": info["layer"], "city_record": str(city.get(cfg["record_field"]) or city.get(keys[0])),
                 "city_location": str(props.get(cfg.get("place_field")) or ""), "status": status, "how_seen": how,
+                "issue_id": issue["id"] if issue else None,
                 "models_unsure": "yes" if issue and issue.get("object_label") == "unclear" else "",
                 "city_date": last, "seen_in_photo_on": seen_on,
                 "photo_newer_than_city_date": "yes" if last and seen_on and seen_on[:7] > last else "",
@@ -182,7 +211,8 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
         if issue["issue_type"] == item and issue["id"] not in paired:
             ev = issue.get("evidence")
             rows.append({**base, "city_list": "", "city_record": "", "city_location": "", "status": NOT_LISTED,
-                         "how_seen": "", "models_unsure": "yes" if issue.get("object_label") == "unclear" else "",
+                         "how_seen": "", "issue_id": issue["id"],
+                         "models_unsure": "yes" if issue.get("object_label") == "unclear" else "",
                          "city_date": "", "seen_in_photo_on": str((ev or {}).get("captured_at") or "")[:10],
                          "photo_newer_than_city_date": "", "city_condition": "", "lat": round(issue["lat"], 6),
                          "lng": round(issue["lng"], 6), **CAMERA_POSITION, "box": box_of(issue), "evidence": ev})
@@ -190,20 +220,37 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
 
 
 def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]], standard, looks: dict[str, dict],
-          trust: dict, labels: dict | None = None) -> dict:
+          trust: dict, labels: dict | None = None, differs: dict | None = None) -> dict:
     """data as eval.store.load_scan returns it; layers: each item's GeoJSON features; looks and trust as read_looks
-    returns them, each look with its evidence; labels: the AI assistant's check of the findings (eval.precision)."""
-    rows, items = [], []
+    returns them, each look with its evidence; labels: the AI assistant's check of the findings (eval.precision);
+    differs: the records a photo contradicts, by (item, record) (eval.record_check)."""
+    rows, listed, items = [], [], []
+    left_out = Counter(repeats=0, wrong=0)
     issues = [i for i in data["issues"] if i["review_status"] != "rejected"]
+    judged = (labels or {}).get("issues", {})
     for item, info in check_file["items"].items():
-        name = asset_name(standard, item)
-        found = item_rows(item, info, town["items"][item], layers[item], name, issues, looks)
+        name, cfg = asset_name(standard, item), town["items"][item]
+        found = item_rows(item, info, cfg, layers[item], name, issues, looks)
         rows += found
-        items.append({"item": item, "asset": name, "city_list": info["layer"], **tally(found)})
+        kept = []
+        for row in found:
+            label = judged.get(str(row["issue_id"]))
+            differ = (differs or {}).get((item, row["city_record"]))
+            action = action_of(row, label, differ, bool(cfg.get("verified")))
+            if action is None:
+                left_out["repeats" if label.get("dup_of") is not None else "wrong"] += 1
+            else:
+                kept.append({**row, "action": action, **said(row, action, differ, cfg)})
+        listed += kept
+        items.append({"item": item, "asset": name, "city_list": info["layer"], **tally(found),
+                      "actions": dict(Counter(r["action"] for r in kept))})
     outside = sum(not p.get("in_view") for info in check_file["items"].values() for p in info["pairs"])
     checked = next((r for r in precision.summary(labels) if r["item"] == "all"), None) if labels else None
     months = sorted({r["seen_in_photo_on"][:7] for r in rows if r["status"] == SEEN and r["seen_in_photo_on"]})
-    return {"scan_id": data["scan"]["id"], "city": town["city"], "items": items, "totals": tally(rows), "rows": rows,
+    no_visit = sum(bool(r["city_record"]) and r["action"] != VISIT for r in listed)
+    return {"scan_id": data["scan"]["id"], "city": town["city"], "items": items, "totals": tally(rows),
+            "actions": dict(Counter(r["action"] for r in listed)), "no_visit": no_visit, "left_out": dict(left_out),
+            "rows": listed,
             "trust": {**trust, "photo_months": months, "outside_view": outside,
                       **({"findings": {k: checked[k] for k in ("n", "yes", "no", "unclear")}} if checked else {})}}
 
