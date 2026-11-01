@@ -1,0 +1,60 @@
+# New York City's own asset records, one layer per survey item (fields as in eval/cities/seattle.toml).
+# Every layer is a City of New York dataset on NYC Open Data (data.cityofnewyork.us), downloaded on 2026-11-01 as GeoJSON
+# points inside the Park Avenue South survey box (-73.9850, 40.7425, -73.9790, 40.7470) grown by 100 m, with the
+# Socrata query within_box(<geometry column>, ...). The layers sit in data/nyc/assets (not in git). Dataset, its
+# agency, when the City last updated its rows:
+#   ufzp-rrqu  Pedestrian Ramp Locations, DOT (one survey, 2018; rows 2021-10-27)
+#   hn5i-inap  Forestry Tree Points, Parks, only tpstructure = 'Full' (rows 2026-10-21)
+#   8znf-7b2c  DSNY Litter Basket Inventory, Sanitation (rows 2026-08-18; the City says it can lag the street by months)
+#   693u-uax6  Parking Meters Locations and Status, DOT, the multi-space muni-meters; planned and retired ones left out
+#              (rows 2026-10-26)
+#   592z-n7dk  Bicycle Parking, DOT (rows 2026-10-13)
+#   5bgh-vtsn  Hydrants, DEP (rows 2025-12-18)
+# eval.city_check pairs by a property named OBJECTID, which these datasets do not all carry, so each layer has one: the
+# City's own number (objectid, rampid, site_id or unitid). id_fields name the City's fields as Socrata spells them.
+# planteddate was text in the dataset and is written as epoch milliseconds, as Seattle's PLANTED_DATE.
+# No utility_pole: we found no usable NYC list of utility or street light poles with positions.
+# The ramp layer's dws_conditions (Missing, Good Condition, Defective, ...) is not wired as truth_field: it grades the
+# condition of the surface in 2018 and has six values, not the survey's yes/no on whether raised domes are there, and a
+# yes/no field can name only one "yes" value.
+
+city = "New York"
+root = "nyc"
+
+[items.street_tree]
+layer = "assets/trees.geojson"
+name = "NYC Parks Forestry Tree Points"
+inventory = true
+installed_field = "planteddate"
+id_fields = ["objectid", "globalid"]
+
+[items.litter_can]
+layer = "assets/litter.geojson"
+name = "DSNY litter baskets"
+inventory = true
+id_fields = ["basketid", "objectid"]
+
+[items.parking_pay_station]
+layer = "assets/paystations.geojson"
+name = "NYC DOT parking muni-meters"
+inventory = true
+id_fields = ["meter_number", "objectid"]
+
+[items.curb_ramp_warning]
+layer = "assets/ramps.geojson"
+name = "NYC DOT pedestrian ramps"
+inventory = false
+id_fields = ["cornerid", "rampid"]
+
+# Assets NYC publishes that are not survey items yet (as in seattle.toml).
+[extra.bike_rack]
+names = ["bike rack", "bicycle rack", "bicycle parking rack", "bike parking"]
+layer = "assets/bikeracks.geojson"
+name = "NYC DOT bicycle parking"
+id_fields = ["site_id"]
+
+[extra.fire_hydrant]
+names = ["fire hydrant", "hydrant", "fire plug"]
+layer = "assets/hydrants.geojson"
+name = "NYC DEP hydrants"
+id_fields = ["unitid"]
