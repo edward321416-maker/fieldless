@@ -54,6 +54,9 @@ export default function App() {
   const [lens, setLens] = useState<Lens>("findings");
   const [record, setRecord] = useState<MissedRecord | null>(null);
   const [actionTab, setActionTab] = useState<ActionTab>("dispatch");
+  // The first screen's "Add a survey item": counts up per press and is taken back once the panel has opened (it
+  // mounts only after the survey has loaded, so the press can come first).
+  const [addItemSignal, setAddItemSignal] = useState(0);
   // An item the agent writes in the app: its run, from the address, and the survey's finished runs (examples).
   const [itemRunId, setItemRunId] = useState<number | null>(() => itemFromHash(window.location.hash));
   const [run, setRun] = useState<ItemRun | null>(null);
@@ -268,6 +271,7 @@ export default function App() {
     setNewSurvey(false);
     setSelecting(false);
     setActionTab("dispatch");
+    setAddItemSignal(0);
     if (demos.length > 0) openScan(demos[0].scan_id);
     // the overview has no map: the next map opened from it shows the example's photographed streets
     if (scan && demos[0]?.scan_id === scan.id) setFitTo(contentBounds(walks) ?? [...scan.bbox]);
@@ -482,6 +486,7 @@ export default function App() {
               setRunTick((t) => t + 1);
             }}
             onLaunchAction={(tab) => {
+              setAddItemSignal(0); // only this press's request stands
               setIntro(false);
               setNewSurvey(false);
               setPicked(null);
@@ -495,7 +500,7 @@ export default function App() {
               } else if (tab === "dispatch") {
                 setActionTab("dispatch");
                 setLens("findings");
-              }
+              } else if (tab === "custom") setAddItemSignal((n) => n + 1);
             }}
           />
           {STATIC_DEMO && <DemoNotice />}
@@ -677,6 +682,7 @@ export default function App() {
             {callStats && callStats.scan_id === scan.id && <HowMade stats={callStats} />}
             {config?.items && (
               <AddItemPanel canMake={!!config.make_items && !STATIC_DEMO}
+                openSignal={addItemSignal} onOpenSignalHandled={() => setAddItemSignal(0)}
                 run={run && run.scan_id === scan.id ? run : null} examples={itemRuns}
                 onStart={async (target, code) => {
                   const { id } = await api.startItem(scan.id, target, code);

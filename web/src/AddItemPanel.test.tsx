@@ -20,6 +20,15 @@ describe("adding a survey item", () => {
     expect(html).toContain("needs an invite code");
     expect(html).not.toContain("Write and test the item");
   });
+  it("is closed until asked, and open at once when a request to open it was already waiting", () => {
+    const closed = render({ defaultOpen: undefined, canMake: true });
+    expect(closed).toContain('aria-expanded="false"');
+    expect(closed).not.toContain("What should the survey record?");
+    const asked = render({ defaultOpen: undefined, canMake: true, openSignal: 1 });
+    expect(asked).toContain('aria-expanded="true"');
+    expect(asked).toContain("What should the survey record?");
+    expect(render({ defaultOpen: undefined, canMake: true, openSignal: 0 })).toContain('aria-expanded="false"');
+  });
   it("with one, asks what the survey should record", () => {
     const html = render({ canMake: true });
     expect(html).toContain("What should the survey record?");

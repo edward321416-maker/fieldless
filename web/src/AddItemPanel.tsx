@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { dollars } from "./format";
 import { capital } from "./items";
 import ShareButton from "./ShareButton";
@@ -9,6 +9,8 @@ interface Props {
   run: ItemRun | null; // the run on screen, for this survey
   examples: ItemRunSummary[]; // the survey's finished runs
   defaultOpen?: boolean;
+  openSignal?: number; // a count that goes up when something outside asks for the form to open and come into view
+  onOpenSignalHandled?: () => void; // the request was taken up, so a later mount of this panel does not repeat it
   onStart: (target: string, inviteCode: string) => Promise<void>;
   onOpen: (id: number) => void;
   onClose: () => void; // the run off the screen
@@ -18,12 +20,27 @@ interface Props {
 // as they come, and what was added. No person is asked anything: another model answers the photos it is tested on.
 export default function AddItemPanel(props: Props) {
   const { run } = props;
-  const [open, setOpen] = useState(props.defaultOpen ?? !!run);
+  // A request made before this panel was on screen (the survey was still loading) is waiting here when it mounts.
+  const [open, setOpen] = useState(props.defaultOpen ?? (!!run || !!props.openSignal));
+  const [reveal, setReveal] = useState(false);
+  const panel = useRef<HTMLElement>(null);
   useEffect(() => {
     if (run) setOpen(true);
   }, [run?.id]);
+  useEffect(() => {
+    if (!props.openSignal) return;
+    setOpen(true);
+    setReveal(true);
+    props.onOpenSignalHandled?.();
+  }, [props.openSignal]);
+  // Scroll once the form is in the page, so the centre is the expanded panel's, not the collapsed bar's.
+  useEffect(() => {
+    if (!reveal || !open) return;
+    panel.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setReveal(false);
+  }, [reveal, open]);
   return (
-    <section className="add-item" aria-labelledby="add-item-title">
+    <section className="add-item" aria-labelledby="add-item-title" ref={panel}>
       <button type="button" className="add-item-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span id="add-item-title">+ Add a survey item</span>
         <span className="hint small">Muse Spark writes it, tests it, and surveys these photos for it</span>
