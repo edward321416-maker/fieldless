@@ -84,3 +84,13 @@ def test_the_summary_keeps_records_and_control_spots_apart():
     out = second_look.summary(jobs, {"pole": []}, {})
     assert (out["records"], out["seen_by_both"], out["controls"], out["controls_spark_yes"], out["controls_both_yes"]) == (2, 1, 2, 1, 0)
     assert out["control_false_yes_rate"] == 0.0 and out["items"]["pole"]["still_to_visit"] == 1
+
+
+def test_a_control_spot_the_model_never_answered_is_not_counted():
+    no = {"answer": "no", "visible": True}
+    jobs = [{"item": "pole", "kind": "control", "spark": no},
+            {"item": "pole", "kind": "control", "spark": {"answer": "not_asked", "error": "cost cap"}},
+            {"item": "pole", "kind": "control", "spark": {"answer": "error", "error": "timeout"}},
+            {"item": "pole", "kind": "control", "spark": {"answer": "no_photo"}}]
+    out = second_look.summary(jobs, {"pole": []}, {})
+    assert (out["controls"], out["control_false_yes_rate"]) == (1, 0.0)

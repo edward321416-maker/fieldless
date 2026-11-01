@@ -38,6 +38,7 @@ OFF_CENTRE_M_PER_DEG = 0.3  # a record near the middle of a farther photo beats 
 MERGE_M = 20.0
 MERGE_DEG = 30.0
 WORKERS = 8
+ANSWERED = ("yes", "no", "unclear")  # a spot the cost cap, an error or a missing photo left unasked is not a control
 ASK = ("City records place a {target} about {dist:.0f} m from the camera, {pct:.0f}% of the way across the photo from "
        "the left. Look at that part of the photo. Is there a {target} there? Answer yes only if you can see one at "
        "about that spot. Answer no if that spot is in clear view and shows none. Answer unclear if it is blocked, too "
@@ -220,8 +221,8 @@ def summary(jobs: list[dict], unlisted: dict[str, list[dict]], by_idx: dict[int,
         items[item] = {"records": len(records), "seen_by_both": len(seen), "spark_answers": answers,
                        "unlisted": len(rows), "merged": len(merged), "merged_ids": [r for _, r in merged],
                        "still_to_visit": len(records) - len(seen) + len(rows) - len(merged)}
-    controls = [j for j in jobs if j["kind"] == "control"]
-    spark_yes = [j for j in controls if (j.get("spark") or {}).get("answer") == "yes"]
+    controls = [j for j in jobs if j["kind"] == "control" and (j.get("spark") or {}).get("answer") in ANSWERED]
+    spark_yes = [j for j in controls if j["spark"]["answer"] == "yes"]
     both_yes = [j for j in controls if is_seen(j)]
     return {"items": items,
             "records": sum(i["records"] for i in items.values()),
