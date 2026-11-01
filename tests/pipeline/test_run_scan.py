@@ -8,7 +8,7 @@ from pipeline import config, db, run_scan
 def test_preview_is_priced_for_the_standard_and_the_given_cap(monkeypatch, capsys):
     seen = []
     monkeypatch.setattr(run_scan.collect, "preview",
-                        lambda bbox, max_photos, checks=0: seen.append((max_photos, checks)) or {"photos": 1})
+                        lambda bbox, max_photos, checks=0, since=None: seen.append((max_photos, checks)) or {"photos": 1})
     assert run_scan.main(["--preview", "--bbox", "-122.323,47.613,-122.317,47.6175", "--cap-usd", "6"]) == 0
     assert run_scan.main(["--preview", "--bbox", "-122.323,47.613,-122.317,47.6175", "--standard", "KR"]) == 0
     us, kr = (len(run_scan.survey_items.load(code).checks) for code in ("US", "KR"))
@@ -18,7 +18,7 @@ def test_preview_is_priced_for_the_standard_and_the_given_cap(monkeypatch, capsy
 
 def test_preview_prints_the_estimate_without_spending(monkeypatch, capsys):
     monkeypatch.setattr(run_scan.collect, "preview",
-                        lambda bbox, max_photos, checks=0: {"photos": 12, "est_cost_usd": 0.07})
+                        lambda bbox, max_photos, checks=0, since=None: {"photos": 12, "est_cost_usd": 0.07})
     assert run_scan.main(["--preview", "--bbox", "126.98,37.56,126.99,37.565"]) == 0
     assert json.loads(capsys.readouterr().out)["photos"] == 12
 
@@ -66,6 +66,23 @@ def test_muse_glimmer_judges_only_a_run_that_asks_for_it(monkeypatch):
     run_scan.main(["--bbox", "-122.3230,47.6130,-122.3170,47.6175", "--run", "g", "--glimmer"])
     assert captured[0].judge is None  # the address alone is not enough: a small scan stays on Muse Spark
     assert captured[1].judge.model == second_opinion.GLIMMER_MODEL
+
+
+def test_since_reaches_the_survey_and_its_preview(monkeypatch, capsys):
+    captured, previews = [], []
+    monkeypatch.setattr(run_scan, "run_scan", fake_run(captured))
+    monkeypatch.setattr(run_scan.collect, "preview", lambda bbox, max_photos, checks=0, since=None: previews.append(since) or {"photos": 1})
+    area = "--bbox=-122.377,47.661,-122.365,47.673"
+    assert run_scan.main([area, "--run", "since", "--since", "2026-01-01"]) == 0
+    assert run_scan.main([area, "--run", "since"]) == 0
+    assert run_scan.main(["--preview", area, "--since", "2026-01-01"]) == 0
+    assert [s.since for s in captured] == ["2026-01-01", run_scan.collect.SINCE]
+    assert previews == ["2026-01-01"]
+
+
+def test_since_must_be_a_date():
+    with pytest.raises(SystemExit):
+        run_scan.main(["--bbox=-122.377,47.661,-122.365,47.673", "--since", "May 2026"])
 
 
 def test_a_new_scan_takes_its_standard_from_the_area_or_the_flag(monkeypatch, capsys):

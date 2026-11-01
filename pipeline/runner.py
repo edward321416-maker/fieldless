@@ -58,6 +58,7 @@ class Scan:
     second_opinion: object = None  # an OpenModel when BASETEN_API_KEY is set (CLI, server)
     judge: object = None  # Muse Glimmer (an OpenModel) for checks with judge = "glimmer", when GLIMMER_URL is set
     only_checks: tuple[str, ...] = ()  # with --rerun defects --check ID: run and clear only these checks
+    since: str = collect.SINCE  # the oldest photo the survey takes (--since)
     frames: list[dict] = field(default_factory=list)
     chunks: list[scene.Chunk] = field(default_factory=list)
     scenes: list[dict] = field(default_factory=list)
@@ -150,7 +151,7 @@ def stage_collect(s: Scan) -> None:
     if budget < collect.MIN_SEQUENCE_PHOTOS:  # no walk is that short, so the area would be blamed for the budget
         raise CostCapReached(f"cost cap ${s.api.meter.cap_usd:.2f}: what is left pays for {budget} photos, too few "
                              f"for a walk")
-    frames = collect.collect(tuple(s.bbox), budget)
+    frames = collect.collect(tuple(s.bbox), budget, s.since)
     if not frames:
         raise NoPhotos("no recent pedestrian photos in this area")
     db.clear_rows(s.conn, s.scan_id, "frame")  # a resumed collect starts clean

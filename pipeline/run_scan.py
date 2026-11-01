@@ -17,6 +17,7 @@ import json
 import os
 import sys
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 
 from pipeline import collect, config, db, second_opinion, sidewalk, survey_items
@@ -81,6 +82,14 @@ class ScanAlreadyRunning(RuntimeError):
     """A command-line scan is already running in this run folder."""
 
 
+def day(text: str) -> str:
+    try:
+        date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a date (YYYY-MM-DD)") from None
+    return text
+
+
 def main(argv: list[str] | None = None) -> int:
     refuse_in_worker()  # before anything is created or spent
     if hasattr(sys.stdout, "reconfigure"):
@@ -109,6 +118,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Muse Glimmer (GLIMMER_URL) judges the checks with judge = \"glimmer\". For large runs: its "
                              "GPU pays off only while it stays busy (a small scan is cheaper and faster on Muse Spark)")
     parser.add_argument("--max-photos", type=positive_int, default=config.MAX_PHOTOS_PER_SCAN)
+    parser.add_argument("--since", type=day, default=collect.SINCE, metavar="YYYY-MM-DD",
+                        help="take no photo older than this: an area's oldest photos can outnumber its newest")
     parser.add_argument("--tactile-every", type=positive_int, default=sidewalk.TACTILE_EVERY)
     args = parser.parse_args(argv)
     if args.preview:
@@ -116,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--preview needs --bbox")
         checks = len(survey_items.load(args.standard or survey_items.standard_for(args.bbox)).checks)
         budget = config.photo_budget(args.max_photos, checks=checks, cap_usd=args.cap_usd or config.SCAN_COST_CAP_USD)
-        preview = collect.preview(args.bbox, budget, checks=checks)
+        preview = collect.preview(args.bbox, budget, checks=checks, since=args.since)
         print(json.dumps(preview, ensure_ascii=False, indent=1))
         return 0
     if sum(x is not None for x in (args.bbox, args.resume, args.photos_of)) != 1:
@@ -169,7 +180,7 @@ def _scan(parser, args, run_dir: Path) -> int:
     result = run_scan(Scan(conn, scan_id, api, run_dir, scan["bbox"], max_photos=args.max_photos,
                            tactile_every=args.tactile_every, second_opinion=second_opinion.from_env(run_dir),
                            judge=second_opinion.glimmer_from_env(run_dir) if args.glimmer else None,
-                           only_checks=tuple(args.check or ())))
+                           only_checks=tuple(args.check or ()), since=args.since))
     print(json.dumps(result, ensure_ascii=False, indent=1))
     return 0 if result["status"] == "done" else 1
 

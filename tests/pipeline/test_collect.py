@@ -78,7 +78,7 @@ def test_plan_clips_starts_a_section_where_the_new_ground_starts():
 
 
 def test_preview_counts_without_downloading(monkeypatch):
-    monkeypatch.setattr(collect, "candidate_sequences", lambda bbox: [street(20, 5.0, "a")])
+    monkeypatch.setattr(collect, "candidate_sequences", lambda bbox, since=None: [street(20, 5.0, "a")])
     monkeypatch.setattr(collect, "fetch_photo", lambda r: pytest.fail("preview must not download"))
     p = collect.preview((126.9, 37.4, 127.1, 37.6), max_photos=400)
     assert p["photos"] == 20 and p["sequences"] == 1
@@ -116,7 +116,7 @@ def test_fetch_photo_gives_up_after_the_fresh_url_fails(monkeypatch):
 
 def test_collect_numbers_frames_and_clips_and_drops_missing_photos(monkeypatch):
     monkeypatch.setattr(collect, "candidate_sequences",
-                        lambda bbox: [street(12, 5.0, "a"), street(12, 5.0, "b", lng=127.02)])
+                        lambda bbox, since=None: [street(12, 5.0, "a"), street(12, 5.0, "b", lng=127.02)])
     monkeypatch.setattr(collect, "fetch_photo", lambda r: None if r["id"] == "a3" else (2048, 1536))
     frames = collect.collect((126.9, 37.4, 127.1, 37.6), max_photos=400)
     assert len(frames) == 23
@@ -144,3 +144,19 @@ def test_candidate_sequences_rank_by_each_sequences_own_frames_not_by_what_the_s
     monkeypatch.setattr(collect, "in_bbox", lambda rec, bbox: rec["inside"])
     ranked = collect.candidate_sequences((0, 0, 1, 1))
     assert [recs[0]["sequence"] for recs in ranked] == ["d", "b", "a"]
+
+
+def test_a_survey_can_refuse_photos_older_than_a_date(monkeypatch):
+    new = collect.mapillary.ms("2026-05-18")
+    old = collect.mapillary.ms("2022-08-30")
+    frames = {"new": [{"captured_at": new, "on_foot": True, "rec": {**r, "inside": True}} for r in street(15, 5.0, "new")],
+              "old": [{"captured_at": old, "on_foot": True, "rec": {**r, "inside": True}} for r in street(30, 5.0, "old")]}
+    asked = []
+    monkeypatch.setattr(collect.mapillary, "search_grid", lambda bbox: ([], None))
+    monkeypatch.setattr(collect.mapillary, "rank_sequences", lambda images, since: asked.append(since) or ["new", "old"])
+    monkeypatch.setattr(collect.mapillary, "sequence_frames", lambda seq: frames[seq])
+    monkeypatch.setattr(collect.mapillary, "frame_record", lambda img: img["rec"])
+    monkeypatch.setattr(collect, "in_bbox", lambda rec, bbox: rec["inside"])
+    assert [recs[0]["sequence"] for recs in collect.candidate_sequences((0, 0, 1, 1), "2026-01-01")] == ["new"]
+    assert asked == [collect.mapillary.ms("2026-01-01")]
+    assert {recs[0]["sequence"] for recs in collect.candidate_sequences((0, 0, 1, 1))} == {"new", "old"}

@@ -1,0 +1,52 @@
+# Seattle's records around the 2026 survey in Ballard: the same lists as seattle.toml, cut to this area. The city's
+# public services serve whole layers, so each area keeps its own copy (data/seattle/ballard).
+
+city = "Seattle"
+root = "seattle/ballard"
+
+[items.utility_pole]
+layer = "poles.geojson"
+name = "Seattle City Light poles"
+inventory = true
+id_fields = ["SCLNR", "ASSET_ID"]
+record_field = "ASSET_ID"
+checked_field = "DATEUPDATED"
+
+[items.street_tree]
+layer = "street_trees.geojson"
+name = "SDOT street trees"
+inventory = true
+installed_field = "PLANTED_DATE"
+id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
+record_field = "UNITID"
+checked_field = "LAST_VERIFY_DATE"
+place_field = "UNITDESC"
+condition_field = "CONDITION"
+
+[items.litter_can]
+layer = "litter_cans.geojson"
+name = "SPU public litter cans"
+inventory = true
+id_fields = ["pc_sp_id"]
+record_field = "pc_sp_id"
+
+[items.parking_pay_station]
+layer = "pay_stations.geojson"
+name = "SDOT pay stations"
+inventory = true
+id_fields = ["OBJECTID"]
+record_field = "OBJECTID"
+
+[items.curb_ramp_warning]
+layer = "curb_ramps.geojson"
+name = "SDOT curb ramps"
+inventory = false
+installed_field = "INSTALL_DATE"
+truth_field = "DETWARN_EXISTS"
+truth_yes = "Y"
+truth_no = "N"
+id_fields = ["COMPKEY", "UNITID", "UNITDESC"]
+record_field = "UNITID"
+checked_field = "VERIFICATION_DATE"
+place_field = "UNITDESC"
+condition_field = "CONDITION"

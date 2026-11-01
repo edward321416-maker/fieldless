@@ -53,7 +53,7 @@ def sam(prompt, media):
 def setup(tmp_path, monkeypatch):
     calls = {"collect": 0}
 
-    def fake_collect(bbox, max_photos):
+    def fake_collect(bbox, max_photos, since=None):
         calls["collect"] += 1
         return fake_frames()
 
@@ -197,7 +197,7 @@ def test_the_cost_cap_stops_the_scan_where_it_is(setup):
 
 def test_an_area_without_photos_fails_at_collect(setup, monkeypatch):
     _, _, make, _ = setup
-    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos: [])
+    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos, since=None: [])
     result = runner.run_scan(make(FakeApi()))
     assert result["status"] == "failed" and "no recent pedestrian photos" in result["error"]
     assert result["stage_status"]["collect"].startswith("failed")
@@ -577,7 +577,7 @@ def test_a_failed_sam_request_is_not_saved_and_is_asked_again(setup):
 def test_collect_takes_only_the_photos_the_cap_pays_for_with_the_standards_checks(setup, monkeypatch):
     _, _, make, _ = setup
     asked = []
-    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos: asked.append(max_photos) or fake_frames())
+    monkeypatch.setattr(runner.collect, "collect", lambda bbox, max_photos, since=None: asked.append(max_photos) or fake_frames())
     api = FakeApi()
     api.meter = CostMeter(cap_usd=3.0)
     scan = make(api)

@@ -124,11 +124,12 @@ def plan_clips(sequences: Iterable[list[dict]], max_photos: int) -> list[list[di
     return clips
 
 
-def candidate_sequences(bbox) -> list[list[dict]]:
+def candidate_sequences(bbox, since: str = SINCE) -> list[list[dict]]:
     """The area's sequences as thinned frame records inside the bbox, most pedestrian photos first (Mapillary API
     calls). A bbox search returns a different part of the photos each time, so it only finds the sequences; each is
-    ranked by all of its own recent flat frames inside the bbox, so the same area gives the same photos."""
-    since = mapillary.ms(SINCE)
+    ranked by all of its own recent flat frames inside the bbox, so the same area gives the same photos. Photos taken
+    before since (YYYY-MM-DD) are not used."""
+    since = mapillary.ms(since)
     images, _ = mapillary.search_grid(tuple(bbox))
     found = mapillary.rank_sequences(images, since)[:MAX_CANDIDATES]
     ranked = []
@@ -143,10 +144,10 @@ def candidate_sequences(bbox) -> list[list[dict]]:
     return [recs for _, recs in sorted(ranked, key=lambda item: item[0], reverse=True)]
 
 
-def preview(bbox, max_photos: int = config.MAX_PHOTOS_PER_SCAN, checks: int = 0) -> dict:
+def preview(bbox, max_photos: int = config.MAX_PHOTOS_PER_SCAN, checks: int = 0, since: str = SINCE) -> dict:
     """What a scan of the area would cover and cost with a standard of this many photo checks, without downloading
     photos (spec 5 step 1)."""
-    clips = plan_clips(candidate_sequences(bbox), max_photos)
+    clips = plan_clips(candidate_sequences(bbox, since), max_photos)
     frames = [f for clip in clips for f in clip]
     times = sorted(f["captured_at"] for f in frames)
     return {"photos": len(frames), "sequences": len({f["sequence"] for f in frames}),
@@ -184,10 +185,10 @@ def fetch_photo(rec: dict) -> tuple[int, int] | None:
     return None
 
 
-def collect(bbox, max_photos: int = config.MAX_PHOTOS_PER_SCAN) -> list[dict]:
+def collect(bbox, max_photos: int = config.MAX_PHOTOS_PER_SCAN, since: str = SINCE) -> list[dict]:
     """Frames of the area with their photos in the cache. idx runs 0..n-1 in clip order; photos that could not be
     downloaded are left out."""
-    clips = plan_clips(candidate_sequences(bbox), max_photos)
+    clips = plan_clips(candidate_sequences(bbox, since), max_photos)
     records = [(clip_no, rec) for clip_no, clip in enumerate(clips) for rec in clip]
     with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
         sizes = list(pool.map(lambda item: fetch_photo(item[1]), records))
