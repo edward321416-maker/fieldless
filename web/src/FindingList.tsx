@@ -15,7 +15,7 @@ interface Props {
 }
 
 const STATUS_SHORT: Record<string, string> = {
-  needs_review: "To review", field_check: "Check on site", verified: "Confirmed", auto: "",
+  needs_review: "Models unsure", field_check: "Check on site", verified: "Confirmed", auto: "",
 };
 const FIRST = 10; // shown before "Show n more": a phone would scroll for metres
 

@@ -57,7 +57,10 @@ describe("the overview", () => {
     expect(html).toContain("$106");
     expect(html).toContain("$4.48");
     expect(html).toContain("0.94 km in 7.0 min · $4.21 in all");
-    expect(html).toContain("Seattle&#x27;s 2017 sidewalk survey: $400,000 for 2,336 miles.");
+    expect(html).toContain("Seattle&#x27;s 2017 sidewalk survey: a $400,000 budget for 2,336 miles, the most it could have cost.");
+    expect(html).toContain(">On foot, up to<");
+    expect(html).toContain("Fieldless reads the public street photos that already exist and maps what a photo can show, each finding with its photo.");
+    expect(html).not.toContain("maps the same things");
     expect(html).toContain("See the finished survey of Capitol Hill");
     expect(html).toContain("Survey your own streets");
     expect(html.indexOf("$4.48")).toBeLessThan(html.indexOf("One pass, every item"));
@@ -97,10 +100,38 @@ describe("the overview", () => {
     expect(html).toContain("of the city&#x27;s recorded assets in the photos&#x27; view were found");
     expect(html).toMatch(/>2<\/strong><p>possible defects asked again by Muse Spark Open, an open-weight model; when the two disagree the finding stays unclear</);
     expect(html).toContain("73 of 86");
+    expect(html).toContain("Checked photo by photo");
     expect(html).toContain("findings the models kept were right when each photo was checked");
     expect(html).toContain("Judged on each evidence photo by the AI coding assistant, not by a person.");
     expect(html).toContain("6 of 23");
     expect(html).toContain("Seongsu: Seoul street trees");
+  });
+  it("calls the preview an example survey and says who found what, who judged it and what the models cost", () => {
+    expect(html).toContain("Example survey · Capitol Hill");
+    expect(html).not.toContain("Live App Preview");
+    expect(html).toContain("Found by SAM 3.1, judged by Muse Spark");
+    expect(html).toContain("Model cost");
+    expect(html).not.toContain("End-to-end AI cost");
+  });
+  it("names the three tools by what they hand over, not by what the city should do", () => {
+    expect(html).toContain("After the survey");
+    expect(html).toContain("Each opens on the finished example survey.");
+    expect(html).toContain("Field check");
+    expect(html).toContain("A list of what to check on site");
+    expect(html).toContain("Possible defects and what the models were unsure of, each with its place, street photo and a CSV.");
+    expect(html).toContain("Open Dispatch →");
+    expect(html).toContain("City records");
+    expect(html).toContain("4 not on the city&#x27;s list · 3 not found, to check");
+    expect(html).toContain("Compare the survey with the city&#x27;s records and download the differences as GeoJSON, a list to check.");
+    expect(html).toContain("Open GIS Diff →");
+    expect(html).toContain("Add a survey item");
+    expect(html).toContain("Type a street object, such as a fire hydrant or a bike rack. Muse Spark writes the item, tests it and surveys the same photos. Making one on the live site needs an invite code.");
+    expect(html).toContain("Add a survey item →");
+    for (const old of ["Built-in Action Suite", "Pinpointed", "Unrecorded", "Missing", "Patch", "GPS", "Custom AI Detector", "Skip walking"]) {
+      expect(html).not.toContain(old);
+    }
+    const bare = render({ scan: { ...scan, city_check: undefined } as Scan });
+    expect(bare).toContain("Compare with the city&#x27;s list");
   });
   it("shows the item the agent wrote: the phrases it tried, the one it chose, what it kept, found and cost", () => {
     expect(html).toContain("New items, written by Muse Spark");
@@ -140,14 +171,16 @@ describe("what the overview leaves out", () => {
   it("says so when the survey has no city list, and drops the city-records card", () => {
     const none = render({ scan: { ...scan, city_check: undefined } as Scan });
     expect(none).toContain("This survey has no city list to compare.");
-    expect(none).not.toContain("City records");
+    expect(none).not.toContain('overview-card-title">City records<'); // the workflow card keeps that name
+    expect(none).not.toContain("<strong>City records</strong>");
     expect(none).not.toContain("recorded assets");
     expect(none).toContain("GeoJSON and a CSV per item in the city&#x27;s own field names, and a survey report.");
     expect(none).toContain("Seongsu: Seoul street trees");
   });
-  it("asks every possible defect again without a number when none was answered twice", () => {
+  it("asks possible defects on US survey items again without a number when none was answered twice", () => {
     const once = render({ issues: issues.map((i) => ({ ...i, second_opinion: null })) });
-    expect(once).toContain("<p>Muse Spark Open, an open-weight model, asks every possible defect again; when the two disagree the finding stays unclear</p>");
+    expect(once).toContain("<p>Muse Spark Open, an open-weight model, asks possible defects on US survey items again; when the two disagree the finding stays unclear</p>");
+    expect(once).not.toContain("asks every possible defect");
     expect(once).not.toContain("possible defects asked again");
   });
   it("shows only the opening and what needs no data while the example loads", () => {
@@ -162,7 +195,7 @@ describe("what the overview leaves out", () => {
   });
   it("keeps the check by eye to the survey it was measured on", () => {
     const other = render({ scan: { ...scan, id: 4 } as Scan });
-    expect(other).not.toContain("Checked by eye");
+    expect(other).not.toContain("Checked photo by photo");
     expect(other).not.toContain("73 of 86");
   });
   it("leaves out another city whose survey has no city list", () => {

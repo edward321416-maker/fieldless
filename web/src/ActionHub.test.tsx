@@ -52,7 +52,7 @@ const makeFinding = (id: number, item: string, badge: Finding["badge"] = null, s
   title: badge === "defect" ? "Curb ramp without detectable warning" : "Street tree",
   picked: {
     kind: "issue",
-    item: { id, durable: false, captured_at: "2022-08-30T23:02:56Z", evidence: { url: "/photo.jpg" } },
+    item: { id, issue_type: item, durable: false, captured_at: "2022-08-30T23:02:56Z", evidence: { url: "/photo.jpg" } },
   } as unknown as Finding["picked"],
 });
 
@@ -96,8 +96,9 @@ describe("ActionHub work orders & GIS diff tools", () => {
     const streets = { "issue:1": "East Pine Street", "entrance:2": "Broadway", "issue:3": "11th Ave" };
     const list = buildDispatchList(findings, mockScan, streets);
     expect(list.map((r) => r.workOrderId)).toEqual(["WO-US-17-P1-001", "WO-US-17-P2-001", "WO-US-17-P2-002"]);
-    expect(list.map((r) => r.priority)).toEqual(["P1 · Repair", "P2 · Field verification", "P2 · Field verification"]);
+    expect(list.map((r) => r.priority)).toEqual(["P1 · Possible defect", "P2 · Field verification", "P2 · Field verification"]);
     expect(list[0].street).toBe("East Pine Street");
+    expect(list[0].recommendedAction).toBe("Check on site");
     expect(list[1].recommendedAction).toBe("Check on site");
   });
 
@@ -119,9 +120,10 @@ describe("ActionHub work orders & GIS diff tools", () => {
     const list = buildDispatchList(findings, mockScan, { "issue:1": "East Pine Street" });
     const csv = workOrderCsv(list);
     expect(csv).toContain("work_order_id,priority,asset_type,issue_description,street_address,latitude,longitude,recommended_action,status,photo_evidence_url");
-    expect(csv).toContain("P1 · Repair");
+    expect(csv).toContain("P1 · Possible defect");
     expect(csv).toContain("East Pine Street");
-    expect(csv).toContain("Inspect and repair");
+    expect(csv).not.toContain("Inspect and repair");
+    expect(csv).toContain("Check on site");
     const formula = { ...list[0], issueDescription: "=HYPERLINK(1)" };
     expect(workOrderCsv([formula])).toContain(`"'=HYPERLINK(1)"`);
   });
@@ -134,8 +136,8 @@ describe("ActionHub work orders & GIS diff tools", () => {
     const geojson = JSON.parse(gisDiffGeoJson(unrecorded, missed, mockScan));
     expect(geojson.type).toBe("FeatureCollection");
     expect(geojson.features).toHaveLength(2);
-    expect(geojson.features[0].properties.diff_action).toBe("add_to_city_db");
-    expect(geojson.features[1].properties.diff_action).toBe("verify_missing_city_record");
+    expect(geojson.features[0].properties.diff_action).toBe("check_not_on_city_list");
+    expect(geojson.features[1].properties.diff_action).toBe("check_city_record_not_found");
   });
 
   it("offers dispatch and the GIS diff, and lists the work orders", () => {
@@ -149,7 +151,41 @@ describe("ActionHub work orders & GIS diff tools", () => {
     );
     expect(html).toContain(">Dispatch<");
     expect(html).toContain(">GIS Diff<");
-    expect(html).toContain("send a crew only to");
+    expect(html).toContain("findings to check on site");
+    expect(html).not.toContain("send a crew");
     expect(html).toContain("Work order CSV");
+  });
+
+  it("leads the dispatch list with what to check on site, not with a repair", () => {
+    const html = renderToStaticMarkup(
+      <ActionHub scan={mockScan} findings={findings} initialTab="dispatch" />,
+    );
+    expect(html).toContain("findings to check on site: possible defects first, then what the models were unsure of, each with its photo.");
+    expect(html).toContain("P1 Possible defect");
+    expect(html).not.toContain("locations");
+    expect(html).not.toContain("Inspect and repair");
+    expect(html).not.toContain("P1 Repair");
+    const more = [...findings, makeFinding(5, "street_tree", null, "needs_review"), makeFinding(6, "street_tree", null, "needs_review")];
+    const long = renderToStaticMarkup(<ActionHub scan={mockScan} findings={more} initialTab="dispatch" />);
+    expect(long).toContain(">Show all 5<");
+  });
+
+  it("never tells the city to change its list", () => {
+    const html = renderToStaticMarkup(
+      <ActionHub scan={mockScan} findings={findings} initialTab="gis" />,
+    );
+    // "patch" as a word: the tab is called Dispatch, which holds the letters
+    for (const word of ["Add to DB", "Unrecorded", "confirmed", "GPS"]) expect(html).not.toContain(word);
+    expect(html).not.toMatch(/\bpatch\b/i);
+    expect(html).toContain("Against Seattle&#x27;s records:");
+    expect(html).toContain("found but not on the list");
+    expect(html).toContain("in the photos&#x27; view but not found. The city decides what to do with each.");
+    expect(html).toContain("Not on the list · To check");
+    expect(html).toContain("Not found · To check");
+    expect(html).toContain("Found in a photo · Not on the city&#x27;s list");
+    expect(html).toContain("Check against the city&#x27;s list");
+    expect(html).toContain("Near 47.61400, -122.32000");
+    expect(html).toContain("Differences (.geojson)");
+    expect(html).not.toMatch(/>[+-]\d/); // no signed counts: the city decides what a difference means
   });
 });

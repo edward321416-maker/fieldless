@@ -19,7 +19,7 @@ export default function LensSwitch({ lens, onChange }: { lens: Lens; onChange: (
         ) : (
           <>
             <span className="hud-pill"><i className="shape shape-in" />Matched</span>
-            <span className="hud-pill"><i className="shape shape-not" />New</span>
+            <span className="hud-pill"><i className="shape shape-not" />Not on list</span>
             <span className="hud-pill"><i className="shape shape-missed" />To check</span>
           </>
         )}

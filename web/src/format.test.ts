@@ -51,6 +51,8 @@ describe("format", () => {
       .toBe("Looked again at the marked part, enlarged (first look: unclear)");
     expect(zoomChip({ zoomed: false })).toBeNull();
     expect(zoomChip(null)).toBeNull();
+    expect(reasonText("dropped_audit"))
+      .toBe("The model saw no such thing in this photo and dropped it; it stays listed in the export");
     expect(reasonText("something_new")).toBe("something new");
   });
   it("formats dates, years, time and money", () => {

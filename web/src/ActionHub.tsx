@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { cityStates as computeCityStates, missedRecords, type CityState, type MissedRecord } from "./cityMatch";
+import { cityStates as computeCityStates, cityTotals, missedRecords, type CityState, type MissedRecord } from "./cityMatch";
 import { photoMonth } from "./format";
 import { colourOf, itemName, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
@@ -11,7 +11,7 @@ export type ActionTab = "dispatch" | "gis";
 export interface DispatchRow {
   workOrderId: string;
   finding: Finding;
-  priority: "P1 · Repair" | "P2 · Field verification";
+  priority: "P1 · Possible defect" | "P2 · Field verification";
   assetType: string;
   issueDescription: string;
   recommendedAction: string;
@@ -37,10 +37,10 @@ export function buildDispatchList(findings: Finding[], scan: Scan, streets: Reco
     const row: DispatchRow = {
       workOrderId: `WO-${scan.standard}-${scan.id}-${repair ? "P1" : "P2"}-${String(count).padStart(3, "0")}`,
       finding: f,
-      priority: repair ? "P1 · Repair" : "P2 · Field verification",
+      priority: repair ? "P1 · Possible defect" : "P2 · Field verification",
       assetType: itemName(f.item, scan.items),
       issueDescription: f.title,
-      recommendedAction: repair ? "Inspect and repair" : "Check on site",
+      recommendedAction: "Check on site",
       street: streets[f.key] ?? null,
       photoDate: f.picked.item.captured_at ?? f.picked.item.evidence?.captured_at ?? null,
       oldPhoto: f.picked.item.old_photo,
@@ -85,7 +85,7 @@ export function gisDiffGeoJson(
     ...unrecorded.map((f) => ({
       type: "Feature",
       properties: {
-        diff_action: "add_to_city_db",
+        diff_action: "check_not_on_city_list",
         category: itemName(f.item, scan.items),
         title: f.title,
         status: f.status,
@@ -96,7 +96,7 @@ export function gisDiffGeoJson(
     ...missed.map((r) => ({
       type: "Feature",
       properties: {
-        diff_action: "verify_missing_city_record",
+        diff_action: "check_city_record_not_found",
         category: itemName(r.item, scan.items),
         city_layer: r.layer,
         city_fields: Object.fromEntries(r.fields),
@@ -147,19 +147,17 @@ export default function ActionHub({
 
   const dispatchRows = useMemo(() => buildDispatchList(findings, scan, streets), [findings, scan, streets]);
 
+  const issues = useMemo(() => findings.flatMap((f) => (f.picked.kind === "issue" ? [f.picked.item] : [])), [findings]);
+  const totals = useMemo(() => cityTotals(scan.city_check, issues), [scan.city_check, issues]);
+
   const resolvedCityStates = useMemo(() => {
     if (cityStates) return cityStates;
-    const issues = findings.flatMap((f) => (f.picked.kind === "issue" ? [f.picked.item] : []));
     return computeCityStates(scan.city_check, issues);
-  }, [cityStates, scan.city_check, findings]);
+  }, [cityStates, scan.city_check, issues]);
 
   const missed = useMemo(() => missedRecords(scan.city_check), [scan.city_check]);
   const unrecorded = useMemo(
     () => findings.filter((f) => resolvedCityStates[f.key] === "not_in_list"),
-    [findings, resolvedCityStates],
-  );
-  const matchedCount = useMemo(
-    () => findings.filter((f) => resolvedCityStates[f.key] === "in_list").length,
     [findings, resolvedCityStates],
   );
 
@@ -199,7 +197,7 @@ export default function ActionHub({
               }}
             >
               GIS Diff
-              <span className="action-tab-badge">+{unrecorded.length}</span>
+              <span className="action-tab-badge">{unrecorded.length}</span>
             </button>
           )}
         </div>
@@ -208,8 +206,8 @@ export default function ActionHub({
       {tab === "dispatch" && (
         <div className="action-pane">
           <p className="action-lead">
-            Instead of walking all <strong>{scan.km !== null ? `${scan.km.toFixed(2)} km` : "this area"}</strong>, send a crew only to{" "}
-            <strong>{dispatchRows.length}</strong> pinpointed locations needing repair or a site check:
+            <strong>{dispatchRows.length}</strong> findings to check on site: possible defects first, then what the models
+            were unsure of, each with its photo.
           </p>
 
           {dispatchRows.length > 0 ? (
@@ -245,7 +243,7 @@ export default function ActionHub({
                         <div className="action-card-body">
                           <div className="action-card-badge-line">
                             <span className={`action-prio-tag ${urgent ? "prio-p1" : "prio-p2"}`}>
-                              {urgent ? "P1 Repair" : "P2 Site check"}
+                              {urgent ? "P1 Possible defect" : "P2 Site check"}
                             </span>
                             <span className="action-card-category">{r.assetType}</span>
                             {r.photoDate && (
@@ -282,7 +280,7 @@ export default function ActionHub({
                     className="link-button action-more-btn"
                     onClick={() => setExpanded((v) => !v)}
                   >
-                    {expanded ? "Show fewer" : `Show all ${dispatchRows.length} locations`}
+                    {expanded ? "Show fewer" : `Show all ${dispatchRows.length}`}
                   </button>
                 )}
                 <button
@@ -309,9 +307,9 @@ export default function ActionHub({
       {tab === "gis" && scan.city_check && (
         <div className="action-pane">
           <p className="action-lead">
-            Against {scan.city_check.city}'s records: <strong>{matchedCount}</strong> confirmed,{" "}
-            <strong>+{unrecorded.length}</strong> found on the street but not listed,{" "}
-            <strong>-{missed.length}</strong> listed but not seen in the photos.
+            Against {scan.city_check.city}'s records: <strong>{totals?.matched ?? 0}</strong> found and on the list,{" "}
+            <strong>{unrecorded.length}</strong> found but not on the list, <strong>{missed.length}</strong> in the photos'
+            view but not found. The city decides what to do with each.
           </p>
           <div className="gis-diff-pills">
             <button
@@ -319,8 +317,8 @@ export default function ActionHub({
               className="gis-pill gis-pill-add"
               onClick={() => onSwitchLens?.("records")}
             >
-              <strong>+{unrecorded.length}</strong>
-              <span>Unrecorded · Add to DB</span>
+              <strong>{unrecorded.length}</strong>
+              <span>Not on the list · To check</span>
             </button>
             <button
               type="button"
@@ -330,8 +328,8 @@ export default function ActionHub({
                 if (missed[0]) onPickRecord?.(missed[0]);
               }}
             >
-              <strong>-{missed.length}</strong>
-              <span>Not seen · Check record</span>
+              <strong>{missed.length}</strong>
+              <span>Not found · To check</span>
             </button>
           </div>
           {unrecorded.length > 0 && (
@@ -365,19 +363,19 @@ export default function ActionHub({
                       )}
                       <div className="action-card-body">
                         <div className="action-card-badge-line">
-                          <span className="action-prio-tag prio-gis">+ Unrecorded</span>
+                          <span className="action-prio-tag prio-gis">Not on the list</span>
                           <span className="action-card-category">{catName}</span>
                         </div>
-                        <strong className="action-card-heading">Found on the street · Not in the city's list</strong>
+                        <strong className="action-card-heading">Found in a photo · Not on the city's list</strong>
                         <div className="action-card-street">
                           <span>{streets[f.key] || `${f.lat.toFixed(4)}, ${f.lng.toFixed(4)}`}</span>
                         </div>
                         <div className="action-card-action-guide">
                           <span className="guide-label">Action:</span>
-                          <span className="guide-val">Add this {catName} to the city's list</span>
+                          <span className="guide-val">Check against the city's list</span>
                         </div>
                         <div className="action-card-footer">
-                          <span className="action-card-ticket">GPS: {f.lat.toFixed(5)}, {f.lng.toFixed(5)}</span>
+                          <span className="action-card-ticket">Near {f.lat.toFixed(5)}, {f.lng.toFixed(5)}</span>
                           <span className="action-card-jump">View street photo ›</span>
                         </div>
                       </div>
@@ -400,13 +398,13 @@ export default function ActionHub({
               className="action-export-btn"
               onClick={() =>
                 downloadBlob(
-                  `scan_${scan.id}_city_diff_patch.geojson`,
+                  `scan_${scan.id}_city_diff.geojson`,
                   gisDiffGeoJson(unrecorded, missed, scan),
                   "application/geo+json;charset=utf-8",
                 )
               }
             >
-              GIS Diff Patch (.geojson)
+              Differences (.geojson)
             </button>
           </div>
         </div>

@@ -60,13 +60,13 @@ export default function Overview(props: Props) {
           <h2 id="overview-title">Street surveys without the fieldwork</h2>
           <p className="overview-lead">
             Cities send people to walk every block and write down what is on the street. Fieldless reads the public street
-            photos that already exist and maps the same things, each with its photo.
+            photos that already exist and maps what a photo can show, each finding with its photo.
           </p>
           {scan && scan.usd_per_km !== null && (
             <div className="intro-compare">
               {bench && (
                 <div className="compare-card">
-                  <span className="compare-label">On foot</span>
+                  <span className="compare-label">On foot, up to</span>
                   <strong>${bench.usd_per_km}<small> /km</small></strong>
                 </div>
               )}
@@ -96,7 +96,7 @@ export default function Overview(props: Props) {
             <div className="showcase-window">
               <div className="showcase-bar">
                 <span className="showcase-dots"><i /><i /><i /></span>
-                <span className="showcase-title">Live App Preview · {name ?? `Survey ${scan.id}`}</span>
+                <span className="showcase-title">Example survey · {name ?? `Survey ${scan.id}`}</span>
                 <span className="showcase-launch-tag">Click to launch app →</span>
               </div>
               <div className="showcase-body">
@@ -120,7 +120,7 @@ export default function Overview(props: Props) {
                       </div>
                     )}
                     <div className="showcase-photo-caption">
-                      <span>SAM 3.1 + Muse Spark detection</span>
+                      <span>Found by SAM 3.1, judged by Muse Spark</span>
                       <span>{scan.image_count} street photos analyzed</span>
                     </div>
                   </div>
@@ -136,7 +136,7 @@ export default function Overview(props: Props) {
                   </div>
                   <div className="showcase-stat">
                     <strong>{scan.usd_per_km !== null ? dollars(scan.usd_per_km) : "—"}/km</strong>
-                    <span>End-to-end AI cost</span>
+                    <span>Model cost</span>
                   </div>
                 </div>
               </div>
@@ -148,9 +148,9 @@ export default function Overview(props: Props) {
         <>
           <section className="overview-part overview-workflows" aria-label="Actionable tools built into Fieldless">
             <div className="workflow-head">
-              <span className="overview-kicker">Built-in Action Suite</span>
+              <span className="overview-kicker">After the survey</span>
               <h4>Turn a survey into field work and city records</h4>
-              <p className="hint">Click any workflow below to open it live inside the interactive survey workspace.</p>
+              <p className="hint">Each opens on the finished example survey.</p>
             </div>
             <div className="workflow-grid">
               <div
@@ -160,10 +160,10 @@ export default function Overview(props: Props) {
                 onClick={() => launchAction("dispatch")}
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("dispatch")}
               >
-                <span className="workflow-badge prio-p1">Field dispatch</span>
-                <strong>Pinpointed Crew Work Orders</strong>
-                <p>Skip walking every block. Go straight to possible defects and what the models were unsure of, each with GPS, street photo and a CSV work order.</p>
-                <span className="workflow-cta">Open Dispatch Queue →</span>
+                <span className="workflow-badge prio-p1">Field check</span>
+                <strong>A list of what to check on site</strong>
+                <p>Possible defects and what the models were unsure of, each with its place, street photo and a CSV.</p>
+                <span className="workflow-cta">Open Dispatch →</span>
               </div>
               <div
                 role="link"
@@ -172,10 +172,10 @@ export default function Overview(props: Props) {
                 onClick={() => launchAction("gis")}
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("gis")}
               >
-                <span className="workflow-badge prio-gis">City GIS diff</span>
-                <strong>{totals ? `+${totals.notInList} Unrecorded · -${totals.missed} Missing` : "Automated GIS Audit"}</strong>
-                <p>Compare the street with the city's records. Export a GeoJSON patch of assets the city has not listed and records the photos did not show.</p>
-                <span className="workflow-cta">Open GIS Diff &amp; Patch →</span>
+                <span className="workflow-badge prio-gis">City records</span>
+                <strong>{totals ? `${totals.notInList} not on the city's list · ${totals.missed} not found, to check` : "Compare with the city's list"}</strong>
+                <p>Compare the survey with the city's records and download the differences as GeoJSON, a list to check.</p>
+                <span className="workflow-cta">Open GIS Diff →</span>
               </div>
               <div
                 role="link"
@@ -185,9 +185,9 @@ export default function Overview(props: Props) {
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("custom")}
               >
                 <span className="workflow-badge prio-ai">On-demand AI agent</span>
-                <strong>Custom Street Asset Search</strong>
-                <p>Need to map fire hydrants, bike racks, or storm drains? Type any street object and Muse Spark writes, tests, and runs a new detector across existing photos.</p>
-                <span className="workflow-cta">Try Custom AI Detector →</span>
+                <strong>Add a survey item</strong>
+                <p>Type a street object, such as a fire hydrant or a bike rack. Muse Spark writes the item, tests it and surveys the same photos. Making one on the live site needs an invite code.</p>
+                <span className="workflow-cta">Add a survey item →</span>
               </div>
             </div>
           </section>
@@ -316,10 +316,10 @@ function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others:
     ? { title: "Second model", big: String(n),
       text: `${n === 1 ? "possible defect" : "possible defects"} asked again by Muse Spark Open, an open-weight model; ${disagree}` }
     : { title: "Second model", big: null,
-      text: `Muse Spark Open, an open-weight model, asks every possible defect again; ${disagree}` });
+      text: `Muse Spark Open, an open-weight model, asks possible defects on US survey items again; ${disagree}` });
   const eye = CHECKED_BY_EYE[scan.id];
   if (eye) {
-    cards.push({ title: "Checked by eye", big: `${eye.right} of ${eye.of}`,
+    cards.push({ title: "Checked photo by photo", big: `${eye.right} of ${eye.of}`,
       text: "findings the models kept were right when each photo was checked", how: eye.how });
   }
   const other = others.find((o) => o.scan.city_check);

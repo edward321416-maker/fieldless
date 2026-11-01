@@ -16,7 +16,7 @@ export const BENCHMARKS: Record<string, Benchmark> = {
     people: "14 people walked 2,336 miles in 16 weeks",
     name: "Seattle's 2017 sidewalk survey",
     caveat: "The 2017 survey recorded more about each sidewalk, so the scope differs.",
-    scope: "$400,000 for 2,336 miles",
+    scope: "a $400,000 budget for 2,336 miles, the most it could have cost",
     source: "https://seattle.gov/documents/Departments/SDOT/About/SidewalkAssessExecSummary_4_6_2018R5.pdf",
   },
 };

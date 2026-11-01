@@ -10,6 +10,9 @@ describe("the map's lens switch", () => {
     expect(recordsHtml).toMatch(/aria-pressed="false"[^>]*>Findings</);
     expect(recordsHtml).toMatch(/aria-pressed="true"[^>]*>City records</);
     expect(recordsHtml).toContain("Matched");
+    expect(recordsHtml).toContain("Not on list");
+    expect(recordsHtml).not.toContain(">New<");
+    expect(recordsHtml).toContain("To check");
 
     const findingsHtml = renderToStaticMarkup(<LensSwitch lens="findings" onChange={() => undefined} />);
     expect(findingsHtml).toContain("1 dot = 1 photo detection");
