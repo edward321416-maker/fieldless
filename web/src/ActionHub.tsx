@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import AssetCheckPane from "./AssetCheckPane";
 import { cityStates as computeCityStates, cityTotals, missedRecords, type CityState, type MissedRecord } from "./cityMatch";
 import { photoMonth } from "./format";
 import { colourOf, itemName, type Finding } from "./items";
@@ -7,7 +8,7 @@ import { MiniCredit } from "./Photo";
 import { thumbPosition } from "./summary";
 import type { Scan } from "./types";
 
-export type ActionTab = "dispatch" | "gis";
+export type ActionTab = "dispatch" | "gis" | "asset";
 
 export interface DispatchRow {
   workOrderId: string;
@@ -150,12 +151,15 @@ export default function ActionHub({
   streets = {},
   cityStates,
   lens = "findings",
-  initialTab = "dispatch",
+  initialTab,
   onPickFinding,
   onPickRecord,
   onSwitchLens,
 }: Props) {
-  const [picked, setTab] = useState<ActionTab>(initialTab);
+  // the Asset Check stands in for the plain comparison when one was made for this survey
+  const [picked, setTab] = useState<ActionTab>(
+    scan.asset_check && (initialTab === undefined || initialTab === "gis") ? "asset" : initialTab ?? "dispatch",
+  );
   const [expanded, setExpanded] = useState(false);
   // A list sent as counts only has no records to set against the survey, so there is no GIS Diff to open.
   const hasDiff = !!scan.city_check && !scan.city_check.counts_only;
@@ -188,6 +192,18 @@ export default function ActionHub({
         </div>
 
         <div className="action-tabs" role="tablist" aria-label="Survey action tools">
+          {scan.asset_check && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "asset"}
+              className={`action-tab${tab === "asset" ? " active" : ""}`}
+              onClick={() => setTab("asset")}
+            >
+              Asset Check
+              <span className="action-tab-badge">{scan.asset_check.totals.seen}/{scan.asset_check.totals.in_view}</span>
+            </button>
+          )}
           <button
             type="button"
             role="tab"
@@ -201,7 +217,7 @@ export default function ActionHub({
             Dispatch
             <span className="action-tab-badge">{dispatchRows.length}</span>
           </button>
-          {hasDiff && (
+          {hasDiff && !scan.asset_check && (
             <button
               type="button"
               role="tab"
@@ -218,6 +234,18 @@ export default function ActionHub({
           )}
         </div>
       </div>
+
+      {tab === "asset" && scan.asset_check && (
+        <AssetCheckPane
+          scan={scan}
+          summary={scan.asset_check}
+          findings={findings}
+          missed={missed}
+          onPickFinding={onPickFinding}
+          onPickRecord={onPickRecord}
+          onSwitchLens={onSwitchLens}
+        />
+      )}
 
       {tab === "dispatch" && (
         <div className="action-pane">

@@ -54,7 +54,7 @@ export default function App() {
   // a record the survey did not find opens its card.
   const [lens, setLens] = useState<Lens>("findings");
   const [record, setRecord] = useState<MissedRecord | null>(null);
-  const [actionTab, setActionTab] = useState<ActionTab>("dispatch");
+  const [actionTab, setActionTab] = useState<ActionTab | undefined>(undefined);
   // The first screen's "Add a survey item": counts up per press and is taken back once the panel has opened (it
   // mounts only after the survey has loaded, so the press can come first).
   const [addItemSignal, setAddItemSignal] = useState(0);
@@ -271,7 +271,7 @@ export default function App() {
     setItemRunId(null);
     setNewSurvey(false);
     setSelecting(false);
-    setActionTab("dispatch");
+    setActionTab(undefined);
     setAddItemSignal(0);
     if (demos.length > 0) openScan(demos[0].scan_id);
     // the overview has no map: the next map opened from it shows the example's photographed streets

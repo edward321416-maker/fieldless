@@ -141,6 +141,56 @@ export interface CityCheck {
     missed?: { lat: number; lng: number; city: Record<string, string | number | null> }[] }>;
 }
 
+// One area's Asset Check (eval.asset_check): the counts come with the scan, the rows on request.
+export interface AssetCounts {
+  in_view: number; // city records in view of the photos
+  seen: number;
+  seen_by: Record<string, number>;
+  not_determined: number; // does not mean missing
+  not_listed: number;
+  not_listed_unsure: number;
+  newer: number; // records with a photo newer than the city's date
+}
+
+export interface AssetCheckSummary {
+  city: string;
+  items: (AssetCounts & { item: string; asset: string; city_list: string })[];
+  totals: AssetCounts;
+  trust: {
+    photo_months: string[];
+    controls: { photos: string; asked: number; both_yes: number; note?: string }[];
+    looked_at: number;
+    sent_back: number;
+    outside_view: number;
+    findings?: { n: number; yes: number; no: number; unclear: number };
+  };
+}
+
+export interface AssetRow {
+  item: string;
+  asset: string;
+  city_list: string;
+  city_record: string;
+  city_location: string;
+  status: "Seen in photo" | "Not determined" | "Not on the city list";
+  how_seen: string;
+  models_unsure: string;
+  city_date: string;
+  seen_in_photo_on: string;
+  photo_newer_than_city_date: string;
+  city_condition: string;
+  lat: number;
+  lng: number;
+  position_source: string;
+  position_accuracy: string;
+  box: number[] | null;
+  evidence: Evidence | null;
+}
+
+export interface AssetCheck extends AssetCheckSummary {
+  rows: AssetRow[];
+}
+
 export interface Walk {
   clip: number;
   points: [number, number][]; // [lng, lat] in photo order
@@ -163,6 +213,7 @@ export interface Scan {
   checks: CheckCount[];
   items: ItemMeta[];
   city_check?: CityCheck;
+  asset_check?: AssetCheckSummary;
   error: string | null;
   counts: {
     defects: number; obstructions: number; entrances: number; entrances_with_steps: number; needs_review: number;

@@ -1,6 +1,6 @@
 import type { CallStats } from "./callStats";
 import type {
-  Bbox, DemoArea, Entrance, EntranceReview, Issue, IssueReview, ItemRun, ItemRunSummary, Preview, Scan, ServerConfig,
+  AssetCheck, Bbox, DemoArea, Entrance, EntranceReview, Issue, IssueReview, ItemRun, ItemRunSummary, Preview, Scan, ServerConfig,
   Walk,
 } from "./types";
 
@@ -24,6 +24,12 @@ export const filesUrl = (scanId: number) => `/api/scans/${scanId}/files.zip`;
 // A finished survey's results report, a document page for the city; the static demo keeps it as a file.
 export const reportUrl = (scanId: number, isStatic = STATIC_DEMO) =>
   `/api/scans/${scanId}/report${isStatic ? ".html" : ""}`;
+
+// The Asset Check as a page and as a table; the static demo keeps them as files.
+export const assetCheckReportUrl = (scanId: number, isStatic = STATIC_DEMO) =>
+  `/api/scans/${scanId}/asset-check/report${isStatic ? ".html" : ""}`;
+export const assetCheckTableUrl = (scanId: number, kind: "csv" | "geojson") =>
+  `/api/scans/${scanId}/asset-check/table.${kind}`;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (STATIC_DEMO) {
@@ -72,6 +78,7 @@ export const api = {
   scanItems: (scanId: number) => request<ItemRunSummary[]>(`/api/scans/${scanId}/items`),
   // which model did what in a survey, stage by stage; a 404 when the server keeps no call record for it
   calls: (scanId: number) => request<CallStats>(`/api/scans/${scanId}/calls`),
+  assetCheck: (scanId: number) => request<AssetCheck>(`/api/scans/${scanId}/asset-check`),
   startItem: (scanId: number, target: string, inviteCode: string) =>
     request<{ id: number }>(`/api/scans/${scanId}/items`, post({ target, invite_code: inviteCode || null })),
   undoEntrance: (id: number | string) => request<Entrance>(`/api/entrances/${id}/review/undo`, post({})),
