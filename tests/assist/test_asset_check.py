@@ -13,20 +13,24 @@ def row(**over):
             "status": "Seen in photo", "how_seen": "Survey", "models_unsure": "", "city_date": "2020-05",
             "seen_in_photo_on": "2022-08-30", "photo_newer_than_city_date": "yes", "city_condition": "GOOD", "lat": 1.5,
             "lng": 2.5, "position_source": "City record", "position_accuracy": "City record", "box": [100, 200, 300, 400],
-            "evidence": EV, **over}
+            "evidence": EV, "action": "Update the date", "city_says": "CHECKED 2020-05",
+            "photo_shows": "Seen in a photo of 2022-08-30", **over}
 
 
 ROWS = [row(), row(asset="Public can", how_seen="Second look, panorama", city_record="C1", city_date="",
-               photo_newer_than_city_date="", evidence={**EV, "image": "scan1_look0_7.jpg"}),
+               photo_newer_than_city_date="", evidence={**EV, "image": "scan1_look0_7.jpg"}, action="No change",
+               city_says="", photo_shows=""),
         row(asset="Street tree", status="Not determined", how_seen="", city_record="T1", seen_in_photo_on="",
-            photo_newer_than_city_date="", evidence=None, box=None),
+            photo_newer_than_city_date="", evidence=None, box=None, action="Visit on site", city_says="", photo_shows=""),
         row(asset="Street tree", status="Not on the city list", how_seen="", city_list="", city_record="", models_unsure="yes",
             city_date="", photo_newer_than_city_date="", position_accuracy="Unknown (within 50 ft)",
-            evidence={**EV, "image": "scan1_issue3_9.jpg"})]
+            evidence={**EV, "image": "scan1_issue3_9.jpg"}, action="Visit on site", city_says="", photo_shows="")]
+ACTIONS = {"Update the date": 1, "No change": 1, "Visit on site": 2}
 TOTALS = {"in_view": 3, "seen": 2, "seen_by": {"Survey": 1}, "not_determined": 1, "not_listed": 1, "not_listed_unsure": 1,
           "seen_unsure": 1, "newer": 1}
-CHECK = {"scan_id": 1, "city": "Testville", "rows": ROWS, "totals": TOTALS,
-         "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **TOTALS}],
+CHECK = {"scan_id": 1, "city": "Testville", "rows": ROWS, "totals": TOTALS, "actions": ACTIONS, "no_visit": 2,
+         "left_out": {"repeats": 6, "wrong": 1},
+         "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **TOTALS, "actions": ACTIONS}],
          "trust": {"photo_months": ["2022-08", "2025-07"], "controls": [{"photos": "Panoramas", "asked": 10, "both_yes": 1, "note": "It was a real pole."}],
                    "looked_at": 25, "sent_back": 3, "outside_view": 6, "findings": {"n": 88, "yes": 73, "no": 4, "unclear": 11}}}
 
@@ -59,7 +63,7 @@ def test_the_geojson_puts_each_row_at_its_position():
 
 
 def test_the_app_gets_the_counts_apart_from_the_rows():
-    assert set(asset_check.summary(CHECK)) == {"city", "items", "totals", "trust"}
+    assert set(asset_check.summary(CHECK)) == {"city", "items", "totals", "trust", "actions", "no_visit", "left_out"}
 
 
 def test_the_app_gets_each_photo_at_the_servers_address():
@@ -71,12 +75,51 @@ def test_the_photos_are_named_once_each():
     assert asset_check.photos(CHECK) == {"scan1_issue1_9.jpg", "scan1_look0_7.jpg", "scan1_issue3_9.jpg"}
 
 
-def test_the_page_opens_with_the_counts_and_is_labelled_as_not_the_citys():
+def test_the_page_opens_with_the_visits_and_is_labelled_as_not_the_citys():
     page = asset_check.document(CHECK, area="Capitol Hill", km=0.94, photo_count=181)
-    assert "<title>Capitol Hill Asset Check</title>" in page
+    assert "<title>Capitol Hill Record Update List</title>" in page
     assert "It is not a Testville city document, and the city has not reviewed it." in page
-    assert "Of 3 city records in view of the photos, 2 were seen and 1 could not be settled" in page
-    assert "the models were unsure of 1 of those" in page and "0.94 km of walked streets" in page
+    assert "Of 3 city records in view of the photos, 2 need no site visit and 1 does." in page
+    assert "0.94 km of walked streets" in page
+
+
+def test_the_table_starts_with_what_to_do():
+    table = lines(asset_check.table_csv(CHECK))
+    assert list(table[0])[0] == "action" and table[0]["action"] == "Update the date"
+    assert table[0]["city_says"] == "CHECKED 2020-05" and table[0]["photo_shows"] == "Seen in a photo of 2022-08-30"
+    assert table[0]["city_date"] == "2020-05" and table[0]["seen_in_photo_on"] == "2022-08-30"  # each date in its own cell
+
+
+def test_each_action_with_rows_has_its_line_and_none_without():
+    page = asset_check.document(CHECK)
+    assert 'id="next"' in page and "Update the date" in page and "Visit on site" in page
+    assert "Correct the record" not in page and "Compare with the list" not in page
+
+
+def test_a_visit_counts_records_and_objects_apart():
+    page = asset_check.document(CHECK)
+    assert "1 city record and 1 object the photos did not settle" in page
+
+
+def test_a_record_to_correct_shows_both_sides_first():
+    rows = [row(asset="Curb ramp", action="Correct the record", city_says="No light", photo_shows="A light"), *ROWS]
+    check = {**CHECK, "rows": rows, "actions": {**ACTIONS, "Correct the record": 1}}
+    page = asset_check.document(check)
+    assert page.index("Correct the record") < page.index("Update the date")
+    assert asset_check.examples(check)[0]["action"] == "Correct the record"
+    assert "No light" in page and "A light" in page
+
+
+def test_the_page_says_what_was_left_out_and_how_records_were_compared():
+    trust = {**CHECK["trust"], "record_check": {"asked": 20, "agree": 15, "differ": 1, "unsettled": 4, "sent_back": 1}}
+    page = asset_check.document({**CHECK, "trust": trust})
+    assert "6 repeats and 1 wrong object" in page
+    assert "Asked about 20 seen records" in page and "agreed with the city on 15" in page
+    assert "disagreed with it on 1" in page and "sent 1 back" in page
+
+
+def test_a_row_is_a_suggestion():
+    assert "It changes nothing in the city's records" in asset_check.document(CHECK)
 
 
 def test_every_photo_on_the_page_has_its_credit():
@@ -145,5 +188,5 @@ def test_a_check_without_later_looks_still_makes_a_page():
 
 def test_write_makes_the_three_files(tmp_path):
     asset_check.write(CHECK, tmp_path, area="Capitol Hill")
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["asset_check.csv", "asset_check.geojson", "asset_check.html"]
-    assert 'src="evidence/scan1_issue1_9.jpg"' in (tmp_path / "asset_check.html").read_text(encoding="utf-8")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["update_list.csv", "update_list.geojson", "update_list.html"]
+    assert 'src="evidence/scan1_issue1_9.jpg"' in (tmp_path / "update_list.html").read_text(encoding="utf-8")

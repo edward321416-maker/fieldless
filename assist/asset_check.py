@@ -1,15 +1,17 @@
-"""The Asset Check as what a city's asset team takes: one page to read and one table to open (eval.asset_check makes the
-rows).
+"""The Record Update List: what a city's asset team takes from a survey, one page to read and one table to open
+(eval.asset_check makes the rows, eval.record_check compares them).
 
 Why it says what it says:
+- Each row says what the city could do with it, and how many places need no site visit is the first thing on the page.
+  A row is a suggestion: the city decides.
 - "Seen in photo" is an observation, not the city's inspection, so the table has its own date column and never fills
   the city's date fields. "Not determined" does not mean missing.
 - A record keeps the city's position. An object not on the list carries the camera's position, rated Unknown (within
   50 ft) in the words of city GIS metadata: it is a place to look, not a new record.
 - Every photo names its creator, the Mapillary logo, a link and the licence (Mapillary's terms). Photos are the blurred
   evidence photos only.
-- The page states what was compared. It does not rate the city's list or say what the city should accept, and it does
-  not compare itself with surveys on foot (docs/ui-rules.md U1).
+- The page states what was compared. It does not rate the city's list, and it does not compare itself with surveys on
+  foot (docs/ui-rules.md U1).
 """
 import base64
 import csv
@@ -24,11 +26,16 @@ from server import views
 
 NOT_DETERMINED, NOT_LISTED, SEEN = "Not determined", "Not on the city list", "Seen in photo"
 PANORAMA = "Second look, panorama"
-SUMMARY_FIELDS = ("city", "items", "totals", "trust")
-COLUMNS = (("asset", "What the object is"),
+FIX, DATE, SAME, VISIT, COMPARE = ("Correct the record", "Update the date", "No change", "Visit on site",
+                                   "Compare with the list")
+SUMMARY_FIELDS = ("city", "items", "totals", "actions", "no_visit", "left_out", "trust")
+COLUMNS = (("action", "What the city could do with this row"),
+           ("asset", "What the object is"),
            ("city_list", "The city list the record is on"),
            ("city_record", "The record's number on that list"),
            ("city_location", "The record's address, in the city's words"),
+           ("city_says", "What the city's record says, where this row suggests a change"),
+           ("photo_shows", "What the photo shows, where this row suggests a change"),
            ("status", f"{SEEN}, {NOT_DETERMINED} or {NOT_LISTED}"),
            ("how_seen", "Survey, Second look, or Second look, panorama (a flat view cut from a 360-degree photo)"),
            ("models_unsure", "yes when the models could not settle what the object is"),
@@ -46,14 +53,17 @@ COLUMNS = (("asset", "What the object is"),
            ("evidence_file", "The blurred photo in this download"))
 ROOT = Path(__file__).resolve().parent.parent
 LOGOS = (ROOT / "web" / "public" / "mapillary-logo.png", ROOT / "web" / "dist" / "mapillary-logo.png")
-ACTIONS = {"newer": "Review the city's date. The photo is newer.",
-           "no_date": "Keep the record. The city list has no date to compare.",
-           "older": "Keep the record. The city's date is newer than the photo.",
-           "unlisted": "Compare with nearby records, then decide."}
+ACTIONS = {FIX: "Look at the photo, then correct the record if it holds.",
+           DATE: "Review the city's date. The photo is newer.",
+           SAME: "Keep the record as it is.",
+           VISIT: "The photos do not settle this. It needs a newer photo or a site visit.",
+           COMPARE: "Compare with nearby records, then decide."}
+ORDER = (FIX, DATE, SAME, VISIT, COMPARE)
 
 CSS = """
 :root { --paper: #fff; --ink: #1b2430; --muted: #566273; --rule: #d9dde3; --panel: #f1f3f5; --accent: #1d4ed8;
-  --seen: #17694a; --seen-bg: #dcefe6; --new: #8a5200; --new-bg: #f8ead2; --unk: #4d5968; --unk-bg: #e4e7eb; }
+  --seen: #17694a; --seen-bg: #dcefe6; --new: #8a5200; --new-bg: #f8ead2; --unk: #4d5968; --unk-bg: #e4e7eb;
+  --fix-bg: #dbe6fb; }
 * { box-sizing: border-box; }
 body { background: var(--paper); color: var(--ink); margin: 0;
   font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -75,6 +85,7 @@ tbody th { font-weight: 600; } tbody th small { display: block; font-weight: 400
 tfoot td, tfoot th { font-weight: 700; border-bottom: 0; }
 .next { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
 .next li { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: baseline; }
+.next strong { display: block; }
 .next b { font-size: 24px; font-variant-numeric: tabular-nums; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
 .card { min-width: 0; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
@@ -82,8 +93,8 @@ figure { position: relative; margin: 0; line-height: 0; } figure img { width: 10
 .box { position: absolute; border: 2px solid #ffd33d; box-shadow: 0 0 0 1px #000; }
 .body { padding: 12px 14px 14px; }
 .chip { display: inline-block; font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
-.chip.seen { background: var(--seen-bg); color: var(--seen); } .chip.unlisted { background: var(--new-bg); color: var(--new); }
-.chip.unknown { background: var(--unk-bg); color: var(--unk); }
+.chip.seen { background: var(--seen-bg); color: var(--seen); } .chip.visit { background: var(--new-bg); color: var(--new); }
+.chip.unknown { background: var(--unk-bg); color: var(--unk); } .chip.fix { background: var(--fix-bg); color: var(--accent); }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0 0 8px; font-size: 14px; }
 dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: anywhere; } .action { font-size: 15px; font-weight: 600; }
 .credit { font-size: 12px; color: var(--muted); margin-top: 8px; } .logo { height: 11px; vertical-align: -1px; }
@@ -163,21 +174,13 @@ def seen_how(totals: dict) -> str:
     return ", ".join(f"{totals['seen_by'][how]} {text}" for how, text in words if totals["seen_by"].get(how))
 
 
-def _action(row: dict) -> str:
-    if row["status"] == NOT_LISTED:
-        return ACTIONS["unlisted"]
-    if row["photo_newer_than_city_date"] == "yes":
-        return ACTIONS["newer"]
-    return ACTIONS["older"] if row["city_date"] else ACTIONS["no_date"]
-
-
 def examples(check: dict) -> list[dict]:
-    """A few rows to show, each of a different asset (docs/design-rules.md R2): a photo of what each kind of row is."""
-    wanted = [(SEEN, PANORAMA), (SEEN, "Second look"), (SEEN, "Survey"), (NOT_LISTED, "")]
+    """A row to show for each action that has a photo, each of a different asset where it can be (docs/design-rules.md
+    R2): a photo of what each kind of row is. Rows the models were unsure of are not shown as examples."""
     shown: list[dict] = []
-    for status, how in wanted:
-        pick = next((r for r in check["rows"] if r["status"] == status and r["how_seen"] == how and r.get("evidence")
-                     and r["models_unsure"] != "yes" and r["asset"] not in {s["asset"] for s in shown}), None)
+    for action in (FIX, DATE, SAME, COMPARE):
+        rows = [r for r in check["rows"] if r["action"] == action and r.get("evidence") and r["models_unsure"] != "yes"]
+        pick = next((r for r in rows if r["asset"] not in {s["asset"] for s in shown}), rows[0] if rows else None)
         if pick:
             shown.append(pick)
     return shown
@@ -187,9 +190,9 @@ def _card(row: dict, logo: str, photo_base: str) -> str:
     e, ev, box = html.escape, row["evidence"], row.get("box")
     mark = (f'<span class="box" style="left:{box[0] / 10}%;top:{box[1] / 10}%;width:{(box[2] - box[0]) / 10}%;'
             f'height:{(box[3] - box[1]) / 10}%"></span>') if box and len(box) == 4 else ""
-    kind = "seen" if row["status"] == SEEN else "unlisted"
-    cells = [("City record", row["city_record"]), ("City date", row["city_date"]),
-             ("How seen", row["how_seen"]), ("Seen in photo on", row["seen_in_photo_on"])]
+    kind = {FIX: "fix", COMPARE: "unknown"}.get(row["action"], "seen")
+    cells = [("City record", row["city_record"]), ("City says", row["city_says"]), ("Photo shows", row["photo_shows"]),
+             ("City date", row["city_date"]), ("How seen", row["how_seen"]), ("Seen in photo on", row["seen_in_photo_on"])]
     facts = "".join(f"<dt>{k}</dt><dd>{e(v)}</dd>" for k, v in cells if v)
     edited = "people and plates blurred, resized" if ev.get("blurred_regions") else "resized"
     if row["how_seen"] == PANORAMA:
@@ -197,10 +200,10 @@ def _card(row: dict, logo: str, photo_base: str) -> str:
     return f"""<article class="card">
   <figure><img src="{e(photo_base + ev['image'])}" alt="Street photo: {e(row['asset'])}" loading="lazy">{mark}</figure>
   <div class="body">
-    <span class="chip {kind}">{e(row['status'])}</span>
+    <span class="chip {kind}">{e(row['action'])}</span>
     <h3>{e(row['asset'])}</h3>
     <dl>{facts}</dl>
-    <p class="action">{e(_action(row))}</p>
+    <p class="action">{e(ACTIONS[row['action']])}</p>
     <p class="credit">Photo by {e(ev.get('creator') or 'a Mapillary contributor')} {logo} <a href="{e(ev['link'])}">View on Mapillary</a>, {e(ev['license'])}. Edited: {edited}.</p>
   </div>
 </article>"""
@@ -216,6 +219,14 @@ def _trust(check: dict) -> list[str]:
     if totals.get("seen_unsure"):
         lines.append(f"<strong>Models unsure.</strong> The models were unsure of {totals['seen_unsure']} of the "
                      f"{totals['seen']} seen records. Those rows say so in the table.")
+    lines.append("<strong>No site visit.</strong> A record needs no visit here when the models were sure of it and the "
+                 "AI assistant's check, where there was one, agreed. It was there on the photo's date.")
+    if compared := trust.get("record_check"):
+        lines.append(f"<strong>Records compared.</strong> Asked about {_count(compared['asked'], 'seen record')} whose "
+                     f"city list holds a yes or no a photo can answer. The models agreed with the city on "
+                     f"{compared['agree']}, two models disagreed with it on {compared['differ']}, and "
+                     f"{compared['unsettled']} stayed unsettled. An AI assistant looked at the photos of those that "
+                     f"differed and sent {compared['sent_back']} back.")
     lines.append("<strong>Pairing.</strong> A finding is paired with a city record by the photo's position and viewing "
                  "direction, not by a model comparing the two.")
     for c in trust["controls"]:
@@ -229,11 +240,15 @@ def _trust(check: dict) -> list[str]:
     if trust.get("outside_view"):
         lines.append(f"<strong>Left out.</strong> {_count(trust['outside_view'], 'finding')} paired with a city record "
                      "outside the photo's view are counted on neither side.")
+    left = check["left_out"]
+    if left["repeats"] or left["wrong"]:
+        lines.append(f"<strong>Left off the list.</strong> Among the objects not on the city's lists, an AI assistant "
+                     f"judged {_count(left['repeats'], 'repeat')} and {_count(left['wrong'], 'wrong object')}.")
     lines.append(f"<strong>Position.</strong> Rows from the city's lists keep the city's position. The "
                  f"{totals['not_listed']} objects not on the lists carry the camera's position, rated Unknown (within 50 ft), "
                  "so some may be records already listed.")
     lines.append("<strong>Scope.</strong> This compares photos with the city's public lists. It changes nothing in the "
-                 "city's records, and it is not an inspection.")
+                 "city's records, and it is not an inspection. Every row is a suggestion for the city to decide on.")
     return lines
 
 
@@ -242,21 +257,32 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
     """The page, in one file (inline CSS, no scripts). photo_base: where the page finds the evidence photos."""
     e, totals, logo = html.escape, check["totals"], _logo()
     place = area or check["city"]
-    title = f"{place} Asset Check"
-    share = totals["seen"] / totals["in_view"] * 100 if totals["in_view"] else 0
+    title = f"{place} Record Update List"
+    actions, visits = check["actions"], totals["in_view"] - check["no_visit"]
+    share = check["no_visit"] / totals["in_view"] * 100 if totals["in_view"] else 0
     meta = [check["city"], *([f"{km:.2f} km of walked streets"] if km else []),
             *([f"{photo_count} public Mapillary photos"] if photo_count else []),
             f"Compared with {_count(len(check['items']), 'city asset list')}"]
-    unsure = (f", and the models were unsure of {totals['not_listed_unsure']} of those" if totals["not_listed_unsure"] else "")
+    objects = actions.get(VISIT, 0) - visits
+    what = {FIX: "The photo and the city's record say different things. Two models agree on the photo.",
+            DATE: "Seen in a photo newer than the city's verification date.",
+            SAME: "Seen in a photo, with no verification date to update.",
+            VISIT: f"{_count(visits, 'city record')} and {_count(objects, 'object')} the photos did not settle. "
+                   "Not determined does not mean missing.",
+            COMPARE: "On no city list. Compare each with nearby records before adding anything."}
+    shown = [a for a in ORDER if actions.get(a)]
+    steps = "\n".join(f"<li><b>{actions[a]}</b><span><strong>{a}</strong>{e(what[a])}</span></li>" for a in shown)
+    heads = "".join(f'<th scope="col">{a}</th>' for a in shown)
     table = "\n".join(
         f'<tr><th scope="row">{e(i["asset"])}<small>{e(i["city_list"])}</small></th><td>{i["in_view"]}</td>'
-        f'<td>{i["seen"]}</td><td>{i["not_determined"]}</td><td>{i["not_listed"]}</td><td>{i["newer"] or "&ndash;"}</td></tr>'
+        + "".join(f'<td>{i["actions"].get(a) or "&ndash;"}</td>' for a in shown) + "</tr>"
         for i in check["items"])
+    foot = "".join(f"<td>{actions[a]}</td>" for a in shown)
     cards = "".join(_card(r, logo, photo_base) for r in examples(check))
     unknown = next((r for r in check["rows"] if r["status"] == NOT_DETERMINED), None)
-    undecided = (f"""<article class="card"><div class="body"><span class="chip unknown">{NOT_DETERMINED}</span>
+    undecided = (f"""<article class="card"><div class="body"><span class="chip visit">{VISIT}</span>
     <h3>{e(unknown['asset'])}</h3><dl><dt>City record</dt><dd>{e(unknown['city_record'])}</dd></dl>
-    <p class="action">The photos do not settle this record. It needs a newer photo or a site visit.</p></div></article>""" if unknown else "")
+    <p class="action">{ACTIONS[VISIT]}</p></div></article>""" if unknown else "")
     columns = "".join(f"<tr><th scope=\"row\">{k}</th><td>{e(v)}</td></tr>" for k, v in COLUMNS)
     trust = "".join(f"<li>{line}</li>" for line in _trust(check))
     return f"""<!doctype html>
@@ -268,27 +294,23 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
 <header>
   <h1>{e(title)}</h1>
   <p class="meta">{' &middot; '.join(e(m) for m in meta)}</p>
-  <p class="lead">Of {totals['in_view']} city records in view of the photos, {totals['seen']} were seen and {totals['not_determined']} could not be settled from the photos. Another {_count(totals['not_listed'], 'object appears', 'objects appear')} in the photos and not on the city's lists{unsure}.</p>
-  <div class="bar" role="img" aria-label="{totals['seen']} of {totals['in_view']} city records seen"><span style="width:{share:.1f}%"></span></div>
+  <p class="lead">Of {totals['in_view']} city records in view of the photos, {check['no_visit']} need no site visit and {visits} {'does' if visits == 1 else 'do'}.</p>
+  <div class="bar" role="img" aria-label="{check['no_visit']} of {totals['in_view']} city records need no site visit"><span style="width:{share:.1f}%"></span></div>
   <div class="key"><span>{totals['seen']} seen in photo: {e(seen_how(totals))}</span><span>{totals['not_determined']} not determined</span></div>
 </header>
+
+<section aria-labelledby="next">
+  <h2 id="next">What the asset team could do</h2>
+  <ul class="next">{steps}</ul>
+</section>
 
 <section aria-labelledby="by-asset">
   <h2 id="by-asset">Results by asset</h2>
   <div class="tablewrap"><table class="counts">
-    <thead><tr><th scope="col">Asset</th><th scope="col">City records in view</th><th scope="col">Seen in photo</th><th scope="col">Not determined</th><th scope="col">Not on city list</th><th scope="col">Photo newer than city date</th></tr></thead>
+    <thead><tr><th scope="col">Asset</th><th scope="col">City records in view</th>{heads}</tr></thead>
     <tbody>{table}</tbody>
-    <tfoot><tr><th scope="row">Total</th><td>{totals['in_view']}</td><td>{totals['seen']}</td><td>{totals['not_determined']}</td><td>{totals['not_listed']}</td><td>{totals['newer']}</td></tr></tfoot>
+    <tfoot><tr><th scope="row">Total</th><td>{totals['in_view']}</td>{foot}</tr></tfoot>
   </table></div>
-</section>
-
-<section aria-labelledby="next">
-  <h2 id="next">What the asset team can do with this</h2>
-  <ul class="next">
-    <li><b>{totals['newer']}</b><span>records have a photo newer than the city's date. Review them and decide whether to update it.</span></li>
-    <li><b>{totals['not_listed']}</b><span>objects are not on the city's lists. Compare each with nearby records before adding anything.</span></li>
-    <li><b>{totals['not_determined']}</b><span>records need a newer photo or a site visit. Not determined does not mean missing.</span></li>
-  </ul>
 </section>
 
 <section aria-labelledby="rows">
@@ -314,8 +336,8 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
 
 def write(check: dict, out_dir: Path, area: str | None = None, km: float | None = None,
           photo_count: int | None = None) -> None:
-    """asset_check.html, .csv and .geojson, for the survey's zip."""
+    """update_list.html, .csv and .geojson, for the survey's zip."""
     out_dir = Path(out_dir)
-    (out_dir / "asset_check.html").write_text(document(check, area, km, photo_count), encoding="utf-8")
-    (out_dir / "asset_check.csv").write_bytes(table_csv(check))
-    (out_dir / "asset_check.geojson").write_bytes(table_geojson(check))
+    (out_dir / "update_list.html").write_text(document(check, area, km, photo_count), encoding="utf-8")
+    (out_dir / "update_list.csv").write_bytes(table_csv(check))
+    (out_dir / "update_list.geojson").write_bytes(table_geojson(check))

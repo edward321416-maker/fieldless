@@ -466,12 +466,12 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
     @app.get("/api/scans/{scan_id}/asset-check/table.csv")
     def get_asset_check_csv(scan_id: int):
         return Response(asset_page.table_csv(found_asset_check(scan_id)), media_type="text/csv; charset=utf-8",
-                        headers={"Content-Disposition": f'attachment; filename="asset-check-{scan_id}.csv"'})
+                        headers={"Content-Disposition": f'attachment; filename="update-list-{scan_id}.csv"'})
 
     @app.get("/api/scans/{scan_id}/asset-check/table.geojson")
     def get_asset_check_geojson(scan_id: int):
         return Response(asset_page.table_geojson(found_asset_check(scan_id)), media_type="application/geo+json",
-                        headers={"Content-Disposition": f'attachment; filename="asset-check-{scan_id}.geojson"'})
+                        headers={"Content-Disposition": f'attachment; filename="update-list-{scan_id}.geojson"'})
 
     @app.get("/api/evidence/{name}")
     def get_evidence(name: str):

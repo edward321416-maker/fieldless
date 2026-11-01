@@ -422,14 +422,18 @@ def asset_check_file(scan_id: int) -> dict:
              "link": "https://www.mapillary.com/app/?pKey=7", "license": "CC BY-SA 4.0", "blurred_regions": 1}
     row = {"item": "pole", "asset": "City pole", "city_list": "City poles", "city_record": "P1", "city_location": "1 Main St",
            "status": "Seen in photo", "how_seen": "Second look, panorama", "models_unsure": "", "city_date": "2020-05",
+           "action": "Update the date", "city_says": "CHECKED 2020-05", "photo_shows": "Seen in a photo of 2025-07-11",
            "seen_in_photo_on": "2025-07-11", "photo_newer_than_city_date": "yes", "city_condition": "", "lat": 37.5, "lng": 127.0,
            "position_source": "City record", "position_accuracy": "City record", "box": [1, 2, 3, 4], "evidence": photo}
     totals = {"in_view": 2, "seen": 1, "seen_by": {"Second look, panorama": 1}, "not_determined": 1, "not_listed": 0,
               "not_listed_unsure": 0, "seen_unsure": 0, "newer": 1}
-    return {"scan_id": scan_id, "city": "Testville", "totals": totals,
-            "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **totals}],
+    actions = {"Update the date": 1, "Visit on site": 1}
+    return {"scan_id": scan_id, "city": "Testville", "totals": totals, "actions": actions, "no_visit": 1,
+            "left_out": {"repeats": 0, "wrong": 0},
+            "items": [{"item": "pole", "asset": "City pole", "city_list": "City poles", **totals, "actions": actions}],
             "rows": [row, {**row, "status": "Not determined", "how_seen": "", "city_record": "P2", "evidence": None,
-                           "seen_in_photo_on": "", "photo_newer_than_city_date": "", "box": None}],
+                           "seen_in_photo_on": "", "photo_newer_than_city_date": "", "box": None, "action": "Visit on site",
+                           "city_says": "", "photo_shows": ""}],
             "trust": {"photo_months": ["2025-07"], "controls": [], "looked_at": 1, "sent_back": 0, "outside_view": 0}}
 
 
@@ -479,7 +483,7 @@ def test_the_scan_carries_the_counts_and_the_rows_come_apart(make):
 def test_the_asset_check_page_reaches_the_evidence_photos(make):
     client, scan_id = with_asset_check(make)
     page = client.get(f"/api/scans/{scan_id}/asset-check/report")
-    assert page.headers["content-type"].startswith("text/html") and "Capitol Hill Asset Check" in page.text
+    assert page.headers["content-type"].startswith("text/html") and "Capitol Hill Record Update List" in page.text
     assert f'src="../../../evidence/scan{scan_id}_look0_7.jpg"' in page.text
     assert client.get(f"/api/evidence/scan{scan_id}_look0_7.jpg").content == b"look"  # the name passes the server's rule
 
@@ -488,7 +492,7 @@ def test_the_asset_check_table_downloads_as_csv_and_geojson(make):
     client, scan_id = with_asset_check(make)
     table = client.get(f"/api/scans/{scan_id}/asset-check/table.csv")
     assert table.headers["content-type"].startswith("text/csv")
-    assert f'filename="asset-check-{scan_id}.csv"' in table.headers["content-disposition"]
+    assert f'filename="update-list-{scan_id}.csv"' in table.headers["content-disposition"]
     assert "Seen in photo" in table.content.decode("utf-8-sig")
     shape = client.get(f"/api/scans/{scan_id}/asset-check/table.geojson")
     assert shape.headers["content-type"].startswith("application/geo+json")
@@ -501,8 +505,8 @@ def test_the_survey_zip_carries_the_asset_check_and_its_photos(make):
     client, scan_id = with_asset_check(make)
     body = client.get(f"/api/scans/{scan_id}/files.zip").content
     z = zipfile.ZipFile(io.BytesIO(body))
-    assert {"asset_check.html", "asset_check.csv", "asset_check.geojson", f"evidence/scan{scan_id}_look0_7.jpg"} <= set(z.namelist())
-    assert f'src="evidence/scan{scan_id}_look0_7.jpg"' in z.read("asset_check.html").decode("utf-8")
+    assert {"update_list.html", "update_list.csv", "update_list.geojson", f"evidence/scan{scan_id}_look0_7.jpg"} <= set(z.namelist())
+    assert f'src="evidence/scan{scan_id}_look0_7.jpg"' in z.read("update_list.html").decode("utf-8")
     assert client.get(f"/api/scans/{scan_id}/files.zip").content == body  # the same bytes every time
 
 
