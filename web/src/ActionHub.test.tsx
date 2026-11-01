@@ -297,3 +297,26 @@ describe("a city list shown as counts only", () => {
     expect(html).not.toContain("city&#x27;s list");
   });
 });
+
+describe("a survey with an update list", () => {
+  const counts = { in_view: 94, seen: 53, seen_by: {}, not_determined: 41, not_listed: 33, not_listed_unsure: 3, seen_unsure: 4, newer: 52 };
+  const actions = { "Update the date": 27, "Visit on site": 58 };
+  const withList = { ...mockScan, asset_check: { city: "Seattle", items: [], totals: counts, actions, no_visit: 43,
+    left_out: { repeats: 6, wrong: 1 }, trust: { photo_months: [], controls: [], looked_at: 0, sent_back: 0, outside_view: 0 } } } as typeof mockScan;
+
+  it("shows the list and neither of the tabs it stands in for", () => {
+    for (const tab of [undefined, "dispatch", "gis"] as const) {
+      const html = renderToStaticMarkup(<ActionHub scan={withList} findings={[]} initialTab={tab} />);
+      expect(html).toContain("Update list");
+      expect(html).toContain("43/94");
+      expect(html).not.toContain("Dispatch");
+      expect(html).not.toContain("GIS Diff");
+    }
+  });
+
+  it("leaves a survey without one as it was", () => {
+    const html = renderToStaticMarkup(<ActionHub scan={mockScan} findings={[]} initialTab="dispatch" />);
+    expect(html).toContain("Dispatch");
+    expect(html).not.toContain("Update list");
+  });
+});

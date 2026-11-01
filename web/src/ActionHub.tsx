@@ -156,10 +156,8 @@ export default function ActionHub({
   onPickRecord,
   onSwitchLens,
 }: Props) {
-  // the Asset Check stands in for the plain comparison when one was made for this survey
-  const [picked, setTab] = useState<ActionTab>(
-    scan.asset_check && (initialTab === undefined || initialTab === "gis") ? "asset" : initialTab ?? "dispatch",
-  );
+  // the update list stands in for the other two when one was made for this survey: it holds the same places
+  const [picked, setTab] = useState<ActionTab>(scan.asset_check ? "asset" : initialTab ?? "dispatch");
   const [expanded, setExpanded] = useState(false);
   // A list sent as counts only has no records to set against the survey, so there is no GIS Diff to open.
   const hasDiff = !!scan.city_check && !scan.city_check.counts_only;
@@ -200,23 +198,25 @@ export default function ActionHub({
               className={`action-tab${tab === "asset" ? " active" : ""}`}
               onClick={() => setTab("asset")}
             >
-              Asset Check
-              <span className="action-tab-badge">{scan.asset_check.totals.seen}/{scan.asset_check.totals.in_view}</span>
+              Update list
+              <span className="action-tab-badge">{scan.asset_check.no_visit}/{scan.asset_check.totals.in_view}</span>
             </button>
           )}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "dispatch"}
-            className={`action-tab${tab === "dispatch" ? " active" : ""}`}
-            onClick={() => {
-              setTab("dispatch");
-              setExpanded(false);
-            }}
-          >
-            Dispatch
-            <span className="action-tab-badge">{dispatchRows.length}</span>
-          </button>
+          {!scan.asset_check && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "dispatch"}
+              className={`action-tab${tab === "dispatch" ? " active" : ""}`}
+              onClick={() => {
+                setTab("dispatch");
+                setExpanded(false);
+              }}
+            >
+              Dispatch
+              <span className="action-tab-badge">{dispatchRows.length}</span>
+            </button>
+          )}
           {hasDiff && !scan.asset_check && (
             <button
               type="button"

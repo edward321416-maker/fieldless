@@ -7,10 +7,14 @@ import type { Finding } from "./items";
 import type { AssetCheckSummary, AssetRow, Scan } from "./types";
 
 const counts = { in_view: 107, seen: 70, seen_by: {}, not_determined: 37, not_listed: 41, not_listed_unsure: 13, seen_unsure: 4, newer: 44 };
+const actions = { "Update the date": 27, "No change": 16, "Visit on site": 58, "Compare with the list": 19 };
 const summary: AssetCheckSummary = {
   city: "Seattle",
-  items: [{ item: "street_tree", asset: "Street tree", city_list: "SDOT street trees", ...counts }],
+  items: [{ item: "street_tree", asset: "Street tree", city_list: "SDOT street trees", ...counts, actions }],
   totals: counts,
+  actions,
+  no_visit: 43,
+  left_out: { repeats: 6, wrong: 1 },
   trust: { photo_months: ["2022-08", "2025-07"], controls: [], looked_at: 25, sent_back: 3, outside_view: 6 },
 };
 const scan = { id: 17, items: [{ id: "street_tree", target: "street tree", map_icon: "tree", kind: "check", inventory: true }] } as unknown as Scan;
@@ -21,21 +25,32 @@ function row(over: Partial<AssetRow> = {}): AssetRow {
   return { item: "street_tree", asset: "Street tree", city_list: "SDOT street trees", city_record: "TRE-1", city_location: "1 Main St",
     status: "Seen in photo", how_seen: "Second look, panorama", models_unsure: "", city_date: "2019-03",
     seen_in_photo_on: "2025-07-11", photo_newer_than_city_date: "yes", city_condition: "", lat: 47.6, lng: -122.3,
-    position_source: "City record", position_accuracy: "City record", box: [100, 200, 300, 400], evidence, ...over };
+    position_source: "City record", position_accuracy: "City record", box: [100, 200, 300, 400], evidence,
+    action: "Update the date", city_says: "LAST_VERIFY_DATE 2019-03", photo_shows: "Seen in a photo of 2025-07-11", ...over };
 }
 
 describe("AssetCheckPane", () => {
   const html = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} />);
 
-  it("says what the photos settled and what they did not", () => {
+  it("opens with how many places need no site visit", () => {
     expect(html).toContain("<strong>107</strong> Seattle records in the photos&#x27; view");
-    expect(html).toContain("<strong>70</strong> were seen and <strong>37</strong> could not be settled");
-    expect(html).toContain("<strong>41</strong> more objects are not on the city&#x27;s lists");
-    expect(html).toContain("the models were unsure of 13 of those");
+    expect(html).toContain("<strong>43</strong> need no site visit and <strong>64</strong> do");
+    expect(html).toContain("<strong>19</strong> more objects are not on the city&#x27;s lists");
   });
 
-  it("gives every asset the same row", () => {
-    expect(html).toContain('<th scope="row">Street tree</th><td>107</td><td>70</td><td>37</td><td>41</td>');
+  it("gives every asset the same row, with a column per action that has rows", () => {
+    expect(html).toContain('<th scope="row">Street tree</th><td>107</td><td>27</td><td>16</td><td>58</td><td>19</td>');
+    expect(html).not.toContain("Correct the record");
+  });
+
+  it("has one filter per action with rows, and opens on a list of several assets", () => {
+    for (const label of ["Update the date", "No change", "Visit on site", "Compare with the list"]) expect(html).toContain(label);
+    expect(html).toContain('aria-pressed="true"><strong>27</strong><span>Update the date</span>');
+  });
+
+  it("says a row is a suggestion", () => {
+    expect(html).toContain("Every row is a suggestion");
+    expect(html).toContain("Nothing here changes the city");
   });
 
   it("offers the page and the table", () => {
@@ -58,6 +73,19 @@ describe("the urls", () => {
 });
 
 describe("AssetRowCard", () => {
+  it("says what to do and shows both sides of a change", () => {
+    const html = renderToStaticMarkup(<ul><AssetRowCard row={row()} scan={scan} /></ul>);
+    expect(html).toContain("Update the date");
+    expect(html).toContain("City says</dt><dd>LAST_VERIFY_DATE 2019-03");
+    expect(html).toContain("Photo shows</dt><dd>Seen in a photo of 2025-07-11");
+  });
+
+  it("leaves out the sides of a row that changes nothing", () => {
+    const html = renderToStaticMarkup(<ul><AssetRowCard row={row({ action: "No change", city_says: "", photo_shows: "" })} scan={scan} /></ul>);
+    expect(html).not.toContain("City says");
+    expect(html).not.toContain("Photo shows");
+  });
+
   it("shows the photo with its credit and the two dates", () => {
     const html = renderToStaticMarkup(<ul><AssetRowCard row={row()} scan={scan} /></ul>);
     expect(html).toContain("TRE-1");

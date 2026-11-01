@@ -6,11 +6,10 @@ import type { Lens } from "./LensSwitch";
 import { EvidencePhoto, PhotoCredit } from "./Photo";
 import type { AssetCheck, AssetCheckSummary, AssetRow, Scan } from "./types";
 
-const STATUSES: { status: AssetRow["status"]; label: string; count: (s: AssetCheckSummary) => number }[] = [
-  { status: "Seen in photo", label: "Seen in photo", count: (s) => s.totals.seen },
-  { status: "Not determined", label: "Not determined", count: (s) => s.totals.not_determined },
-  { status: "Not on the city list", label: "Not on the list", count: (s) => s.totals.not_listed },
-];
+const ACTIONS = ["Correct the record", "Update the date", "No change", "Visit on site", "Compare with the list"];
+const COMPARE = "Compare with the list";
+// The list opens on rows of several assets: a correction may be one row of one asset (docs/ui-rules.md U2).
+const FIRST = "Update the date";
 const HOW_ORDER = ["Second look, panorama", "Second look", "Survey", ""];
 const SHOWN = 3;
 const HOW_WORDS: [string, string][] = [["Survey", "by the survey"], ["Second look", "on a second look"],
@@ -45,6 +44,9 @@ export function rowTarget(row: AssetRow, findings: Finding[], missed: MissedReco
 
 export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan; onShow?: () => void }) {
   const facts: [string, string][] = [
+    ["City says", row.city_says],
+    ["Photo shows", row.photo_shows],
+    ["Status", row.status],
     ["City date", row.city_date],
     ["Seen in photo on", row.seen_in_photo_on],
     ["How seen", row.how_seen],
@@ -59,7 +61,7 @@ export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan;
       )}
       <div className="asset-row-body">
         <div className="action-card-badge-line">
-          <span className="action-prio-tag prio-gis">{row.status}</span>
+          <span className="action-prio-tag prio-gis">{row.action}</span>
           <span className="action-card-category">{row.asset}</span>
         </div>
         <strong className="action-card-heading">{row.city_record || "No city record"}</strong>
@@ -87,12 +89,13 @@ interface Props {
   onSwitchLens?: (l: Lens) => void;
 }
 
-// The city's records one by one, with what the photos settled (eval.asset_check). "Not determined" does not mean
-// missing, and nothing here changes the city's records.
+// The Record Update List: each row with what the city could do with it (eval.asset_check). "Not determined" does not
+// mean missing, and nothing here changes the city's records.
 export default function AssetCheckPane({ scan, summary, findings, missed, onPickFinding, onPickRecord, onSwitchLens }: Props) {
   const [check, setCheck] = useState<AssetCheck | null>(null);
   const [failed, setFailed] = useState(false);
-  const [status, setStatus] = useState<AssetRow["status"]>("Seen in photo");
+  const present = ACTIONS.filter((a) => summary.actions[a]);
+  const [action, setAction] = useState(present.includes(FIRST) ? FIRST : present[0]);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -105,9 +108,11 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
     };
   }, [scan.id]);
 
-  const rows = useMemo(() => orderRows((check?.rows ?? []).filter((r) => r.status === status)), [check, status]);
+  const rows = useMemo(() => orderRows((check?.rows ?? []).filter((r) => r.action === action)), [check, action]);
   const shown = expanded ? rows : rows.slice(0, SHOWN);
   const { totals } = summary;
+  const visits = totals.in_view - summary.no_visit;
+  const objects = summary.actions[COMPARE] ?? 0;
 
   const show = (row: AssetRow) => {
     const target = rowTarget(row, findings, missed);
@@ -125,33 +130,34 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
   return (
     <div className="action-pane">
       <p className="action-lead">
-        Of <strong>{totals.in_view}</strong> {summary.city} records in the photos' view, <strong>{totals.seen}</strong> were
-        seen and <strong>{totals.not_determined}</strong> could not be settled. <strong>{totals.not_listed}</strong> more
-        objects are not on the city's lists, and the models were unsure of {totals.not_listed_unsure} of those.
+        Of <strong>{totals.in_view}</strong> {summary.city} records in the photos' view, <strong>{summary.no_visit}</strong> need
+        no site visit and <strong>{visits}</strong> {visits === 1 ? "does" : "do"}.
+        {objects > 0 && <> <strong>{objects}</strong> more objects are not on the city's lists.</>}
       </p>
-      <p className="hint small">Seen: {seenHow(totals.seen_by)}.</p>
+      <p className="hint small">Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records.</p>
       <table className="asset-table">
         <thead>
-          <tr><th scope="col">Asset</th><th scope="col">In view</th><th scope="col">Seen</th><th scope="col">Not determined</th>
-            <th scope="col">Not on list</th></tr>
+          <tr><th scope="col">Asset</th><th scope="col">In view</th>
+            {present.map((a) => <th key={a} scope="col">{a}</th>)}</tr>
         </thead>
         <tbody>
           {summary.items.map((i) => (
             <tr key={i.item}>
-              <th scope="row">{i.asset}</th><td>{i.in_view}</td><td>{i.seen}</td><td>{i.not_determined}</td><td>{i.not_listed}</td>
+              <th scope="row">{i.asset}</th><td>{i.in_view}</td>
+              {present.map((a) => <td key={a}>{i.actions[a] ?? 0}</td>)}
             </tr>
           ))}
         </tbody>
       </table>
       <div className="asset-filters" role="group" aria-label="Rows to show">
-        {STATUSES.map((s) => (
-          <button key={s.status} type="button" className="asset-filter" aria-pressed={status === s.status}
+        {present.map((a) => (
+          <button key={a} type="button" className="asset-filter" aria-pressed={action === a}
             onClick={() => {
-              setStatus(s.status);
+              setAction(a);
               setExpanded(false);
             }}>
-            <strong>{s.count(summary)}</strong>
-            <span>{s.label}</span>
+            <strong>{summary.actions[a]}</strong>
+            <span>{a}</span>
           </button>
         ))}
       </div>
@@ -159,7 +165,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
       <ul className="asset-rows">
         {shown.map((r) => <AssetRowCard key={`${r.item} ${r.city_record} ${r.evidence?.url ?? ""} ${r.lat}`} row={r} scan={scan} onShow={show(r)} />)}
       </ul>
-      {status === "Not determined" && <p className="hint small">Not determined does not mean missing. These need a newer photo or a site visit.</p>}
+      {action === "Visit on site" && <p className="hint small">Not determined does not mean missing. These need a newer photo or a site visit.</p>}
       <div className="action-foot asset-foot">
         {rows.length > SHOWN && (
           <button type="button" className="link-button action-more-btn" onClick={() => setExpanded((v) => !v)}>

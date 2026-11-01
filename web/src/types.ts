@@ -141,7 +141,7 @@ export interface CityCheck {
     missed?: { lat: number; lng: number; city: Record<string, string | number | null> }[] }>;
 }
 
-// One area's Asset Check (eval.asset_check): the counts come with the scan, the rows on request.
+// One area's Record Update List (eval.asset_check): the counts come with the scan, the rows on request.
 export interface AssetCounts {
   in_view: number; // city records in view of the photos
   seen: number;
@@ -155,8 +155,11 @@ export interface AssetCounts {
 
 export interface AssetCheckSummary {
   city: string;
-  items: (AssetCounts & { item: string; asset: string; city_list: string })[];
+  items: (AssetCounts & { item: string; asset: string; city_list: string; actions: Record<string, number> })[];
   totals: AssetCounts;
+  actions: Record<string, number>; // rows per action
+  no_visit: number; // city records that need no site visit
+  left_out: { repeats: number; wrong: number };
   trust: {
     photo_months: string[];
     controls: { photos: string; asked: number; both_yes: number; note?: string }[];
@@ -164,12 +167,16 @@ export interface AssetCheckSummary {
     sent_back: number;
     outside_view: number;
     findings?: { n: number; yes: number; no: number; unclear: number };
+    record_check?: { asked: number; agree: number; differ: number; unsettled: number; sent_back: number };
   };
 }
 
 export interface AssetRow {
   item: string;
   asset: string;
+  action: string; // what the city could do with this row
+  city_says: string;
+  photo_shows: string;
   city_list: string;
   city_record: string;
   city_location: string;
