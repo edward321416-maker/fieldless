@@ -1864,6 +1864,7 @@ kbd {
 }
 .asset-foot {
   flex-wrap: wrap;
+  margin-bottom: 8px;
 }
 .asset-foot .action-export-btn {
   margin-left: 0;
