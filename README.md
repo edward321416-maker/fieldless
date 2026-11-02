@@ -8,7 +8,7 @@ One pass over the photos records street assets (utility and streetlight poles, s
 
 **Try it:** [live app](https://edward321416--fieldless-web.us-east.modal.run) (open a finished survey, or start your own; spend is capped) · the three example surveys: [Seattle, Ballard](https://edward321416--fieldless-web.us-east.modal.run/#scan=30) · [New York, Park Avenue South](https://edward321416--fieldless-web.us-east.modal.run/#scan=31) · [Seattle, Capitol Hill](https://edward321416--fieldless-web.us-east.modal.run/#scan=17) (older photos) · [read-only demo](https://huggingface.co/spaces/BBONG1201/fieldless) (the same surveys, static) · [Capitol Hill with an item Muse Spark added](https://edward321416--fieldless-web.us-east.modal.run/#scan=17&item=4)
 
-![The Ballard example in the app: the Update list says 43 of 94 city records need no site visit and 51 do; a table of five assets side by side; the rows sorted into Correct the record (1), Update the date (26), No change (16), Visit on site (51) and Compare with the list (26); buttons for the report and the CSV and GeoJSON tables. The street photo on the map shows its Mapillary credit](docs/images/update-list.png)
+![The Ballard example in the app: the Update list says the photos reached 94 of 3,292 city records in the survey's box, 43 of 94 need no site visit and 51 do, and what the survey and its second looks cost; a table of five assets side by side; the rows sorted into Correct the record (1), Update the date (26), No change (16), Visit on site (51) and Compare with the list (26); buttons for the report and the CSV and GeoJSON tables. The street photo on the map shows its Mapillary credit](docs/images/update-list.png)
 
 ## Why
 
