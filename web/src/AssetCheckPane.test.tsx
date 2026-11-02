@@ -67,10 +67,19 @@ describe("AssetCheckPane", () => {
 });
 
 describe("a city's credit for its records", () => {
-  it("is shown when the city's data asks for one", () => {
+  it("is shown with the numbers when the city's data asks for one, above the rows", () => {
     const credit = "City records: NYC Open Data.";
     const html = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={{ ...summary, credit }} findings={[]} missed={[]} />);
     expect(html).toContain(credit);
+    expect(html.indexOf(credit)).toBeLessThan(html.indexOf('class="asset-table"'));
+  });
+});
+
+describe("the page and the table", () => {
+  it("sit above the rows, so opening them takes no scrolling past the photos", () => {
+    const html = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} />);
+    expect(html.indexOf("Open the report")).toBeLessThan(html.indexOf('class="asset-rows"'));
+    expect(html.indexOf('class="asset-filters"')).toBeLessThan(html.indexOf("Open the report"));
   });
 });
 

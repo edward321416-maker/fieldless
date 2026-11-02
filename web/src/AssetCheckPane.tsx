@@ -137,6 +137,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
         {objects > 0 && <> <strong>{objects}</strong> more objects are not on the city's lists{summary.compare_unsure > 0 ? `, ${summary.compare_unsure} of them not settled` : ""}.</>}
       </p>
       <p className="hint small">Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records.</p>
+      {summary.credit && <p className="hint small">{summary.credit}</p>}
       <table className="asset-table">
         <thead>
           <tr><th scope="col">Asset</th><th scope="col">In view</th><th scope="col">No visit</th><th scope="col">Visit</th>
@@ -164,22 +165,21 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
           </button>
         ))}
       </div>
+      <div className="action-foot asset-foot">
+        <a className="action-export-btn" href={assetCheckReportUrl(scan.id)} target="_blank" rel="noreferrer">Open the report</a>
+        <a className="action-export-btn" href={assetCheckTableUrl(scan.id, "csv")} download>Table (.csv)</a>
+        <a className="action-export-btn" href={assetCheckTableUrl(scan.id, "geojson")} download>Table (.geojson)</a>
+      </div>
       {failed && <p className="hint small">The rows could not be loaded. The report and the table still have them.</p>}
       <ul className="asset-rows">
         {shown.map((r) => <AssetRowCard key={`${r.item} ${r.city_record} ${r.evidence?.url ?? ""} ${r.lat}`} row={r} scan={scan} onShow={show(r)} />)}
       </ul>
       {action === VISIT && <p className="hint small">Not determined does not mean missing. These need a newer photo or a site visit.</p>}
-      {summary.credit && <p className="hint small">{summary.credit}</p>}
-      <div className="action-foot asset-foot">
-        {rows.length > SHOWN && (
-          <button type="button" className="link-button action-more-btn" onClick={() => setExpanded((v) => !v)}>
-            {expanded ? "Show fewer" : `Show all ${rows.length}`}
-          </button>
-        )}
-        <a className="action-export-btn" href={assetCheckReportUrl(scan.id)} target="_blank" rel="noreferrer">Open the report</a>
-        <a className="action-export-btn" href={assetCheckTableUrl(scan.id, "csv")} download>Table (.csv)</a>
-        <a className="action-export-btn" href={assetCheckTableUrl(scan.id, "geojson")} download>Table (.geojson)</a>
-      </div>
+      {rows.length > SHOWN && (
+        <button type="button" className="link-button action-more-btn" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? "Show fewer" : `Show all ${rows.length}`}
+        </button>
+      )}
     </div>
   );
 }
