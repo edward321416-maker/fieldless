@@ -230,7 +230,8 @@ def test_results_take_ballard_then_new_york_then_capitol_hill():
                  "63 need no site visit and 44 need a visit", "45 of 107", "73 of 86 recorded findings right"):
         assert fact in capitol, fact
     differs = next(l for l in results.splitlines() if l.startswith("- **What differs.**"))
-    assert "newer survey photos" in differs and "lower survey cost per km" in differs
+    assert "newer survey photos" in differs and "lower cost per km" in differs
+    assert "$3.60 and $4.24 against $4.48 for the survey, $6.10 and $5.77 against $6.93 for the whole list" in differs
     assert "match with the city's lists is lower" in differs and "share of findings judged right" in differs
     assert " better" not in differs  # only the photo date and the cost per km differ for the better, and it is not said
 
@@ -262,21 +263,35 @@ def test_the_cost_per_km_is_the_survey_and_the_second_looks_behind_the_list_cost
     text = readme()
     results = section(text, "## Results (measured)", "## Data, privacy and attribution")
     limits = section(text, "## Limits", "## Built during the Meta Global AI Developer Hackathon")
-    ballard = results[results.index("- **Seattle, Ballard**"):results.index("- **New York, Park Avenue South**")]
-    # said next to Ballard's numbers in Results, and again in Limits
-    for where, part in (("Results", ballard), ("Limits", limits)):
-        for fact in ("$3.33 ($3.60 per km", "about $2 more", "asking again about records the survey did not see $1.10",
-                     "a look at 2025 panoramas $0.77", "a record value check and blurring a few tens of cents",
-                     "about $5.5, or about $6 per km"):
-            assert fact in part, (where, fact)
-    for where, part in (("Results", results), ("Limits", limits)):
-        assert "$2.97 ($4.24 per km)" in part and "$1.05 more" in part, where  # New York: survey, then its second look
-        assert "$4.21 ($4.48 per km)" in part, where  # Capitol Hill: the survey, as the live app shows
+    starts = [results.index(f"- **{name}**") for name in ("Seattle, Ballard", "New York, Park Avenue South",
+                                                          "Seattle, Capitol Hill", "What differs.")]
+    ballard, new_york, capitol = results[starts[0]:starts[1]], results[starts[1]:starts[2]], results[starts[2]:starts[3]]
+    # The exact figures from the cost files. A survey's cost per km is the survey itself; the second looks behind its
+    # update list cost more, and each part is rounded to the cent. Said in Results, and again in Limits.
+    cost = {
+        "Ballard": ("$3.33 ($3.60 per km", "$2.30 more", "asking again about records the survey did not see $1.10",
+                    "a look at 2025 panoramas $0.77", "a record value check $0.17", "blurring $0.26",
+                    "$5.63, or $6.10 per km"),
+        "New York": ("$2.97 ($4.24 per km)", "$1.07 more (a second look $1.05, blurring $0.02; no panoramas exist in that "
+                     "area)", "$4.04, or $5.77 per km"),
+        "Capitol Hill": ("$4.21 ($4.48 per km)", "$2.30 more (a second look $0.90, a test sample $0.27, panoramas $0.80, a "
+                         "value check $0.20, blurring $0.12; each part rounded to the cent)", "$6.51, or $6.93 per km"),
+    }
+    for name, part in (("Ballard", ballard), ("New York", new_york), ("Capitol Hill", capitol)):
+        for fact in cost[name]:
+            assert fact in part, ("Results", name, fact)
+        for fact in cost[name]:
+            assert fact in limits, ("Limits", name, fact)
     assert results.count("for the survey itself") == 3  # each example's cost per km is labelled as the survey's
     assert "is the survey only, as the live app shows" in limits
+    # these are Meta API charges: the open-weight calls ran on Baseten credits
+    assert "These are Meta API charges: the Muse Spark Open calls (99) ran on Baseten credits and are not priced here" in limits
+    # the figures are exact, not "about"
+    for rough in ("about $2 more", "about $5.5", "about $6", "a few tens of cents"):
+        assert rough not in text, rough
     # the opening says it before anyone reads $3.60 as the price of "43 of 94"
     opening = text[:text.index("## Why")]
-    assert "The $3.33 is the survey only" in opening and "about $5.5, or about $6 per km" in opening
+    assert "The $3.33 is the survey only" in opening and "the whole list cost $5.63, or $6.10 per km" in opening
     # the comparison with the 2017 survey stays, and says whose figure Fieldless's is
     assert "a $400,000 budget" in text
     assert "Fieldless's per-km figure is the survey itself, not the whole update list" in results
