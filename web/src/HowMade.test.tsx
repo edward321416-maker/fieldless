@@ -41,3 +41,10 @@ describe("how a survey was made", () => {
     expect(html).toContain("Calls run side by side");
   });
 });
+
+describe("the total", () => {
+  it("is the survey's cost, the same number as at the top of the panel", () => {
+    const rounded = { ...stats, total: { ...stats.total, cost_usd: 3.3248, scan_cost_usd: 3.3274 } };
+    expect(renderToStaticMarkup(<HowMade stats={rounded} />)).toContain("$3.33 in all");
+  });
+});
