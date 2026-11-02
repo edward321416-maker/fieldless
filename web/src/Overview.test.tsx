@@ -63,7 +63,8 @@ describe("the overview", () => {
     expect(html).toContain("Street surveys without the fieldwork");
     expect(html).toContain("$106");
     expect(html).toContain("$4.48");
-    expect(html).toContain("0.94 km in 7.0 min · $4.21 in all");
+    expect(html).toContain("0.94 km in 7.0 min · $4.21 for the survey");
+    expect(html).not.toContain("second looks cost more");
     expect(html).toContain("Seattle&#x27;s 2017 sidewalk survey: a $400,000 budget for 2,336 miles, the most it could have cost.");
     expect(html).toContain(">On foot, up to<");
     expect(html).toContain("Fieldless reads the public street photos that already exist and maps what a photo can show, each finding with its photo.");
@@ -281,6 +282,11 @@ describe("a survey with an update list", () => {
     trust: { photo_months: ["2026-02"], controls: [{ photos: "Survey-date photos", asked: 17, both_yes: 0 }], looked_at: 0, sent_back: 0, outside_view: 0 } };
   const listed = { ...scan, asset_check } as Scan;
   const html = render({ scan: listed, others: [{ scan: { ...scan, id: 31, asset_check: { ...asset_check, no_visit: 9 } } as Scan, name: "New York" }] });
+  it("says under the cost that the list's second looks cost more, when it had some", () => {
+    const looks = { ...asset_check, trust: { ...asset_check.trust, second_looks_usd: 2.3 } };
+    expect(render({ scan: { ...scan, asset_check: looks } as unknown as Scan }))
+      .toContain("Update list second looks cost more; see its report.");
+  });
   it("offers the list in place of the two tools it stands in for", () => {
     expect(html).toContain("43 of 94 city records need no site visit");
     expect(html).toContain("Open the update list →");

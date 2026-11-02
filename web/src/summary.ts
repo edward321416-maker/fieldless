@@ -40,8 +40,8 @@ export function headline(scan: Pick<Scan, "km" | "usd_per_km" | "cost_usd" | "pr
   const perKm = scan.usd_per_km !== null && scan.km !== null;
   return {
     big: dollars(perKm ? scan.usd_per_km! : scan.cost_usd),
-    unit: perKm ? "per km" : "in all",
-    line: perKm ? `${scan.km!.toFixed(2)} km in ${time} · ${dollars(scan.cost_usd)} in all` : time,
+    unit: perKm ? "per km" : "for the survey",
+    line: perKm ? `${scan.km!.toFixed(2)} km in ${time} · ${dollars(scan.cost_usd)} for the survey` : time,
     foot: bench && perKm ? `On foot: $${bench.usd_per_km} per km, ${bench.name}` : null,
   };
 }

@@ -33,7 +33,7 @@ describe("the finished survey", () => {
   it("leads with the cost per km, then one row per item with its city share and bar, then a collapsible review drawer and the files", () => {
     expect(html).toContain("$4.11");
     expect(html).toContain("per km");
-    expect(html).toContain("0.94 km in 19.2 min · $3.87 in all");
+    expect(html).toContain("0.94 km in 19.2 min · $3.87 for the survey");
     expect(html).toContain("On foot: $106 per km, Seattle&#x27;s 2017 sidewalk survey");
     expect(html).toContain("14 findings");
     expect(html).toContain("Curb ramp");

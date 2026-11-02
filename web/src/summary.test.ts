@@ -20,16 +20,16 @@ describe("the results panel", () => {
   });
   it("leads with one number, the cost per km, and sets the walking survey's beside it", () => {
     expect(headline(scan, BENCHMARKS.US)).toEqual({
-      big: "$4.11", unit: "per km", line: "0.94 km in 19.2 min + 1.1 min review · $3.87 in all",
+      big: "$4.11", unit: "per km", line: "0.94 km in 19.2 min + 1.1 min review · $3.87 for the survey",
       foot: "On foot: $106 per km, Seattle's 2017 sidewalk survey",
     });
     // no person's review yet: the processing time alone
-    expect(headline({ ...scan, review_seconds: 0 }, BENCHMARKS.US).line).toBe("0.94 km in 19.2 min · $3.87 in all");
+    expect(headline({ ...scan, review_seconds: 0 }, BENCHMARKS.US).line).toBe("0.94 km in 19.2 min · $3.87 for the survey");
     // no published walking survey for the standard: no comparison
     expect(headline(scan, undefined).foot).toBeNull();
     // no street length: the whole cost is the number
     expect(headline({ ...scan, km: null, usd_per_km: null }, undefined))
-      .toEqual({ big: "$3.87", unit: "in all", line: "19.2 min + 1.1 min review", foot: null });
+      .toEqual({ big: "$3.87", unit: "for the survey", line: "19.2 min + 1.1 min review", foot: null });
   });
   it("says in one sentence what a person did with what the models were unsure of", () => {
     expect(checkLine({ ...counts, needs_review: 21, field_check: 0, verified: 0, rejected: 0 }))

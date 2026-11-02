@@ -170,6 +170,7 @@ export interface AssetCheckSummary {
     outside_view: number;
     findings?: { n: number; yes: number; no: number; unclear: number };
     record_check?: { asked: number; agree: number; differ: number; unsettled: number; sent_back: number };
+    second_looks_usd?: number; // what the list's second looks cost, on top of the survey; none when there were none
   };
 }
 

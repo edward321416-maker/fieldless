@@ -88,6 +88,7 @@ export default function Overview(props: Props) {
             <p className="intro-scope">
               On foot: {bench.name}: {bench.scope}. Fieldless: this example{name ? `, ${name}` : ""}. {bench.caveat}{" "}
               <a href={bench.source} target="_blank" rel="noreferrer">Source</a>
+              {scan.asset_check?.trust.second_looks_usd !== undefined && " Update list second looks cost more; see its report."}
             </p>
           )}
           <div className="overview-actions">

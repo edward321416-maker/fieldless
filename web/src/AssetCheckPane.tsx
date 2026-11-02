@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, assetCheckReportUrl, assetCheckTableUrl } from "./api";
 import type { MissedRecord } from "./cityMatch";
+import { dollars } from "./format";
 import { colourOf, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
 import { EvidencePhoto, PhotoCredit } from "./Photo";
@@ -115,6 +116,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
   const { totals } = summary;
   const visits = totals.in_view - summary.no_visit;
   const objects = summary.actions[COMPARE] ?? 0;
+  const secondLooks = summary.trust.second_looks_usd;
   const checked = summary.trust.findings;
   const findingsChecked = checked
     ? `An AI assistant checked ${checked.n} findings on their photos: ${checked.yes} right, ${checked.no} wrong, ${checked.unclear} could not be told.`
@@ -143,8 +145,11 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
       <p className="hint small">
         Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records.
         {findingsChecked && <> {findingsChecked}</>}
-        {onSwitchLens && <> <button type="button" className="link-button" onClick={() => onSwitchLens("update")}>See the visits on the map</button></>}
       </p>
+      {secondLooks !== undefined && (
+        <p className="hint small">The survey cost {dollars(scan.cost_usd)}. The second looks behind this list, run separately, cost {dollars(secondLooks)} more.</p>
+      )}
+      {onSwitchLens && <button type="button" className="link-button" onClick={() => onSwitchLens("update")}>See the visits on the map</button>}
       {summary.credit && <p className="hint small">{summary.credit}</p>}
       <table className="asset-table">
         <thead>

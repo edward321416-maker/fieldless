@@ -83,6 +83,14 @@ describe("the page and the table", () => {
     expect(renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} />))
       .not.toContain("An AI assistant checked");
   });
+  it("says what the second looks cost on top of the survey, only when there were some", () => {
+    const paid = { ...scan, cost_usd: 3.33 } as Scan;
+    const looks = { ...summary, trust: { ...summary.trust, second_looks_usd: 2.3028 } };
+    expect(renderToStaticMarkup(<AssetCheckPane scan={paid} summary={looks} findings={[]} missed={[]} />))
+      .toContain("The survey cost $3.33. The second looks behind this list, run separately, cost $2.30 more.");
+    expect(renderToStaticMarkup(<AssetCheckPane scan={paid} summary={summary} findings={[]} missed={[]} />))
+      .not.toContain("second looks behind this list");
+  });
   it("offers the list on the map where the map can change", () => {
     expect(renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} onSwitchLens={() => undefined} />))
       .toContain("See the visits on the map");
