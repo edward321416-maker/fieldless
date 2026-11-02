@@ -12,6 +12,12 @@ export interface PlaceOption {
 // Curated street-photo neighborhoods so clicking the omnibox offers instant street jumps even before typing.
 export const PRESET_PLACES: PlaceOption[] = [
   {
+    id: "preset-ballard",
+    title: "NW Market St & 14th Ave NW",
+    subtitle: "Ballard, Seattle · 2026 street photos",
+    bbox: bboxAroundPoint(-122.3725, 47.6687),
+  },
+  {
     id: "preset-pike",
     title: "E Pike St & Broadway",
     subtitle: "Capitol Hill, Seattle · dense Mapillary coverage",

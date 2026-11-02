@@ -64,6 +64,12 @@ describe("PlaceSearch asks Nominatim on Enter", () => {
     expect(String(fetcher.mock.calls[0][0])).toContain("q=Ballard");
   });
 
+  it("offers first a place whose newest walks are from 2026", () => {
+    expect(PRESET_PLACES[0].id).toBe("preset-ballard");
+    expect(PRESET_PLACES[0].subtitle).toContain("2026");
+    expect(filterPresets("ballard").map((p) => p.id)).toEqual(["preset-ballard"]);
+  });
+
   it("filters the preset places locally while typing, with no network", () => {
     const fetcher = vi.spyOn(globalThis, "fetch");
     expect(filterPresets("pike").map((p) => p.id)).toEqual(["preset-pike"]);
