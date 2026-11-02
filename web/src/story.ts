@@ -23,7 +23,7 @@ export const visitsLeft = (a: AssetCheckSummary) => a.totals.in_view - a.no_visi
 export function recordFunnel(a: AssetCheckSummary): { n: number; label: string }[] {
   const area = a.totals.in_area;
   return [
-    ...(area !== undefined ? [{ n: area, label: "city records in the survey's box" }] : []),
+    ...(area !== undefined ? [{ n: area, label: "city records in the survey's box or its photos' view" }] : []),
     { n: a.totals.in_view, label: area !== undefined ? "in the photos' view" : "city records in the photos' view" },
     { n: a.totals.seen_by.Survey ?? 0, label: "found by the survey" },
     { n: a.totals.seen, label: "seen, with second looks" },
@@ -48,7 +48,7 @@ export function reachCheck(a: AssetCheckSummary): Fact | null {
   const area = a.totals.in_area;
   if (area === undefined) return null;
   return { title: "Reach", big: `${a.totals.in_view} of ${count(area)}`,
-    text: "city records in the survey's box that a survey photo had in view. The survey says nothing about the rest." };
+    text: "city records in the survey's box or its photos' view that a survey photo had in view. The survey says nothing about the rest." };
 }
 
 export function compareLine(a: AssetCheckSummary): string | null {

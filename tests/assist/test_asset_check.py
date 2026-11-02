@@ -91,8 +91,8 @@ def test_a_list_made_before_these_counts_still_loads():
 def test_the_page_says_how_many_records_in_the_box_the_photos_reached():
     reach = {**CHECK, "totals": {**TOTALS, "in_area": 40}, "unreached": [["pole", 1.0, 2.0]] * 37}
     page = asset_check.document(reach)
-    assert "Of 40 city records in the survey&#x27;s box, the photos reached 3: 2 need no site visit and 1 does." in page \
-        or "Of 40 city records in the survey's box, the photos reached 3: 2 need no site visit and 1 does." in page
+    assert "Of 40 city records in the survey&#x27;s box or its photos&#x27; view, the photos reached 3: 2 need no site visit " \
+        "and 1 does." in page
     assert "The other 37 had no survey photo in view. This list says nothing about them." in page
 
 

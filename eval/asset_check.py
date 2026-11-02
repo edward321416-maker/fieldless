@@ -298,8 +298,9 @@ def years_between(city_date: str, photo_date: str) -> float:
 
 
 def unreached(check_file: dict, layers: dict[str, list[dict]], bbox: list[float]) -> tuple[dict[str, int], list[list]]:
-    """The city's records in the survey's box that no photo had in view, as [item, lng, lat], and each item's records in
-    the box: those in view plus those unreached. The survey says nothing about an unreached record."""
+    """The city's records in the survey's box that no photo had in view, as [item, lng, lat], and how many each item has.
+    A photo at the box's edge can see a record past it, so a list's records in the box or in view are those in view plus
+    those unreached. The survey says nothing about an unreached record."""
     west, south, east, north = bbox
     counts, out = {}, []
     for item, info in check_file["items"].items():

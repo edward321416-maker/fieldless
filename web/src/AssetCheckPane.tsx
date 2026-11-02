@@ -158,7 +158,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
     <div className="action-pane">
       <p className="action-lead">
         {totals.in_area !== undefined
-          ? <>Of <strong>{count(totals.in_area)}</strong> {summary.city} records in the survey's box, the photos reached{" "}
+          ? <>Of <strong>{count(totals.in_area)}</strong> {summary.city} records in the survey's box or its photos' view, the photos reached{" "}
             <strong>{totals.in_view}</strong>: </>
           : <>Of <strong>{totals.in_view}</strong> {summary.city} records in the photos' view, </>}
         <strong>{summary.no_visit}</strong> need no site visit and <strong>{visits}</strong> {visits === 1 ? "does" : "do"}.

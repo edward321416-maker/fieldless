@@ -317,7 +317,7 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
     columns = "".join(f"<tr><th scope=\"row\">{k}</th><td>{e(v)}</td></tr>" for k, v in COLUMNS)
     tail = f"{check['no_visit']} need no site visit and {visits} {'does' if visits == 1 else 'do'}."
     in_area = totals.get("in_area")
-    lead = (e(f"Of {in_area} city records in the survey's box, the photos reached {totals['in_view']}: {tail} "
+    lead = (e(f"Of {in_area} city records in the survey's box or its photos' view, the photos reached {totals['in_view']}: {tail} "
               f"The other {in_area - totals['in_view']} had no survey photo in view. This list says nothing about them.")
             if in_area is not None else f"Of {totals['in_view']} city records in view of the photos, {tail}")
     trust = "".join(f"<li>{line}</li>" for line in _trust(check, survey_cost))

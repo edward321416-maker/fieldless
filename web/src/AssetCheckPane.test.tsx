@@ -42,7 +42,7 @@ describe("AssetCheckPane", () => {
   it("says how many records in the box the photos reached, when the list knows", () => {
     const reached = { ...summary, totals: { ...counts, in_area: 3292 } };
     const out = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={reached} findings={[]} missed={[]} />);
-    expect(out).toContain("Of <strong>3,292</strong> Seattle records in the survey&#x27;s box, the photos reached <strong>107</strong>:");
+    expect(out).toContain("Of <strong>3,292</strong> Seattle records in the survey&#x27;s box or its photos&#x27; view, the photos reached <strong>107</strong>:");
     expect(out).toContain("<strong>43</strong> need no site visit and <strong>64</strong> do");
   });
 
