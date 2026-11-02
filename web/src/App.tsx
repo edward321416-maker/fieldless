@@ -347,14 +347,15 @@ export default function App() {
   const dots = useMemo(() => (onUpdate && assetRows?.scan === scan?.id ? updateDots(assetRows!.rows) : []),
     [onUpdate, assetRows, scan?.id]);
   // On entry to Results view, highlight the first visible finding with a street photo & viewing cone so the map
-  // immediately pairs a sightline cone with a compact bottom-left photo preview (Alternative 1 spatial UI).
+  // immediately pairs a sightline cone with a compact bottom-left photo preview (Alternative 1 spatial UI). A record's
+  // card, from a city record or a grey dot, closes it: another finding's photo beside it would read as the record's.
   const featured: Finding | null = useMemo(() => {
-    if (selected || shownRecord || newSurvey || intro || !finished || onRecords || onUpdate || hideFeatured) return null;
+    if (selected || shownRecord || far || newSurvey || intro || !finished || onRecords || onUpdate || hideFeatured) return null;
     const pool = findings.filter((f) => !hidden.has(f.item) && (!openItem || f.item === openItem));
     return pool.find((f) => f.picked.item.evidence && f.heading !== null && f.box !== null)
       ?? pool.find((f) => f.picked.item.evidence)
       ?? null;
-  }, [selected, shownRecord, newSurvey, intro, finished, onRecords, onUpdate, hideFeatured, findings, hidden, openItem]);
+  }, [selected, shownRecord, far, newSurvey, intro, finished, onRecords, onUpdate, hideFeatured, findings, hidden, openItem]);
   const toggleItem = (item: string) =>
     setHidden((h) => {
       const next = new Set(h);
