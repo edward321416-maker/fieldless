@@ -303,7 +303,8 @@ def test_a_record_in_the_box_the_photos_had_not_in_view_is_unreached():
     assert out["unreached"] == []  # every record in this box is in view or paired: P1 in view, P2-P4 and C1 missed
     near = {**LAYERS, "pole": [*LAYERS["pole"], {"properties": {"UNITID": "P9"}, "geometry": {"type": "Point", "coordinates": [12.5, 22.5]}}]}
     out = asset_check.build(BOXED, CHECK, TOWN, near, STANDARD, {}, {"controls": [], "looked_at": 0, "sent_back": 0})
-    assert out["unreached"] == [["pole", 12.5, 22.5]]
+    assert out["unreached"] == [["pole", 12.5, 22.5, ["P9"]]]
+    assert out["unreached_fields"] == {"pole": ["UNITID"], "can": ["UNITID"]}
     assert out["totals"]["in_area"] == out["totals"]["in_view"] + 1
 
 
@@ -311,9 +312,21 @@ def test_a_record_paired_outside_the_view_and_outside_the_box_is_not_counted():
     assert all(r[0] != "pole" or (r[1], r[2]) != (14.0, 24.0) for r in boxed()["unreached"])
 
 
+def test_an_unreached_record_carries_only_its_city_ids_as_text():
+    near = {**LAYERS, "pole": [*LAYERS["pole"], {"properties": {"UNITID": 1384731.0, "PLACE": "1 Main St", "COND": "GOOD"},
+                                                 "geometry": {"type": "Point", "coordinates": [12.5, 22.5]}},
+                               {"properties": {"PLACE": "2 Main St"}, "geometry": {"type": "Point", "coordinates": [12.6, 22.6]}}]}
+    out = asset_check.build(BOXED, CHECK, TOWN, near, STANDARD, {}, {"controls": [], "looked_at": 0, "sent_back": 0})
+    assert [entry[3] for entry in out["unreached"]] == [["1384731"], [""]]  # no place, no condition, a missing id is blank
+
+
+def test_ids_are_written_as_the_app_writes_them():
+    assert [asset_check.id_text(v) for v in (None, 7.0, 7.5, 12, "TRE-1")] == ["", "7", "7.5", "12", "TRE-1"]
+
+
 def test_a_survey_without_a_box_says_nothing_of_its_reach():
     out = result()
-    assert "unreached" not in out and "in_area" not in out["totals"]
+    assert "unreached" not in out and "unreached_fields" not in out and "in_area" not in out["totals"]
 
 
 def test_a_record_the_photos_did_not_settle_carries_a_photo_from_nearby():

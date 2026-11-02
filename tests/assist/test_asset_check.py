@@ -103,10 +103,12 @@ def test_the_page_says_how_many_records_in_the_box_the_photos_reached():
 
 
 def test_the_app_gets_the_unreached_records_with_the_rows_not_with_the_counts():
-    reach = {**CHECK, "totals": {**TOTALS, "in_area": 40}, "unreached": [["pole", 1.0, 2.0]]}
-    assert "unreached" not in asset_check.summary(reach)
-    assert asset_check.for_app(reach)["unreached"] == [["pole", 1.0, 2.0]]
-    assert asset_check.for_app(CHECK)["unreached"] == []
+    reach = {**CHECK, "totals": {**TOTALS, "in_area": 40}, "unreached": [["pole", 1.0, 2.0, ["P9"]]],
+             "unreached_fields": {"pole": ["UNITID"]}}
+    assert "unreached" not in asset_check.summary(reach) and "unreached_fields" not in asset_check.summary(reach)
+    assert asset_check.for_app(reach)["unreached"] == [["pole", 1.0, 2.0, ["P9"]]]
+    assert asset_check.for_app(reach)["unreached_fields"] == {"pole": ["UNITID"]}
+    assert (asset_check.for_app(CHECK)["unreached"], asset_check.for_app(CHECK)["unreached_fields"]) == ([], {})
 
 
 def test_the_page_says_what_the_nearby_photo_is_and_credits_it():

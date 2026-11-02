@@ -211,9 +211,13 @@ export interface AssetRow {
   nearby_photo?: NearbyPhoto;
 }
 
+export type UnreachedEntry = [string, number, number] | [string, number, number, string[]];
+
 export interface AssetCheck extends AssetCheckSummary {
   rows: AssetRow[];
-  unreached?: [string, number, number][]; // [item, lng, lat] of each city record in the box no photo had in view
+  // each city record in the box no photo had in view: [item, lng, lat] and, from 11/2, its ids in unreached_fields' order
+  unreached?: UnreachedEntry[];
+  unreached_fields?: Record<string, string[]>; // each item's id fields, the ones a record in view is shown by
 }
 
 export interface Walk {

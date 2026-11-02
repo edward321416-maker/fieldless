@@ -298,23 +298,32 @@ def years_between(city_date: str, photo_date: str) -> float:
     return (int(photo_date[:4]) - int(city_date[:4])) + (int(photo_date[5:7]) - int(city_date[5:7])) / 12
 
 
-def unreached(check_file: dict, layers: dict[str, list[dict]], bbox: list[float]) -> tuple[dict[str, int], list[list]]:
-    """The city's records in the survey's box that no photo had in view, as [item, lng, lat], and how many each item has.
-    A photo at the box's edge can see a record past it, so a list's records in the box or in view are those in view plus
-    those unreached. The survey says nothing about an unreached record."""
+def id_text(value) -> str:
+    """A city id as the app writes it: nothing for none, a whole number without its .0."""
+    if value is None:
+        return ""
+    return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
+
+
+def unreached(check_file: dict, layers: dict[str, list[dict]], bbox: list[float]) -> tuple[dict[str, int], list[list], dict]:
+    """The city's records in the survey's box that no photo had in view, as [item, lng, lat, [its ids]], how many each
+    item has, and each item's id fields, named once. The ids are those a record in view is shown by (city_check's
+    id_fields), nothing more. A photo at the box's edge can see a record past it, so a list's records in the box or in
+    view are those in view plus those unreached. The survey says nothing about an unreached record."""
     west, south, east, north = bbox
-    counts, out = {}, []
+    counts, out, fields = {}, [], {}
     for item, info in check_file["items"].items():
         keys = info["id_fields"]
         seen = {tuple(str(c["city"].get(k)) for k in keys) for c in [*info["pairs"], *info["missed"]]
                 if c.get("in_view", True)}
         points = [(f["properties"], f["geometry"]["coordinates"][:2]) for f in layers[item]
                   if (f.get("geometry") or {}).get("type") == "Point"]
-        inside = [(lng, lat) for props, (lng, lat) in points
+        inside = [(props, lng, lat) for props, (lng, lat) in points
                   if west <= lng <= east and south <= lat <= north and tuple(str(props.get(k)) for k in keys) not in seen]
-        out += [[item, round(lng, 6), round(lat, 6)] for lng, lat in inside]
+        out += [[item, round(lng, 6), round(lat, 6), [id_text(props.get(k)) for k in keys]] for props, lng, lat in inside]
         counts[item] = len(inside)
-    return counts, out
+        fields[item] = list(keys)
+    return counts, out, fields
 
 
 def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]], standard, looks: dict[str, dict],
@@ -351,11 +360,11 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
     totals = tally(rows)
     reach = {}
     if data["scan"].get("bbox"):
-        far_counts, far = unreached(check_file, layers, data["scan"]["bbox"])
+        far_counts, far, far_fields = unreached(check_file, layers, data["scan"]["bbox"])
         for entry in items:
             entry["in_area"] = entry["in_view"] + far_counts[entry["item"]]
         totals["in_area"] = totals["in_view"] + len(far)
-        reach = {"unreached": far}
+        reach = {"unreached": far, "unreached_fields": far_fields}
     compare_unsure = sum(r["photo_shows"] == NOT_SETTLED for r in listed)
     visits_with_photo = sum(r["action"] == VISIT and bool(r.get("evidence") or r.get("nearby_photo")) for r in listed)
     gaps = [years_between(r["city_date"], r["seen_in_photo_on"]) for r in listed if r["action"] == DATE]

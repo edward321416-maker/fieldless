@@ -25,9 +25,10 @@ import MapView from "./MapView";
 import PlaceSearch from "./PlaceSearch";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
-import { dotKey, rowOf, updateDots } from "./story";
+import { dotKey, rowOf, unreachedRecord, updateDots } from "./story";
 import { reviewProgress } from "./summary";
-import type { AssetRow, Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, Walk } from "./types";
+import type { AssetRow, Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, UnreachedEntry,
+  Walk } from "./types";
 
 const POLL_MS = 3000;
 
@@ -57,7 +58,9 @@ export default function App() {
   const [lens, setLens] = useState<Lens>("findings");
   const [record, setRecord] = useState<MissedRecord | null>(null);
   // the update list's rows and the records no photo reached, for the map and a record's card
-  const [assetRows, setAssetRows] = useState<{ scan: number; rows: AssetRow[]; unreached: [string, number, number][] } | null>(null);
+  const [assetRows, setAssetRows] = useState<{ scan: number; rows: AssetRow[]; unreached: UnreachedEntry[];
+    fields: Record<string, string[]> } | null>(null);
+  const [far, setFar] = useState<MissedRecord | null>(null); // a city record in the box no photo reached, opened from its grey dot
   const [actionTab, setActionTab] = useState<ActionTab | undefined>(undefined);
   // The first screen's "Add a survey item": counts up per press and is taken back once the panel has opened (it
   // mounts only after the survey has loaded, so the press can come first).
@@ -226,8 +229,8 @@ export default function App() {
   // Bring the evidence card, the review panel or a city record's card into view when it opens (on a phone it sits
   // below the map).
   useEffect(() => {
-    if (picked || reviewing || record) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [picked?.kind, picked?.item.id, reviewing, record?.key]);
+    if (picked || reviewing || record || far) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [picked?.kind, picked?.item.id, reviewing, record?.key, far?.key]);
 
   const onSelect = useCallback((b: Bbox) => {
     setBbox(b);
@@ -237,6 +240,7 @@ export default function App() {
 
   function openScan(id: number) {
     setPicked(null);
+    setFar(null);
     setHideFeatured(false);
     setReviewing(false);
     setOpenItem(null);
@@ -258,6 +262,7 @@ export default function App() {
   function pick(p: Picked) {
     setReviewing(false);
     setRecord(null);
+    setFar(null);
     setPicked(p);
   }
 
@@ -331,7 +336,8 @@ export default function App() {
     if (!finished || intro || !scan?.asset_check || assetRows?.scan === scan.id) return;
     let cancelled = false;
     api.assetCheck(scan.id)
-      .then((c) => !cancelled && setAssetRows({ scan: scan.id, rows: c.rows, unreached: c.unreached ?? [] }))
+      .then((c) => !cancelled && setAssetRows({ scan: scan.id, rows: c.rows, unreached: c.unreached ?? [],
+        fields: c.unreached_fields ?? {} }))
       .catch(() => undefined);
     return () => {
       cancelled = true;
@@ -358,6 +364,16 @@ export default function App() {
     });
 
   // A dot of the update list: the same place as the list's "Show on the map", and the map stays on the list.
+  function pickUnreached(index: number) {
+    const entry = assetRows && assetRows.scan === scan?.id ? assetRows.unreached[index] : undefined;
+    if (!entry || !scan?.asset_check) return;
+    const layer = scan.asset_check.items.find((i) => i.item === entry[0])?.city_list ?? "";
+    setPicked(null);
+    setRecord(null);
+    setOpenItem(null);
+    setFar(unreachedRecord(entry, index, assetRows!.fields, layer));
+  }
+
   function pickDot(key: string) {
     const row = assetRows?.rows.find((r) => dotKey(r) === key);
     const target = row ? rowTarget(row, findings, records) : null;
@@ -573,6 +589,7 @@ export default function App() {
         onPick={(f) => pick(f.picked)}
         onPickRecord={setRecord}
         onPickDot={pickDot}
+        onPickUnreached={pickUnreached}
         onReady={(fn) => (getView.current = fn)}
         onStreets={setStreets}
       >
@@ -580,6 +597,7 @@ export default function App() {
           <LensSwitch lens={lens} onChange={(l) => {
             setLens(l);
             setRecord(null);
+            setFar(null);
           }} update={scan?.asset_check
             ? { noVisit: scan.asset_check.no_visit, visit: scan.asset_check.totals.in_view - scan.asset_check.no_visit,
               unreached: scan.asset_check.totals.in_area !== undefined
@@ -660,6 +678,9 @@ export default function App() {
                 setReviewing(false);
               }} />
           )}
+          {far && !selected && !shownRecord && !newSurvey && (
+            <CityRecordCard record={far} items={items} unreached credit={scan?.asset_check?.credit} onClose={() => setFar(null)} />
+          )}
           {shownRecord && (
             <CityRecordCard record={shownRecord} items={items} onClose={() => setRecord(null)}
               row={assetRows?.scan === scan?.id ? rowOf(assetRows?.rows ?? [], shownRecord) : undefined} />
@@ -684,11 +705,11 @@ export default function App() {
         )}
         {/* One thing at a time: a finding's card, else a city record's, else an item's findings, else the survey
             (cleanup design 2). */}
-        {scan && finished && !newSurvey && !selected && !shownRecord && openItem && (
+        {scan && finished && !newSurvey && !selected && !shownRecord && !far && openItem && (
           <FindingList scan={shownScan!} item={openItem} findings={findings.filter((f) => f.item === openItem)}
             streets={streets} selectedKey={null} onPick={(f) => pick(f.picked)} onBack={() => setOpenItem(null)} />
         )}
-        {scan && finished && !newSurvey && !selected && !shownRecord && !openItem && (
+        {scan && finished && !newSurvey && !selected && !shownRecord && !far && !openItem && (
           <ResultsPanel
             scan={shownScan!}
             name={demos.find((d) => d.scan_id === scan.id)?.name ?? null}

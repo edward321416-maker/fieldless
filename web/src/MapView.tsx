@@ -11,7 +11,7 @@ import type { Lens } from "./LensSwitch";
 import { markerCanvas, markerName, RATIO } from "./markerArt";
 import type { UpdateDot } from "./story";
 import { namedRoads, streetText } from "./streets";
-import type { Bbox, ItemMeta, Walk } from "./types";
+import type { Bbox, ItemMeta, UnreachedEntry, Walk } from "./types";
 
 // MapLibre 6 looks for its worker next to its own module, which bundling moves; point it at the emitted file.
 maplibregl.setWorkerUrl(workerUrl);
@@ -54,7 +54,7 @@ interface Props {
   cityStates: Record<string, CityState>; // a finding's pairing with the city's records, by finding key
   records: MissedRecord[]; // the city's records in view the survey did not find
   dots: UpdateDot[]; // the update list's records (the update lens)
-  unreached: [string, number, number][]; // city records in the box no photo had in view, [item, lng, lat]: every lens
+  unreached: UnreachedEntry[]; // city records in the box no photo had in view, [item, lng, lat, ...]: every lens
   padLeft: number; // what covers the map's left on a wide screen when fitting (the introduction's photo)
   walks: Walk[];
   selected: Finding | null;
@@ -64,6 +64,7 @@ interface Props {
   onPick: (f: Finding) => void;
   onPickRecord: (r: MissedRecord) => void;
   onPickDot: (key: string) => void;
+  onPickUnreached: (index: number) => void; // by its place in `unreached`
   onReady: (getView: () => Bbox) => void;
   onStreets: (names: Record<string, string>) => void;
   children?: ReactNode; // drawn over the map (the selected finding's photo)
@@ -294,6 +295,19 @@ export default function MapView(props: Props) {
     map.on("mouseleave", "records-dot", () => {
       map.getCanvas().style.cursor = "";
       hover.remove();
+    });
+    // A grey dot opens its record's card, unless a coloured dot is drawn over it there: that one has the click.
+    const OVER_GREY = ["findings-dot", "findings", "update-dot", "records-dot"];
+    map.on("click", "unreached-dot", (e) => {
+      if (map.queryRenderedFeatures(e.point, { layers: OVER_GREY }).length > 0) return;
+      const index = e.features?.[0]?.properties?.index;
+      if (typeof index === "number") latest.current.onPickUnreached(index);
+    });
+    map.on("mousemove", "unreached-dot", () => {
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", "unreached-dot", () => {
+      map.getCanvas().style.cursor = "";
     });
     map.on("click", "update-dot", (e) => {
       const key = e.features?.[0]?.properties?.key as string | undefined;
@@ -550,7 +564,8 @@ export default function MapView(props: Props) {
     if (!loaded) return;
     (mapRef.current?.getSource("unreached") as maplibregl.GeoJSONSource | undefined)?.setData({
       type: "FeatureCollection",
-      features: props.unreached.filter(([item]) => !props.hidden.has(item)).map(([item, lng, lat]) => point([lng, lat], { item })),
+      features: props.unreached.flatMap(([item, lng, lat], index) => (props.hidden.has(item) ? []
+        : [point([lng, lat], { item, index })])),
     });
   }, [props.unreached, props.hidden, loaded]);
 

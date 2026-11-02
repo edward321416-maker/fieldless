@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM } from "./benchmarks";
 import { changeCards, compareLine, controlCheck, dotKey, hardestExample, nearbyOf, photoSpan, reachCheck, reachLine, recordFunnel,
-  updateDots, visitLine } from "./story";
+  unreachedRecord, updateDots, visitLine } from "./story";
 import type { AssetCheckSummary, AssetRow, Scan } from "./types";
 
 const check = (over: Partial<AssetCheckSummary> = {}) => ({
@@ -102,6 +102,20 @@ describe("what changes", () => {
   it("leaves out what the survey has no number for", () => {
     expect(changeCards(undefined, null)).toEqual([]);
     expect(changeCards(check(), "Ballard").map((c) => c.big)).toEqual(["51 of 94"]);
+  });
+});
+
+describe("a city record no photo reached", () => {
+  const fields = { street_tree: ["COMPKEY", "UNITID", "UNITDESC"] };
+  it("is shown by its list and its ids, in the list's order", () => {
+    expect(unreachedRecord(["street_tree", -122.37, 47.67, ["666124", "TRE-1", "5600 8TH AVE NW"]], 4, fields, "SDOT street trees"))
+      .toEqual({ key: "unreached:street_tree:4", item: "street_tree", layer: "SDOT street trees", lat: 47.67, lng: -122.37,
+        fields: [["COMPKEY", "666124"], ["UNITID", "TRE-1"], ["UNITDESC", "5600 8TH AVE NW"]] });
+  });
+  it("still reads an entry made before the ids were kept", () => {
+    expect(unreachedRecord(["street_tree", -122.37, 47.67], 0, fields, "SDOT street trees").fields)
+      .toEqual([["COMPKEY", ""], ["UNITID", ""], ["UNITDESC", ""]]);
+    expect(unreachedRecord(["pole", 0, 0], 0, {}, "x").fields).toEqual([]);
   });
 });
 

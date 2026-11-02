@@ -27,6 +27,19 @@ describe("a city record the survey did not find", () => {
     expect(html).toContain("Seen in a photo of 2025-09-04, on a second look in a panorama; the survey itself did not find it. Suggestion: Update the date.");
     expect(html).not.toContain("Check on site");
   });
+  it("says a record no photo reached is one the survey says nothing about, with the city's credit", () => {
+    const html = renderToStaticMarkup(<CityRecordCard record={record} items={items} unreached onClose={() => undefined}
+      credit="Source: NYC Open Data." />);
+    expect(html).toContain("Street tree");
+    expect(html).toContain("SDOT street trees");
+    expect(html).toContain("<dd>222410</dd>");
+    expect(html).toContain("In the city&#x27;s list, inside the survey&#x27;s box. No survey photo reached it, so the survey says nothing about it.");
+    expect(html).not.toContain("Check on site");
+    expect(html).toContain("Source: NYC Open Data.");
+    expect(html).toMatch(/<button type="button"[^>]*>Close<\/button>/);
+    expect(renderToStaticMarkup(<CityRecordCard record={record} items={items} unreached onClose={() => undefined} />))
+      .not.toContain("hint small");
+  });
   it("keeps asking for a look when the row is a visit", () => {
     const row = { item: "street_tree", city_record: "TRE-54698", action: "Visit on site", how_seen: "", seen_in_photo_on: "" } as never;
     expect(renderToStaticMarkup(<CityRecordCard record={record} items={items} row={row} onClose={() => undefined} />))

@@ -1,7 +1,7 @@
 import type { Fact } from "./benchmarks";
 import type { MissedRecord } from "./cityMatch";
 import { count, dollars } from "./format";
-import type { AssetCheckSummary, AssetRow, NearbyPhoto, Scan } from "./types";
+import type { AssetCheckSummary, AssetRow, NearbyPhoto, Scan, UnreachedEntry } from "./types";
 
 // The overview's story, in the order a visitor asks: the problem, how the models solve it, whether it holds up, what a
 // person can do with it, what changes (docs/specs/2026-11-02-app-story-design.md). Every number about a survey comes
@@ -104,6 +104,14 @@ export function changeCards(check: AssetCheckSummary | undefined, name: string |
       text: `Muse Spark added "${run.target}" to a finished survey of ${run.survey}. Nobody walked the street again.` });
   }
   return cards;
+}
+
+// A city record in the box no photo reached, as a record's card shows it: its list and its ids, nothing else.
+export function unreachedRecord(entry: UnreachedEntry, index: number, fields: Record<string, string[]>,
+  layer: string): MissedRecord {
+  const [item, lng, lat, ids] = entry;
+  return { key: `unreached:${item}:${index}`, item, layer, lat, lng,
+    fields: (fields[item] ?? []).map((name, k): [string, string] => [name, ids?.[k] ?? ""]) };
 }
 
 // The update list's row for a city record, and the photo near it.
