@@ -1,12 +1,12 @@
 import re
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LIVE = "https://edward321416--fieldless-web.us-east.modal.run"
-# The credit a New York record carries (NYC Open Data's terms ask for the source, version and changes).
-NEW_YORK_CREDIT = ("City records: NYC Open Data (DOT Pedestrian Ramp Locations, Parks Forestry Tree Points, DSNY Litter "
-                   "Basket Inventory, DOT Parking Meters, DOT Bicycle Parking, DEP Hydrants), downloaded Nov 1, 2026, "
-                   "clipped to the survey area. The City of New York does not warrant them or endorse this survey.")
+# The credit a New York record carries (NYC Open Data's terms ask for the source, version and changes): the words the app
+# and the reports show, read from the city's own file so the README cannot drift from them.
+NEW_YORK_CREDIT = tomllib.loads((ROOT / "eval" / "cities" / "nyc.toml").read_text(encoding="utf-8"))["credit"]
 
 
 def readme() -> str:
