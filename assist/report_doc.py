@@ -399,7 +399,7 @@ def document(s: dict, notes: dict | None = None, photo_base: str = "evidence/", 
     6 (assist.report passes its own)."""
     parts = [_cover(s), _summary(s, notes), _scope(s), _findings(s, notes), _actions(s, notes),
              _ledger(s, photo_base), _limits(limits or []), _appendix(s)]
-    return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+    return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><link rel=\"icon\" href=\"data:,\">"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
             f"<title>Street Survey Report — {_h(s['area'])}</title><style>{CSS}{_logo_rule()}</style></head>"
             f"<body><main>{''.join(parts)}</main></body></html>\n")

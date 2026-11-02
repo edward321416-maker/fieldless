@@ -319,12 +319,12 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
     columns = "".join(f"<tr><th scope=\"row\">{k}</th><td>{e(v)}</td></tr>" for k, v in COLUMNS)
     tail = f"{check['no_visit']} need no site visit and {visits} {'does' if visits == 1 else 'do'}."
     in_area = totals.get("in_area")
-    lead = (e(f"Of {in_area} city records in the survey's box or its photos' view, the photos reached {totals['in_view']}: {tail} "
-              f"The other {in_area - totals['in_view']} had no survey photo in view. This list says nothing about them.")
+    lead = (e(f"Of {in_area:,} city records in the survey's box or its photos' view, the photos reached {totals['in_view']:,}: {tail} "
+              f"The other {in_area - totals['in_view']:,} had no survey photo in view. This list says nothing about them.")
             if in_area is not None else f"Of {totals['in_view']} city records in view of the photos, {tail}")
     trust = "".join(f"<li>{line}</li>" for line in _trust(check, survey_cost))
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,">
 <title>{e(title)}</title><style>{CSS}</style></head><body>
 <main>
 <p class="sample">Prepared by Fieldless from public street photos. It is not a {e(check['city'])} city document, and the city has not reviewed it.</p>

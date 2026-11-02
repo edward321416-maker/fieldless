@@ -88,6 +88,12 @@ def test_a_list_made_before_these_counts_still_loads():
     assert "visits_with_photo" not in summary and "date_gap_years" not in summary
 
 
+def test_the_page_asks_for_no_icon_and_writes_large_counts_as_the_app_does():
+    page = asset_check.document({**CHECK, "totals": {**TOTALS, "in_area": 3292}, "unreached": []})
+    assert '<link rel="icon" href="data:,">' in page
+    assert "Of 3,292 city records" in page and "The other 3,289 had no survey photo in view" in page
+
+
 def test_the_page_says_how_many_records_in_the_box_the_photos_reached():
     reach = {**CHECK, "totals": {**TOTALS, "in_area": 40}, "unreached": [["pole", 1.0, 2.0]] * 37}
     page = asset_check.document(reach)

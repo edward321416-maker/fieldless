@@ -25,7 +25,7 @@ import MapView from "./MapView";
 import PlaceSearch from "./PlaceSearch";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
-import { dotKey, nearbyOf, updateDots } from "./story";
+import { dotKey, rowOf, updateDots } from "./story";
 import { reviewProgress } from "./summary";
 import type { AssetRow, Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, Walk } from "./types";
 
@@ -662,7 +662,7 @@ export default function App() {
           )}
           {shownRecord && (
             <CityRecordCard record={shownRecord} items={items} onClose={() => setRecord(null)}
-              nearby={assetRows?.scan === scan?.id ? nearbyOf(assetRows?.rows ?? [], shownRecord) : undefined} />
+              row={assetRows?.scan === scan?.id ? rowOf(assetRows?.rows ?? [], shownRecord) : undefined} />
           )}
         </div>
         {/* What is being looked at comes first; a new survey is one button away (docs/ui-rules.md U6). */}

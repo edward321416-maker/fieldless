@@ -2,19 +2,20 @@ import { Fragment, useEffect } from "react";
 import { NearbyPhotoLink } from "./AssetCheckPane";
 import type { MissedRecord } from "./cityMatch";
 import { colourOf, itemName } from "./items";
-import type { ItemMeta, NearbyPhoto } from "./types";
+import { recordLine } from "./story";
+import type { AssetRow, ItemMeta } from "./types";
 
 interface Props {
   record: MissedRecord;
   items: ItemMeta[];
-  nearby?: NearbyPhoto; // a survey photo from near the record, when the update list has one
+  row?: AssetRow; // the update list's row for the record, when there is one
   onClose: () => void;
 }
 
 // A city record in a photo's view that no finding was paired with: what it is, the city's list and the ids the city
 // keeps it by, so a surveyor can look it up in the city's own system before going out. Its dot is the map's (a faint
 // dot in the item's colour).
-export default function CityRecordCard({ record, items, nearby, onClose }: Props) {
+export default function CityRecordCard({ record, items, row, onClose }: Props) {
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") onClose();
@@ -35,8 +36,8 @@ export default function CityRecordCard({ record, items, nearby, onClose }: Props
           <Fragment key={name}><dt>{name}</dt><dd>{value}</dd></Fragment>
         ))}
       </dl>
-      <p>In the city's list and in a photo's view; not found by this survey. Check on site or in the photos.</p>
-      {nearby && <NearbyPhotoLink photo={nearby} />}
+      <p>{recordLine(row)}</p>
+      {row?.nearby_photo && <NearbyPhotoLink photo={row.nearby_photo} />}
       <button type="button" onClick={onClose}>Close</button>
     </section>
   );

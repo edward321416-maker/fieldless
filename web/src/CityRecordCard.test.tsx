@@ -20,4 +20,16 @@ describe("a city record the survey did not find", () => {
       "In the city&#x27;s list and in a photo&#x27;s view; not found by this survey. Check on site or in the photos.");
     expect(html).toMatch(/<button type="button"[^>]*>Close<\/button>/);
   });
+  it("says what the update list's row says when a photo settled the record, not to check on site", () => {
+    const row = { item: "street_tree", city_record: "TRE-54698", action: "Update the date", how_seen: "Second look, panorama",
+      seen_in_photo_on: "2025-09-04" } as never;
+    const html = renderToStaticMarkup(<CityRecordCard record={record} items={items} row={row} onClose={() => undefined} />);
+    expect(html).toContain("Seen in a photo of 2025-09-04, on a second look in a panorama; the survey itself did not find it. Suggestion: Update the date.");
+    expect(html).not.toContain("Check on site");
+  });
+  it("keeps asking for a look when the row is a visit", () => {
+    const row = { item: "street_tree", city_record: "TRE-54698", action: "Visit on site", how_seen: "", seen_in_photo_on: "" } as never;
+    expect(renderToStaticMarkup(<CityRecordCard record={record} items={items} row={row} onClose={() => undefined} />))
+      .toContain("Check on site or in the photos.");
+  });
 });

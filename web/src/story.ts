@@ -106,9 +106,26 @@ export function changeCards(check: AssetCheckSummary | undefined, name: string |
   return cards;
 }
 
-// The photo near a city record, from the update list's row for it.
+// The update list's row for a city record, and the photo near it.
+export function rowOf(rows: AssetRow[], record: MissedRecord): AssetRow | undefined {
+  return rows.find((r) => r.item === record.item && record.fields.some(([, value]) => value === r.city_record));
+}
+
 export function nearbyOf(rows: AssetRow[], record: MissedRecord): NearbyPhoto | undefined {
-  return rows.find((r) => r.item === record.item && r.nearby_photo && record.fields.some(([, value]) => value === r.city_record))?.nearby_photo;
+  return rowOf(rows, record)?.nearby_photo;
+}
+
+const SEEN_HOW: Record<string, string> = { Survey: "by the survey", "Second look": "on a second look",
+  "Second look, panorama": "on a second look in a panorama" };
+const SETTLED = ["Correct the record", "Update the date", "No change"];
+
+// What a city record's card says: what its update list row says when a photo settled it, else that it needs a look.
+export function recordLine(row: AssetRow | undefined): string {
+  if (row && SETTLED.includes(row.action) && row.seen_in_photo_on) {
+    const how = SEEN_HOW[row.how_seen] ? `, ${SEEN_HOW[row.how_seen]}` : "";
+    return `Seen in a photo of ${row.seen_in_photo_on}${how}; the survey itself did not find it. Suggestion: ${row.action}.`;
+  }
+  return "In the city's list and in a photo's view; not found by this survey. Check on site or in the photos.";
 }
 
 export interface UpdateDot {
