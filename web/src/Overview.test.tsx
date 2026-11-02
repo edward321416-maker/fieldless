@@ -146,7 +146,8 @@ describe("the overview", () => {
     expect(html).toContain("Example survey · Capitol Hill");
     expect(html).not.toContain("Live App Preview");
     expect(html).toContain("Found by SAM 3.1, judged by Muse Spark");
-    expect(html).toContain("Model cost");
+    expect(html).toContain("Survey cost");
+    expect(html).not.toContain("Model cost");
     expect(html).not.toContain("End-to-end AI cost");
   });
   it("names the three tools by what they hand over, not by what the city should do", () => {

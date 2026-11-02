@@ -30,7 +30,7 @@ describe("how a survey was made", () => {
     const html = renderToStaticMarkup(<HowMade stats={stats} />);
     expect(html).toContain("how-made-drawer");
     expect(html).toContain("How this survey was made");
-    expect(html).toContain("429 model calls · $2.56 in all · 7.0 min of processing");
+    expect(html).toContain("429 model calls · $2.56 for the survey · 7.0 min of processing");
     expect(html).toContain("Survey items");
     expect(html).toContain("SAM 3.1 × 282");
     expect(html).toContain("Muse Spark × 144");
@@ -45,6 +45,6 @@ describe("how a survey was made", () => {
 describe("the total", () => {
   it("is the survey's cost, the same number as at the top of the panel", () => {
     const rounded = { ...stats, total: { ...stats.total, cost_usd: 3.3248, scan_cost_usd: 3.3274 } };
-    expect(renderToStaticMarkup(<HowMade stats={rounded} />)).toContain("$3.33 in all");
+    expect(renderToStaticMarkup(<HowMade stats={rounded} />)).toContain("$3.33 for the survey");
   });
 });

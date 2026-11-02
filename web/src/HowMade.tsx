@@ -13,7 +13,7 @@ export default function HowMade({ stats }: { stats: CallStats }) {
           <div className="how-made-head">
             <h3 id="how-made-title">How this survey was made</h3>
             <p className="sub">
-              {modelCalls(stats)} model calls · {dollars(stats.total.scan_cost_usd)} in all ·{" "}
+              {modelCalls(stats)} model calls · {dollars(stats.total.scan_cost_usd)} for the survey ·{" "}
               {(stats.total.processing_seconds / 60).toFixed(1)} min of processing
             </p>
           </div>

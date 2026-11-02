@@ -205,6 +205,18 @@ def test_photos_come_from_where_the_page_is_told():
     assert 'src="../../../evidence/scan1_issue1_9.jpg"' in asset_check.document(CHECK, photo_base="../../../evidence/")
 
 
+def test_the_examples_start_with_the_most_common_kind_of_row():
+    many = {**CHECK, "rows": [*ROWS, row(city_record="P9", action="Correct the record", city_says="x", photo_shows="y")],
+            "actions": {**ACTIONS, "Correct the record": 1, "No change": 5}}
+    assert [r["action"] for r in asset_check.examples(many)][0] == "No change"
+
+
+def test_the_objects_off_the_lists_are_counted_as_the_table_counts_them():
+    page = asset_check.document({**CHECK, "totals": {**TOTALS, "not_listed": 9}})
+    assert "The 1 objects not on the lists" in page or "The 1 object" in page or " 1 objects not on the lists" in page
+    assert "9 objects not on the lists" not in page
+
+
 def test_the_examples_are_of_different_assets():
     shown = asset_check.examples(CHECK)
     assert len({r["asset"] for r in shown}) == len(shown) and len(shown) >= 2

@@ -81,6 +81,11 @@ def test_a_date_that_is_not_a_verification_is_left_alone():
     assert asset_check.action_of(row_of(asset_check.SEEN, newer=""), None, None, True) == asset_check.SAME
 
 
+def test_a_list_date_that_is_no_verification_is_not_shown_as_the_citys_date():
+    out = result_without_dates()
+    assert row(out, "P1")["city_date"] == "" and row(out, "P1")["photo_newer_than_city_date"] == ""
+
+
 def test_a_record_the_photo_contradicts_is_to_correct_unless_nobody_is_sure_of_it():
     differs = {"city_says": "No", "photo_shows": "Yes"}
     assert asset_check.action_of(row_of(asset_check.SEEN), None, differs, True) == asset_check.FIX

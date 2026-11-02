@@ -40,6 +40,12 @@ describe("the results panel", () => {
       .toBe("A person checked 5 of the 21 the models were unsure of; 16 are waiting.");
     expect(checkLine({ ...counts, field_check: 0, verified: 0, rejected: 0 })).toBe("The models were sure of every finding.");
   });
+  it("points to the item list, not a dispatch list, when an update list stands in for it", () => {
+    const unsure = { ...counts, needs_review: 8, field_check: 0, verified: 0, rejected: 0 };
+    expect(checkLine(unsure, true)).toContain('each is marked "Models unsure" in the item list.');
+    expect(checkLine(unsure, true)).not.toContain("dispatch");
+    expect(checkLine(unsure)).toContain("dispatch list");
+  });
   it("puts an item's city share, defects and site checks on one line", () => {
     expect(itemNote({ city: "1 of 27 in the city's list", confirmed: 0, possible: 2, site: 0 }))
       .toBe("1 of 27 in the city's list · 2 possible defects");

@@ -258,7 +258,8 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
         feature = by_key[tuple(str(city.get(k)) for k in keys)]
         props = feature["properties"]
         lng, lat = feature["geometry"]["coordinates"][:2]
-        last = month(props.get(cfg["checked_field"])) if cfg.get("checked_field") else ""
+        # a list's date that is not a verification (it says when the list was updated) is no date to compare
+        last = month(props.get(cfg["checked_field"])) if cfg.get("checked_field") and cfg.get("verified") else ""
         ev = (issue or {}).get("evidence") or (look or {}).get("evidence")
         seen_on = str((ev or {}).get("captured_at") or "")[:10]
         return {**base, "city_list": info["layer"], "city_record": str(city.get(cfg["record_field"]) or city.get(keys[0])),

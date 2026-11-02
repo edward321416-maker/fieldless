@@ -308,7 +308,7 @@ def summary(scan_data: dict, standard: Standard, area: str | None = None, now: d
         "old_photos": sum(views.is_old(f.get("captured_at"), now) for f in frames),
         "old_photo_years": views.OLD_PHOTO_YEARS,
         "km": km, "cost_usd": round(scan["cost_usd"], 2), "usd_per_km": app["usd_per_km"],
-        "processing_seconds": round(scan["processing_seconds"]), "review_seconds": round(scan["review_seconds"]),
+        "processing_seconds": round(scan["processing_seconds"], 1), "review_seconds": round(scan["review_seconds"]),
         "items": items, "defects": defects, "city_check": city_check, "ledger": ledger, "actions": actions,
         **({"update_list": {k: check["totals"][k] for k in ("in_view", "seen", "not_determined")}}
            if (check := scan_data.get("asset_check")) else {}),
@@ -370,7 +370,7 @@ def _overview(s: dict) -> str:
     taken = f", taken {dates['from']} to {dates['to']}" if dates else ""
     per_km = f" (${s['usd_per_km']:.2f} per km)" if s["usd_per_km"] is not None else ""
     return (f"Scan {s['scan_id']}, standard {s['standard']}: {s['photos']} photos{taken}, {s['km']} km of street. "
-            f"Model cost ${s['cost_usd']:.2f}{per_km}; {_duration(s['processing_seconds'])} processing.")
+            f"Survey model cost ${s['cost_usd']:.2f}{per_km}; {_duration(s['processing_seconds'])} processing.")
 
 
 def _item_name(i: dict) -> str:

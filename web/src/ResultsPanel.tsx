@@ -171,7 +171,7 @@ export default function ResultsPanel(props: Props) {
           <span className="accordion-meta">{unsure > 0 ? `${unsure} flagged` : "All high confidence"}</span>
         </summary>
         <div className="check-line">
-          <p>{checkLine(scan.counts)}</p>
+          <p>{checkLine(scan.counts, !!scan.asset_check)}</p>
           {scan.counts.needs_review > 0 && props.canReview && !STATIC_DEMO && (
             <button type="button" onClick={props.onReview}>Review</button>
           )}

@@ -40,7 +40,8 @@ COLUMNS = (("action", "What the city could do with this row"),
            ("status", f"{SEEN}, {NOT_DETERMINED} or {NOT_LISTED}"),
            ("how_seen", "Survey, Second look, or Second look, panorama (a flat view cut from a 360-degree photo)"),
            ("models_unsure", "yes when the models could not settle what the object is"),
-           ("city_date", "The city's own date for the record, as year and month"),
+           ("city_date", "The city's own verification date for the record, as year and month; empty where the "
+                         "list's date says when the list was updated, not when the record was verified"),
            ("seen_in_photo_on", "The date of the photo. This is an observation, not an inspection"),
            ("photo_newer_than_city_date", "yes when the photo is newer than the city's date"),
            ("city_condition", "The record's condition, in the city's words"),
@@ -187,7 +188,8 @@ def examples(check: dict) -> list[dict]:
     """A row to show for each action that has a photo, each of a different asset where it can be (docs/design-rules.md
     R2): a photo of what each kind of row is. Rows the models were unsure of are not shown as examples."""
     shown: list[dict] = []
-    for action in (FIX, DATE, SAME, COMPARE):
+    counts = check.get("actions", {})
+    for action in sorted((FIX, DATE, SAME, COMPARE), key=lambda a: -counts.get(a, 0)):
         rows = [r for r in check["rows"] if r["action"] == action and r.get("evidence") and r["models_unsure"] != "yes"]
         pick = next((r for r in rows if r["asset"] not in {s["asset"] for s in shown}), rows[0] if rows else None)
         if pick:
@@ -274,7 +276,7 @@ def _trust(check: dict, survey_cost: float | None = None) -> list[str]:
         lines.append(f"<strong>Left off the list.</strong> Among the objects not on the city's lists, an AI assistant "
                      f"judged {_count(left['repeats'], 'repeat')} and {_count(left['wrong'], 'wrong object')}.")
     lines.append(f"<strong>Position.</strong> Rows from the city's lists keep the city's position. The "
-                 f"{totals['not_listed']} objects not on the lists carry the camera's position, rated Unknown (within 50 ft), "
+                 f"{check['actions'].get(COMPARE, 0)} objects not on the lists carry the camera's position, rated Unknown (within 50 ft), "
                  "so some may be records already listed.")
     lines.append("<strong>Scope.</strong> This compares photos with the city's public lists. It changes nothing in the "
                  "city's records, and it is not an inspection. Every row is a suggestion for the city to decide on.")

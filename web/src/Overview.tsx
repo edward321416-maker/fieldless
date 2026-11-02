@@ -147,7 +147,7 @@ export default function Overview(props: Props) {
                   </div>
                   <div className="showcase-stat">
                     <strong>{scan.usd_per_km !== null ? dollars(scan.usd_per_km) : "—"}/km</strong>
-                    <span>Model cost</span>
+                    <span>Survey cost</span>
                   </div>
                 </div>
               </div>
@@ -182,7 +182,7 @@ export default function Overview(props: Props) {
                 >
                   <span className="workflow-badge prio-gis">City records</span>
                   <strong>{`${scan.asset_check.no_visit} of the ${scan.asset_check.totals.in_view} city records the photos reached need no site visit`}</strong>
-                  <p>A list for the city's asset team: what to correct, which dates to update, where to visit and what to compare with the list, each row with its photo, as a page, a CSV and GeoJSON.</p>
+                  <p>A list for the city's asset team: what to correct, which dates to update, where to visit and what to compare with the list, each row with its photo where a photo settled it, as a page, a CSV and GeoJSON.</p>
                   <span className="workflow-cta">Open the update list →</span>
                 </div>
               ) : (

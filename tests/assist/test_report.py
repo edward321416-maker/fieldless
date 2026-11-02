@@ -59,7 +59,7 @@ def test_summary_takes_km_and_cost_by_the_apps_rules_and_dates_from_the_photos()
     km = views.surveyed_km(data["frames"])
 
     assert s["km"] == km and km > 0 and s["usd_per_km"] == round(0.4567 / km, 2) and s["cost_usd"] == 0.46
-    assert (s["processing_seconds"], s["review_seconds"], s["photos"]) == (95, 30, 6)
+    assert (s["processing_seconds"], s["review_seconds"], s["photos"]) == (95.4, 30, 6)
     assert s["photo_dates"] == {"from": "2021-03-01", "to": "2025-06-05"} and s["old_photos"] == 1
     assert [(d["item"], d["photo_id"], d["title"]) for d in s["defects"]] == [("curb_ramp_warning", "101", "curb ramp")]
     assert (s["area"], s["standard"]) == ("Capitol Hill", "US")

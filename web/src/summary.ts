@@ -47,11 +47,15 @@ export function headline(scan: Pick<Scan, "km" | "usd_per_km" | "cost_usd" | "pr
 }
 
 // What a person did with what the models were unsure of, in one sentence (the chips it replaces said the same).
-export function checkLine(c: Scan["counts"]): string {
+// listed: the survey has an update list, which stands in for the dispatch list.
+export function checkLine(c: Scan["counts"], listed = false): string {
   const unsure = unsureCount(c);
   const looked = unsure - c.needs_review;
   if (unsure === 0) return "The models were sure of every finding.";
-  if (looked === 0) return `The models were unsure of ${unsure}: each is on the dispatch list to check on site.`;
+  if (looked === 0) {
+    return listed ? `The models were unsure of ${unsure}: each is marked "Models unsure" in the item list.`
+      : `The models were unsure of ${unsure}: each is on the dispatch list to check on site.`;
+  }
   if (c.needs_review > 0) return `A person checked ${looked} of the ${unsure} the models were unsure of; ${c.needs_review} are waiting.`;
   return `A person checked the ${unsure} the models were unsure of: ${c.verified} confirmed, ${c.rejected} rejected, ` +
     `${c.field_check} to check on site.`;
