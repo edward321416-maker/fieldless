@@ -108,3 +108,9 @@ def test_the_static_site_exports_the_agents_finished_items_with_their_photos(tmp
     assert (out / "api" / "evidence" / name).read_bytes() == b"rack"
     site_config = json.loads((out / "api" / "config.json").read_text(encoding="utf-8"))
     assert site_config["items"] is True and site_config["make_items"] is False
+
+
+def test_the_space_card_does_not_call_the_photos_mit():
+    _, front, body = static_site.SPACE_README.split("---", 2)  # the card's settings sit between the two dashed lines
+    assert "license: other" in front and "license: mit" not in front
+    assert "Code MIT, photos CC BY-SA 4.0 (Mapillary contributors)." in body

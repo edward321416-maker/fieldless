@@ -30,12 +30,14 @@ colorTo: gray
 sdk: static
 app_file: index.html
 pinned: false
-license: mit
+license: other
 short_description: Street surveys without the fieldwork
 ---
 
 Public demo of [Fieldless](https://github.com/edward321416-maker/fieldless): street surveys Fieldless has already run,
 read-only. Street photos from Mapillary (CC BY-SA 4.0), credited on every photo.
+
+Code MIT, photos CC BY-SA 4.0 (Mapillary contributors).
 """
 
 
