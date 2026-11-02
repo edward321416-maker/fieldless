@@ -19,6 +19,13 @@ interface Props {
   onPreview: (p: Preview | null) => void; // the map draws the walks the survey would follow
 }
 
+// The photos are counted for the box a new survey would cover, once per box. Once a survey is under way the panel
+// shows that survey's box, which arrives as a fresh array every time the app re-reads the survey: nothing is counted
+// then, and a box is compared by its values, not by the array it comes in.
+export function countKey(bbox: Bbox | null, scan: Scan | null): string | null {
+  return bbox && !scan ? bbox.join(",") : null;
+}
+
 const STEPS = ["Area", "Preview", "Running", "Results"];
 
 // Where a new survey stands (docs/specs/2026-10-28-ui-redesign-design.md 3.5): the four steps, the current one marked.
@@ -58,13 +65,14 @@ export default function AreaPanel(props: Props) {
   const [starting, setStarting] = useState(false);
   const [waited, setWaited] = useState(0); // seconds the preview has taken so far
   const running = props.scan !== null && (props.scan.status === "queued" || props.scan.status === "running");
+  const toCount = countKey(bbox, props.scan);
 
   useEffect(() => {
     setPreview(null);
     props.onPreview(null);
     setMessage(null);
     setLoading(false);
-    if (!bbox) return;
+    if (!bbox || toCount === null) return;
     if (bboxTooSmall(bbox)) {
       setMessage("Drag a rectangle over the streets you want to survey.");
       return;
@@ -90,7 +98,7 @@ export default function AreaPanel(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [bbox, maxDeg2]);
+  }, [toCount, maxDeg2]);
 
   // Counting the photos asks Mapillary for every walk in the area: 20-50 s. Say so, and count, so it never looks stuck.
   useEffect(() => {
