@@ -280,6 +280,37 @@ def nearby_result(**records):
                              nearby=near)
 
 
+BOXED = {**DATA, "scan": {"id": 1, "bbox": [9.5, 19.5, 13.5, 23.5]}}  # holds P1..P4 and C1, not P5 (14, 24)
+
+
+def boxed():
+    return asset_check.build(BOXED, CHECK, TOWN, LAYERS, STANDARD, {}, {"controls": [], "looked_at": 0, "sent_back": 0})
+
+
+def test_every_city_record_in_the_box_is_counted_reached_or_not():
+    out = boxed()
+    assert out["totals"]["in_area"] == out["totals"]["in_view"] + len(out["unreached"])
+    assert [i["in_area"] for i in out["items"]] == [4, 1]
+
+
+def test_a_record_in_the_box_the_photos_had_not_in_view_is_unreached():
+    out = boxed()
+    assert out["unreached"] == []  # every record in this box is in view or paired: P1 in view, P2-P4 and C1 missed
+    near = {**LAYERS, "pole": [*LAYERS["pole"], {"properties": {"UNITID": "P9"}, "geometry": {"type": "Point", "coordinates": [12.5, 22.5]}}]}
+    out = asset_check.build(BOXED, CHECK, TOWN, near, STANDARD, {}, {"controls": [], "looked_at": 0, "sent_back": 0})
+    assert out["unreached"] == [["pole", 12.5, 22.5]]
+    assert out["totals"]["in_area"] == out["totals"]["in_view"] + 1
+
+
+def test_a_record_paired_outside_the_view_and_outside_the_box_is_not_counted():
+    assert all(r[0] != "pole" or (r[1], r[2]) != (14.0, 24.0) for r in boxed()["unreached"])
+
+
+def test_a_survey_without_a_box_says_nothing_of_its_reach():
+    out = result()
+    assert "unreached" not in out and "in_area" not in out["totals"]
+
+
 def test_a_record_the_photos_did_not_settle_carries_a_photo_from_nearby():
     out = nearby_result(P2=14.2)
     assert row(out, "P2")["nearby_photo"]["dist_m"] == 14.2

@@ -88,6 +88,21 @@ def test_a_list_made_before_these_counts_still_loads():
     assert "visits_with_photo" not in summary and "date_gap_years" not in summary
 
 
+def test_the_page_says_how_many_records_in_the_box_the_photos_reached():
+    reach = {**CHECK, "totals": {**TOTALS, "in_area": 40}, "unreached": [["pole", 1.0, 2.0]] * 37}
+    page = asset_check.document(reach)
+    assert "Of 40 city records in the survey&#x27;s box, the photos reached 3: 2 need no site visit and 1 does." in page \
+        or "Of 40 city records in the survey's box, the photos reached 3: 2 need no site visit and 1 does." in page
+    assert "The other 37 had no survey photo in view. This list says nothing about them." in page
+
+
+def test_the_app_gets_the_unreached_records_with_the_rows_not_with_the_counts():
+    reach = {**CHECK, "totals": {**TOTALS, "in_area": 40}, "unreached": [["pole", 1.0, 2.0]]}
+    assert "unreached" not in asset_check.summary(reach)
+    assert asset_check.for_app(reach)["unreached"] == [["pole", 1.0, 2.0]]
+    assert asset_check.for_app(CHECK)["unreached"] == []
+
+
 def test_the_page_says_what_the_nearby_photo_is_and_credits_it():
     page = asset_check.document(VISIT_WITH_PHOTO)
     assert "taken 14 m from the record&#x27;s position" in page or "taken 14 m from the record's position" in page

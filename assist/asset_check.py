@@ -148,7 +148,7 @@ def summary(check: dict) -> dict:
 def for_app(check: dict) -> dict:
     """The check as the app reads it: each photo with the address the server gives it."""
     return {**summary(check), "rows": [{**row, "evidence": views.evidence_json(row.get("evidence"))}
-                                       for row in check["rows"]]}
+                                       for row in check["rows"]], "unreached": check.get("unreached", [])}
 
 
 def photos(check: dict) -> set[str]:
@@ -315,6 +315,11 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
     <h3>{e(unknown['asset'])}</h3><dl><dt>City record</dt><dd>{e(unknown['city_record'])}</dd></dl>
     <p class="action">{ACTIONS[VISIT]}</p>{nearby_line(unknown, logo) if unknown else ""}</div></article>""" if unknown else "")
     columns = "".join(f"<tr><th scope=\"row\">{k}</th><td>{e(v)}</td></tr>" for k, v in COLUMNS)
+    tail = f"{check['no_visit']} need no site visit and {visits} {'does' if visits == 1 else 'do'}."
+    in_area = totals.get("in_area")
+    lead = (e(f"Of {in_area} city records in the survey's box, the photos reached {totals['in_view']}: {tail} "
+              f"The other {in_area - totals['in_view']} had no survey photo in view. This list says nothing about them.")
+            if in_area is not None else f"Of {totals['in_view']} city records in view of the photos, {tail}")
     trust = "".join(f"<li>{line}</li>" for line in _trust(check, survey_cost))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -325,7 +330,7 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
 <header>
   <h1>{e(title)}</h1>
   <p class="meta">{' &middot; '.join(e(m) for m in meta)}</p>
-  <p class="lead">Of {totals['in_view']} city records in view of the photos, {check['no_visit']} need no site visit and {visits} {'does' if visits == 1 else 'do'}.</p>
+  <p class="lead">{lead}</p>
   <div class="bar" role="img" aria-label="{check['no_visit']} of {totals['in_view']} city records need no site visit"><span style="width:{share:.1f}%"></span></div>
   <div class="key"><span>{totals['seen']} seen in photo: {e(seen_how(totals))}</span><span>{totals['not_determined']} not determined</span></div>
 </header>
