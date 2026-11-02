@@ -2,20 +2,22 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import LensSwitch from "./LensSwitch";
 
-describe("the map's lens switch", () => {
-  it("offers the findings and the city's records, and says which is on with an inline HUD legend", () => {
-    const recordsHtml = renderToStaticMarkup(<LensSwitch lens="records" onChange={() => undefined} />);
-    expect(recordsHtml).toContain('role="group"');
-    expect(recordsHtml).toContain('aria-label="What the map shows"');
-    expect(recordsHtml).toMatch(/aria-pressed="false"[^>]*>Findings</);
-    expect(recordsHtml).toMatch(/aria-pressed="true"[^>]*>City records</);
-    expect(recordsHtml).toContain("Matched");
-    expect(recordsHtml).toContain("Not on list");
-    expect(recordsHtml).not.toContain(">New<");
-    expect(recordsHtml).toContain("To check");
+const render = (lens: "findings" | "records" | "update", update?: { noVisit: number; visit: number }) =>
+  renderToStaticMarkup(<LensSwitch lens={lens} onChange={() => undefined} update={update} />);
 
-    const findingsHtml = renderToStaticMarkup(<LensSwitch lens="findings" onChange={() => undefined} />);
-    expect(findingsHtml).toContain("1 dot = 1 photo detection");
-    expect(findingsHtml).toContain("Click any dot to open photo");
+describe("the map's views", () => {
+  it("offers the update list only for a survey that has one", () => {
+    expect(render("findings")).not.toContain("Site visits");
+    expect(render("findings", { noVisit: 43, visit: 51 })).toContain(">Site visits</button>");
+  });
+  it("keys the update list's dots with the list's own numbers", () => {
+    const html = render("update", { noVisit: 43, visit: 51 });
+    expect(html).toContain("51 visit on site");
+    expect(html).toContain("43 no site visit");
+    expect(html).not.toContain("Matched");
+  });
+  it("keeps the other two views as they were", () => {
+    expect(render("findings", { noVisit: 43, visit: 51 })).toContain("1 dot = 1 photo detection");
+    expect(render("records", { noVisit: 43, visit: 51 })).toContain("Matched");
   });
 });

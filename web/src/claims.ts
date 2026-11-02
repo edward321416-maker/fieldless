@@ -12,3 +12,6 @@ export const CHECKED_BY_EYE: Record<number, Claim> = {
   31: { right: 52, of: 63, how: "Judged on each evidence photo by the AI coding assistant, not by a person." },
   17: { right: 73, of: 86, how: "Judged on each evidence photo by the AI coding assistant, not by a person." },
 };
+
+// Muse Glimmer on one Modal H100, measured on 300 calls at 32 side by side (docs/metrics.md, "Muse Glimmer 2단계").
+export const GLIMMER_NOTE = "For large runs, Muse Glimmer's open weights run on one Modal H100, at about a sixteenth of the cost per check on a busy GPU. The live app uses Muse Spark.";

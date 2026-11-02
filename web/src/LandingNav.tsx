@@ -3,9 +3,11 @@
 export default function LandingNav({ hasExamples }: { hasExamples: boolean }) {
   return (
     <nav className="landing-nav" aria-label="Landing page sections">
-      <a href="#overview-items">What it finds</a>
+      <a href="#overview-problem">Problem</a>
       <a href="#overview-flow">How it works</a>
       <a href="#overview-checks">Validation</a>
+      <a href="#overview-do">What you can do</a>
+      <a href="#overview-change">What changes</a>
       {hasExamples && <a href="#overview-cities">Examples</a>}
     </nav>
   );

@@ -1,13 +1,14 @@
 import type { ActionTab } from "./ActionHub";
-import { BENCHMARKS } from "./benchmarks";
-import { CHECKED_BY_EYE } from "./claims";
+import { BENCHMARKS, PROBLEM, type Fact } from "./benchmarks";
+import { CHECKED_BY_EYE, GLIMMER_NOTE } from "./claims";
 import { cityTotals } from "./cityMatch";
 import { dollars } from "./format";
 import { capital, colourOf, itemName } from "./items";
 import { phraseJourney, secondOpinions } from "./overviewData";
 import { MiniCredit } from "./Photo";
+import { changeCards, compareLine, controlCheck, hardestExample, MODEL_STEPS, photoSpan, recordFunnel, visitLine } from "./story";
 import { cityLine, headline, thumbPosition } from "./summary";
-import type { Evidence, Issue, ItemRun, Scan } from "./types";
+import type { AssetCheckSummary, Evidence, Issue, ItemRun, Scan } from "./types";
 
 export interface Example {
   item: string;
@@ -22,7 +23,7 @@ interface Props {
   issues: Issue[]; // its findings (not the agent items')
   counts: Record<string, number>; // findings per item id, entrances included
   examples: Example[]; // one photo per item
-  runs: ItemRun[]; // its finished item runs, at most two
+  runs: ItemRun[]; // the example surveys' newest finished item runs, at most two
   others: { scan: Scan; name: string }[]; // the other example surveys
   canSurvey: boolean; // false on the static demo
   onSee: () => void;
@@ -42,9 +43,9 @@ const firstList = (scan: Scan) => (scan.city_check ? Object.values(scan.city_che
 const countsOnlyNote = (scan: Scan) =>
   scan.city_check?.counts_only ? `City list: counts only. Source: ${scan.city_check.source}.` : null;
 
-// What a first visit sees: every part of a survey on one page before the map, in the order a reader asks about it.
-// The cost per km comes first; then each item at the same size, how the rules, the city's records and the photos
-// meet, what backs the numbers, the items the agent wrote, and the example surveys. Each number is the server's.
+// What a first visit sees: the cost per km first, then the story in the order a reader asks it: the problem, how the
+// models solve it, whether it holds up, what a person can do with it and what changes, then the example surveys
+// (docs/specs/2026-11-02-app-story-design.md). Each number about a survey is the server's.
 export default function Overview(props: Props) {
   const { scan, name, canSurvey } = props;
   const bench = scan ? BENCHMARKS[scan.standard] : undefined;
@@ -153,12 +154,20 @@ export default function Overview(props: Props) {
       </div>
       {scan && (
         <>
-          <section className="overview-part overview-workflows" aria-label="Actionable tools built into Fieldless">
-            <div className="workflow-head">
-              <span className="overview-kicker">After the survey</span>
-              <h4>Turn a survey into field work and city records</h4>
-              <p className="hint">Each opens on the finished example survey.</p>
-            </div>
+          <Problem />
+          <section className="overview-part" aria-labelledby="overview-flow">
+            <StoryHead n={2} label="The solution" id="overview-flow" title="A survey item is a sentence"
+              lead="SAM 3.1 finds things by name and Muse Spark checks them by question, so a new item needs no labelled photos and no trained model." />
+            <Flow scan={scan} />
+            <ItemCards scan={scan} counts={props.counts} examples={props.examples} />
+            {props.runs.length > 0 && (
+              <Runs runs={props.runs} surveys={[{ scan, name: name ?? `Survey ${scan.id}` }, ...props.others]} onOpenRun={props.onOpenRun} />
+            )}
+            <p className="flow-back story-back">{GLIMMER_NOTE}</p>
+          </section>
+          <Checks scan={scan} issues={props.issues} others={props.others} />
+          <section className="overview-part overview-workflows" aria-labelledby="overview-do">
+            <StoryHead n={4} label="What you can do" id="overview-do" title="Turn a survey into field work and city records" />
             <div className="workflow-grid">
               {scan.asset_check ? (
                 <div
@@ -221,12 +230,27 @@ export default function Overview(props: Props) {
                 <p>Type a street object, such as a fire hydrant or a bike rack. Muse Spark writes the item, tests it and surveys the same photos. Making one on the live site needs an invite code.</p>
                 <span className="workflow-cta">Add a survey item →</span>
               </div>
+              {canSurvey && (
+                <div
+                  role="link"
+                  tabIndex={0}
+                  className="overview-card workflow-card"
+                  onClick={props.onSurvey}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && props.onSurvey()}
+                >
+                  <span className="workflow-badge prio-p2">New survey</span>
+                  <strong>Survey your own streets</strong>
+                  <p>Pick a place, see the photo count and the estimated cost, then start. Spending is capped.</p>
+                  <span className="workflow-cta">Start a new survey →</span>
+                </div>
+              )}
             </div>
+            <BackToCity scan={scan} issues={props.issues} />
           </section>
-          <ItemCards scan={scan} counts={props.counts} examples={props.examples} />
-          <Flow scan={scan} issues={props.issues} />
-          <Checks scan={scan} issues={props.issues} others={props.others} />
-          {props.runs.length > 0 && <Runs runs={props.runs} onOpenRun={props.onOpenRun} />}
+          <section className="overview-part" aria-labelledby="overview-change">
+            <StoryHead n={5} label="What changes" id="overview-change" title="The walk goes where it's needed" />
+            <FactCards facts={changeCards(scan, name)} />
+          </section>
           {props.others.length > 0 && (
             <Surveys first={{ scan, name: name ?? `Survey ${scan.id}` }} others={props.others} onOpenScan={props.onOpenScan} />
           )}
@@ -237,12 +261,48 @@ export default function Overview(props: Props) {
   );
 }
 
+// A part of the story: its number and name, its heading and a line under it.
+function StoryHead({ n, label, id, title, lead }: { n: number; label: string; id: string; title: string; lead?: string }) {
+  return (
+    <div className="story-head">
+      <span className="overview-kicker">{n} · {label}</span>
+      <h3 id={id}>{title}</h3>
+      {lead && <p className="hint">{lead}</p>}
+    </div>
+  );
+}
+
+function FactCards({ facts }: { facts: Fact[] }) {
+  return (
+    <ul className="overview-grid overview-checks">
+      {facts.map((f) => (
+        <li key={f.title} className="overview-card overview-check">
+          <span className="overview-card-title">{f.title}</span>
+          <strong className="overview-big">{f.big}</strong>
+          <p>{f.text}</p>
+          {f.how && <p className="hint small">{f.how}</p>}
+          {f.source && <a className="overview-source" href={f.source} target="_blank" rel="noreferrer">Source</a>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Problem() {
+  return (
+    <section className="overview-part" aria-labelledby="overview-problem">
+      <StoryHead n={1} label="The problem" id="overview-problem" title="Keeping street records right means walking the streets" />
+      <FactCards facts={PROBLEM} />
+    </section>
+  );
+}
+
 // One card per item the survey found, all the same size, in the standard's order: one pass of the photos finds them all.
 function ItemCards({ scan, counts, examples }: { scan: Scan; counts: Record<string, number>; examples: Example[] }) {
   const present = scan.items.filter((it) => (counts[it.id] ?? 0) > 0);
   return (
     <section className="overview-part" aria-labelledby="overview-items">
-      <h3 id="overview-items">One pass, every item</h3>
+      <h4 id="overview-items">One pass, every item</h4>
       <ul className="overview-grid overview-items">
         {present.map((it) => {
           const label = itemName(it.id, scan.items);
@@ -269,67 +329,93 @@ function ItemCards({ scan, counts, examples }: { scan: Scan; counts: Record<stri
   );
 }
 
-// The flow as boxes: what goes in (the rules, the city's records, the photos), what the models do, the three ways a
-// finding meets the city's list, and what goes back to the city. The outcome shapes are the map's city-records lens.
-function Flow({ scan, issues }: { scan: Scan; issues: Issue[] }) {
+// What goes in (the rules, the city's records, the photos) and what each model does with it.
+function Flow({ scan }: { scan: Scan }) {
   const city = scan.city_check;
-  const totals = cityTotals(city, issues);
   const lists = city ? Object.values(city.items).map((c) => c.layer) : [];
-  const fields = totals?.fields.slice(0, 3).join(", ") ?? "";
   const countsOnly = countsOnlyNote(scan);
   return (
-    <section className="overview-part" aria-labelledby="overview-flow">
-      <h3 id="overview-flow">How the pieces fit</h3>
-      <div className="flow">
-        <ul className="flow-row">
+    <div className="flow">
+      <ul className="flow-row">
+        <li className="overview-card flow-box">
+          <strong>Survey rules</strong>
+          <span>{plural(scan.checks.length, "question")} in the {STANDARD[scan.standard]} standard</span>
+        </li>
+        {city && (
           <li className="overview-card flow-box">
-            <strong>Survey rules</strong>
-            <span>{plural(scan.checks.length, "question")} in the {STANDARD[scan.standard]} standard</span>
+            <strong>City records</strong>
+            <span>{plural(lists.length, "city list")}</span>
+            <span className="flow-lists">{lists.join(" · ")}</span>
+            {countsOnly && <span className="hint small">{countsOnly}</span>}
           </li>
-          {city && (
-            <li className="overview-card flow-box">
-              <strong>City records</strong>
-              <span>{plural(lists.length, "city list")}</span>
-              <span className="flow-lists">{lists.join(" · ")}</span>
-              {countsOnly && <span className="hint small">{countsOnly}</span>}
-            </li>
-          )}
-          <li className="overview-card flow-box">
-            <strong>Street photos</strong>
-            <span>{scan.image_count} public Mapillary photos</span>
+        )}
+        <li className="overview-card flow-box">
+          <strong>Street photos</strong>
+          <span>{scan.image_count} public Mapillary photos</span>
+        </li>
+      </ul>
+      <span className="flow-arrow" aria-hidden="true" />
+      <ol className="flow-steps">
+        {MODEL_STEPS.map((s) => (
+          <li key={s.does} className="overview-card flow-box flow-step">
+            <strong>{s.model}</strong>
+            <span className="flow-label">{s.does}</span>
+            <span>{s.text}</span>
           </li>
-        </ul>
-        <span className="flow-arrow" aria-hidden="true" />
-        <p className="flow-models">
-          SAM 3.1 finds each item · Muse Spark judges it and says why · Muse Spark Open double-checks possible defects
-        </p>
-        <span className="flow-arrow" aria-hidden="true" />
-        {totals ? (
-          <ul className="flow-row">
-            <li className="overview-card flow-box flow-outcome">
-              <span className="flow-shape flow-in" aria-hidden="true" />
-              <strong className="flow-count">{totals.matched}</strong><span className="flow-label">Found and in the city's list</span>
-            </li>
-            {totals.notInList !== null && (
-              <li className="overview-card flow-box flow-outcome">
-                <span className="flow-shape flow-new" aria-hidden="true" />
-                <strong className="flow-count">{totals.notInList}</strong><span className="flow-label">Found, not in the city's list</span>
-              </li>
-            )}
-            <li className="overview-card flow-box flow-outcome">
-              <span className="flow-shape flow-missed" aria-hidden="true" />
-              <strong className="flow-count">{totals.missed}</strong><span className="flow-label">In the city's list, not found</span>
-              {!countsOnly && <span className="hint small">a list to check</span>}
-            </li>
-          </ul>
-        ) : <p className="overview-card flow-none">This survey has no city list to compare.</p>}
-        <span className="flow-arrow" aria-hidden="true" />
-        <p className="flow-back">
-          Back to the city: GeoJSON and a CSV per item{countsOnly ? "" : " in the city's own field names"}
-          {fields ? ` (${fields})` : ""}, and a survey report.
-        </p>
-      </div>
-    </section>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// A survey without an update list: the three ways a finding meets the city's list. The shapes are the map's lens.
+function Outcomes({ scan, issues }: { scan: Scan; issues: Issue[] }) {
+  const totals = cityTotals(scan.city_check, issues);
+  if (!totals) return <p className="overview-card flow-none story-gap">This survey has no city list to compare.</p>;
+  return (
+    <ul className="flow-row story-gap">
+      <li className="overview-card flow-box flow-outcome">
+        <span className="flow-shape flow-in" aria-hidden="true" />
+        <strong className="flow-count">{totals.matched}</strong><span className="flow-label">Found and in the city's list</span>
+      </li>
+      {totals.notInList !== null && (
+        <li className="overview-card flow-box flow-outcome">
+          <span className="flow-shape flow-new" aria-hidden="true" />
+          <strong className="flow-count">{totals.notInList}</strong><span className="flow-label">Found, not in the city's list</span>
+        </li>
+      )}
+      <li className="overview-card flow-box flow-outcome">
+        <span className="flow-shape flow-missed" aria-hidden="true" />
+        <strong className="flow-count">{totals.missed}</strong><span className="flow-label">In the city's list, not found</span>
+        {!countsOnlyNote(scan) && <span className="hint small">a list to check</span>}
+      </li>
+    </ul>
+  );
+}
+
+// From the city's records in view to those that need no visit, so the survey's own count and the list's read as one.
+function RecordFunnel({ check }: { check: AssetCheckSummary }) {
+  return (
+    <div className="story-gap">
+      <ol className="funnel">
+        {recordFunnel(check).map((s) => (
+          <li key={s.label} className="overview-card flow-box flow-outcome">
+            <strong className="flow-count">{s.n}</strong><span className="flow-label">{s.label}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="hint">{visitLine(check)} Not settled does not mean missing. {compareLine(check)}</p>
+    </div>
+  );
+}
+
+function BackToCity({ scan, issues }: { scan: Scan; issues: Issue[] }) {
+  const fields = cityTotals(scan.city_check, issues)?.fields.slice(0, 3).join(", ") ?? "";
+  return (
+    <p className="flow-back story-back">
+      Back to the city: GeoJSON and a CSV per item{countsOnlyNote(scan) ? "" : " in the city's own field names"}
+      {fields ? ` (${fields})` : ""}, and a survey report.
+    </p>
   );
 }
 
@@ -343,8 +429,9 @@ interface Check {
 // What the numbers rest on, each a big number and one sentence; a card whose data this survey lacks is left out.
 function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others: Props["others"] }) {
   const cards: Check[] = [];
+  const check = scan.asset_check;
   const totals = cityTotals(scan.city_check, issues);
-  if (totals) {
+  if (totals && !check) {
     cards.push({ title: "City records", big: `${totals.matched} of ${totals.covered}`,
       text: "of the city's recorded assets in the photos' view were found", how: countsOnlyNote(scan) ?? undefined });
   }
@@ -360,15 +447,23 @@ function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others:
     cards.push({ title: "Checked photo by photo", big: `${eye.right} of ${eye.of}`,
       text: "findings the models kept were right when each photo was checked", how: eye.how });
   }
+  const control = check ? controlCheck(check) : null;
+  if (control) cards.push(control);
+  const hard = hardestExample(others);
   const other = others.find((o) => o.scan.city_check);
   const list = other ? firstList(other.scan) : null;
-  if (other && list) {
+  if (hard) {
+    const span = photoSpan(hard.check.trust.photo_months);
+    cards.push({ title: "Hardest example", big: `${hard.check.no_visit} of ${hard.check.totals.in_view}`,
+      text: `${hard.name}: city records that need no site visit${span ? `, photos of ${span}` : ""}` });
+  } else if (other && list) {
     cards.push({ title: "Another example", big: `${list.found} of ${list.covered}`, text: `${other.name}: ${list.layer}`,
       how: countsOnlyNote(other.scan) ?? undefined });
   }
   return (
     <section className="overview-part" aria-labelledby="overview-checks">
-      <h3 id="overview-checks">Checked, not assumed</h3>
+      <StoryHead n={3} label="Does it hold up?" id="overview-checks" title="Checked, not assumed" />
+      {check ? <RecordFunnel check={check} /> : <Outcomes scan={scan} issues={issues} />}
       <ul className="overview-grid overview-checks">
         {cards.map((c) => (
           <li key={c.title} className="overview-card overview-check">
@@ -385,17 +480,18 @@ function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others:
 
 // The items Muse Spark wrote in the app for this survey: the SAM 3.1 phrases it tried on the photos another model
 // labelled, the one it chose, what the item keeps, and what it found and cost.
-function Runs({ runs, onOpenRun }: { runs: ItemRun[]; onOpenRun: Props["onOpenRun"] }) {
+function Runs({ runs, surveys, onOpenRun }: { runs: ItemRun[]; surveys: Props["others"]; onOpenRun: Props["onOpenRun"] }) {
+  const where = (id: number) => surveys.find((s) => s.scan.id === id)?.name ?? "this survey";
   return (
     <section className="overview-part" aria-labelledby="overview-runs">
-      <h3 id="overview-runs">New items, written by Muse Spark</h3>
+      <h4 id="overview-runs">New items, written by Muse Spark</h4>
       <ul className="overview-grid overview-runs">
         {runs.slice(0, 2).map((run) => {
           const t = run.test;
           const tries = phraseJourney(run.progress);
           return (
             <li key={run.id} className="overview-card overview-run">
-              <h4>{capital(run.target)}</h4>
+              <h5>{capital(run.target)}</h5>
               {t?.false && (
                 <p>{`${t.judge ?? "Muse Spark Open"} saw it in ${t.found[1]} of ${t.found[1] + t.false[1]} photos`}</p>
               )}
@@ -415,7 +511,7 @@ function Runs({ runs, onOpenRun }: { runs: ItemRun[]; onOpenRun: Props["onOpenRu
               {t?.kept && t.false && (
                 <p>{`Kept ${t.kept[0]} of ${t.kept[1]} that show it, ${t.false[0]} of ${t.false[1]} without it`}</p>
               )}
-              <p>{`${run.issues.length} found in this survey · ${dollars(run.cost_usd)}`}</p>
+              <p>{`${run.issues.length} found in ${where(run.scan_id)} · ${dollars(run.cost_usd)}`}</p>
               <button type="button" onClick={() => onOpenRun(run.scan_id, run.id)}>See it on the map</button>
             </li>
           );

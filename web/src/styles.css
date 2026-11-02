@@ -590,6 +590,7 @@ details[open] > .accordion-summary::after { transform: rotate(90deg); }
 .report-link:hover { background: var(--accent-soft); }
 
 /* Floating Map HUD Bar (LensSwitch + inline legend) */
+.map-view-toggle { top: 12px; }
 .map-hud {
   position: absolute;
   top: 12px;
@@ -652,7 +653,15 @@ details[open] > .accordion-summary::after { transform: rotate(90deg); }
   border: 1.5px solid #ffffff;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.25);
 }
+/* The bar keeps clear of the Flat map button: its hint goes first, then the button moves under the bar. */
+@media (max-width: 1400px) {
+  .hud-hint { display: none; }
+}
+@media (max-width: 1100px) {
+  .map-view-toggle { top: 68px; }
+}
 @media (max-width: 960px) {
+  .map-view-toggle { top: 100px; }
   .map-hud { flex-direction: column; gap: 4px; border-radius: 14px; padding: 6px 10px; }
   .lens-switch button { min-height: 40px; }
 }
@@ -686,6 +695,8 @@ details[open] > .accordion-summary::after { transform: rotate(90deg); }
 .shape-in { background: #475569; border: 1.5px solid #fff; box-shadow: 0 0 0 1px #475569; }
 .shape-not { background: #fff; border: 3px solid #475569; }
 .shape-missed { width: 10px; height: 10px; margin: 0 1.5px; background: #475569; opacity: 0.5; }
+.shape-visit { background: #475569; border: 2.5px solid #C2410C; }
+.shape-no-visit { width: 10px; height: 10px; margin: 0 1.5px; background: #475569; }
 .record-dot { opacity: 0.5; border-color: transparent; }
 .record-ids { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 8px 0; font-size: 0.88rem; }
 .record-ids dt { color: var(--muted); }
@@ -1118,15 +1129,19 @@ kbd {
   border-top: 7px solid var(--muted);
   border-bottom-width: 0;
 }
-.flow-models {
-  padding: 12px 16px;
-  border: 1px solid var(--accent-border);
-  border-radius: 10px;
-  background: var(--accent-soft);
-  color: var(--ink);
-  font-weight: 600;
-  text-align: center;
-}
+.flow-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.flow-step { border-color: var(--accent-border); background: var(--accent-soft); }
+.story-head { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 14px; }
+.story-head h3 { margin: 0; scroll-margin-top: 44px; }
+.overview .story-gap { margin-bottom: 14px; }
+.overview .story-back { margin-top: 14px; }
+.overview-part .overview-part { margin-top: 28px; }
+.overview-part h4 { margin-bottom: 10px; }
+.overview-run h5 { margin: 0; font-size: 1.05rem; }
+.overview-source { align-self: flex-start; font-size: 0.82rem; }
+.funnel { list-style: none; margin: 0 0 10px; padding: 0; display: flex; gap: 12px; }
+.funnel > li { position: relative; flex: 1 1 0; min-width: 0; }
+.funnel > li + li::before { content: "→"; content: "→" / ""; position: absolute; left: -11px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 0.85rem; }
 .flow-count { font-family: var(--mono); font-size: 1.75rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .flow-label { font-weight: 600; color: var(--ink); }
 .flow-shape { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #374151; }
@@ -1159,7 +1174,8 @@ kbd {
 @media (max-width: 640px) {
   .overview { gap: 32px; padding-top: 24px; }
   .overview h2 { font-size: 1.65rem; }
-  .flow-row { flex-direction: column; }
+  .flow-row, .funnel { flex-direction: column; }
+  .funnel > li + li::before { content: none; }
 }
 
 /* Header Location Omnibox & Map-First Survey Bar (Alternative P1) */
@@ -1874,19 +1890,6 @@ kbd {
 /* ==========================================================================
    Landing Page Workflow Suite (4 Cards)
    ========================================================================== */
-.overview-workflows {
-  margin: 32px 0 16px;
-}
-.workflow-head {
-  margin-bottom: 16px;
-}
-.workflow-head h4 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  color: #0f172a;
-  margin: 4px 0 6px;
-}
 .workflow-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -2132,7 +2135,6 @@ kbd {
 
 .map-view-toggle {
   position: absolute;
-  top: 12px;
   right: 56px;
   z-index: 5;
   min-height: 36px;
@@ -2156,7 +2158,6 @@ kbd {
 
 @media (max-width: 800px) {
   .map-view-toggle {
-    top: 84px;
     right: auto;
     left: 10px;
   }

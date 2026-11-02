@@ -13,8 +13,8 @@ describe("the first screen's links", () => {
     expect(html).not.toContain("overview-cities");
     expect(html).not.toContain("Examples");
   });
-  it("always links the other three sections", () => {
+  it("always links the five parts of the story", () => {
     const html = renderToStaticMarkup(<LandingNav hasExamples={false} />);
-    for (const id of ["overview-items", "overview-flow", "overview-checks"]) expect(html).toContain(`href="#${id}"`);
+    for (const id of ["overview-problem", "overview-flow", "overview-checks", "overview-do", "overview-change"]) expect(html).toContain(`href="#${id}"`);
   });
 });

@@ -4,6 +4,7 @@ import { api, ApiError, STATIC_DEMO } from "./api";
 import { clampBboxToMax, contentBounds } from "./bbox";
 import AddItemPanel from "./AddItemPanel";
 import AreaPanel from "./AreaPanel";
+import { rowTarget } from "./AssetCheckPane";
 import type { CallStats } from "./callStats";
 import { cityCounts, cityStates, missedRecords, type MissedRecord } from "./cityMatch";
 import CityRecordCard from "./CityRecordCard";
@@ -24,8 +25,9 @@ import MapView from "./MapView";
 import PlaceSearch from "./PlaceSearch";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
+import { dotKey, updateDots } from "./story";
 import { reviewProgress } from "./summary";
-import type { Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, Walk } from "./types";
+import type { AssetRow, Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, Walk } from "./types";
 
 const POLL_MS = 3000;
 
@@ -54,6 +56,7 @@ export default function App() {
   // a record the survey did not find opens its card.
   const [lens, setLens] = useState<Lens>("findings");
   const [record, setRecord] = useState<MissedRecord | null>(null);
+  const [assetRows, setAssetRows] = useState<{ scan: number; rows: AssetRow[] } | null>(null); // the update list's rows, for the map
   const [actionTab, setActionTab] = useState<ActionTab | undefined>(undefined);
   // The first screen's "Add a survey item": counts up per press and is taken back once the panel has opened (it
   // mounts only after the survey has loaded, so the press can come first).
@@ -64,7 +67,7 @@ export default function App() {
   const [runTick, setRunTick] = useState(0); // a new look at the run, after a person's answers are sent
   const [itemRuns, setItemRuns] = useState<ItemRunSummary[]>([]);
   const [callStats, setCallStats] = useState<CallStats | null>(null); // which model did what, when the server keeps it
-  // The overview's own data: the first example's finished item runs and the other example surveys.
+  // The overview's own data: the example surveys' finished item runs and the other example surveys.
   const [overviewRuns, setOverviewRuns] = useState<ItemRun[]>([]);
   const [others, setOthers] = useState<{ scan: Scan; name: string }[]>([]);
   const [streets, setStreets] = useState<Record<string, string>>({});
@@ -202,18 +205,22 @@ export default function App() {
     };
   }, [intro, demos, others.length]);
 
-  // The overview shows the first example's two newest finished item runs, each with its phrase tries and results.
+  // The overview shows the example surveys' two newest finished item runs, each with its phrase tries and results:
+  // the runs need not be on the first example.
   useEffect(() => {
-    if (!intro) return;
+    if (!intro || !config?.items || demos.length === 0) return;
     let cancelled = false;
-    const done = itemRuns.filter((r) => r.status === "done")
-      .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 2);
-    Promise.all(done.map((r) => api.itemRun(r.id).catch(() => null)))
+    Promise.all(demos.map((d) => api.scanItems(d.scan_id).catch(() => [] as ItemRunSummary[])))
+      .then((lists) => {
+        const done = lists.flat().filter((r) => r.status === "done")
+          .sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 2);
+        return Promise.all(done.map((r) => api.itemRun(r.id).catch(() => null)));
+      })
       .then((list) => !cancelled && setOverviewRuns(list.filter((r): r is ItemRun => r?.status === "done")));
     return () => {
       cancelled = true;
     };
-  }, [intro, itemRuns]);
+  }, [intro, demos, config?.items]);
 
   // Bring the evidence card, the review panel or a city record's card into view when it opens (on a phone it sits
   // below the map).
@@ -316,16 +323,27 @@ export default function App() {
   const isExample = demos.some((d) => d.scan_id === scan?.id); // the server keeps the example surveys read-only
   const showLens = !!scan?.city_check && !scan.city_check.counts_only && finished && !intro && !newSurvey && !selected;
   const onRecords = showLens && lens === "records";
-  const shownRecord = onRecords ? record : null; // its dot is on the map
+  const onUpdate = showLens && lens === "update";
+  const shownRecord = onRecords || onUpdate ? record : null; // its dot is on the map
+  useEffect(() => {
+    if (!onUpdate || !scan || assetRows?.scan === scan.id) return;
+    let cancelled = false;
+    api.assetCheck(scan.id).then((c) => !cancelled && setAssetRows({ scan: scan.id, rows: c.rows })).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [onUpdate, scan?.id, assetRows?.scan]);
+  const dots = useMemo(() => (onUpdate && assetRows?.scan === scan?.id ? updateDots(assetRows!.rows) : []),
+    [onUpdate, assetRows, scan?.id]);
   // On entry to Results view, highlight the first visible finding with a street photo & viewing cone so the map
   // immediately pairs a sightline cone with a compact bottom-left photo preview (Alternative 1 spatial UI).
   const featured: Finding | null = useMemo(() => {
-    if (selected || shownRecord || newSurvey || intro || !finished || onRecords || hideFeatured) return null;
+    if (selected || shownRecord || newSurvey || intro || !finished || onRecords || onUpdate || hideFeatured) return null;
     const pool = findings.filter((f) => !hidden.has(f.item) && (!openItem || f.item === openItem));
     return pool.find((f) => f.picked.item.evidence && f.heading !== null && f.box !== null)
       ?? pool.find((f) => f.picked.item.evidence)
       ?? null;
-  }, [selected, shownRecord, newSurvey, intro, finished, onRecords, hideFeatured, findings, hidden, openItem]);
+  }, [selected, shownRecord, newSurvey, intro, finished, onRecords, onUpdate, hideFeatured, findings, hidden, openItem]);
   const toggleItem = (item: string) =>
     setHidden((h) => {
       const next = new Set(h);
@@ -333,6 +351,18 @@ export default function App() {
       else next.add(item);
       return next;
     });
+
+  // A dot of the update list: the same place as the list's "Show on the map", and the map stays on the list.
+  function pickDot(key: string) {
+    const row = assetRows?.rows.find((r) => dotKey(r) === key);
+    const target = row ? rowTarget(row, findings, records) : null;
+    if (!target) return;
+    if ("finding" in target) pick(target.finding.picked);
+    else {
+      setPicked(null);
+      setRecord(target.record);
+    }
+  }
 
   function updated(u: Picked) {
     if (u.kind === "entrance") setEntrances((list) => list.map((e) => (e.id === u.item.id ? u.item : e)));
@@ -465,7 +495,7 @@ export default function App() {
           {loadNotice}
         {error && <p className="error" role="alert">{error}</p>}
           <Overview scan={resultsOf === scan?.id ? scan : null} name={demoName} issues={issues} counts={itemCounts}
-            examples={examples} runs={overviewRuns.filter((r) => r.scan_id === scan?.id)} others={others}
+            examples={examples} runs={overviewRuns} others={others}
             canSurvey={!STATIC_DEMO} onSee={seeExample}
             onSurvey={() => {
               setIntro(false);
@@ -520,10 +550,11 @@ export default function App() {
         findings={newSurvey ? [] : findings}
         items={items}
         hidden={hidden}
-        focusItem={newSurvey || onRecords ? null : openItem}
+        focusItem={newSurvey || onRecords || onUpdate ? null : openItem}
         lens={showLens ? lens : "findings"}
         cityStates={cityStateMap}
         records={onRecords ? records : []}
+        dots={dots}
         padLeft={0}
         walks={newSurvey ? previewWalks : walks}
         selected={newSurvey ? null : selected}
@@ -535,6 +566,7 @@ export default function App() {
         }}
         onPick={(f) => pick(f.picked)}
         onPickRecord={setRecord}
+        onPickDot={pickDot}
         onReady={(fn) => (getView.current = fn)}
         onStreets={setStreets}
       >
@@ -542,7 +574,9 @@ export default function App() {
           <LensSwitch lens={lens} onChange={(l) => {
             setLens(l);
             setRecord(null);
-          }} />
+          }} update={scan?.asset_check
+            ? { noVisit: scan.asset_check.no_visit, visit: scan.asset_check.totals.in_view - scan.asset_check.no_visit }
+            : undefined} />
         )}
         {newSurvey && (
           <CoverageGuide

@@ -115,6 +115,10 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
   const { totals } = summary;
   const visits = totals.in_view - summary.no_visit;
   const objects = summary.actions[COMPARE] ?? 0;
+  const checked = summary.trust.findings;
+  const findingsChecked = checked
+    ? `An AI assistant checked ${checked.n} findings on their photos: ${checked.yes} right, ${checked.no} wrong, ${checked.unclear} could not be told.`
+    : null;
 
   const show = (row: AssetRow) => {
     const target = rowTarget(row, findings, missed);
@@ -136,7 +140,11 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
         no site visit and <strong>{visits}</strong> {visits === 1 ? "does" : "do"}.
         {objects > 0 && <> <strong>{objects}</strong> more objects are not on the city's lists{summary.compare_unsure > 0 ? `, ${summary.compare_unsure} of them not settled` : ""}.</>}
       </p>
-      <p className="hint small">Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records.</p>
+      <p className="hint small">
+        Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records.
+        {findingsChecked && <> {findingsChecked}</>}
+        {onSwitchLens && <> <button type="button" className="link-button" onClick={() => onSwitchLens("update")}>See the visits on the map</button></>}
+      </p>
       {summary.credit && <p className="hint small">{summary.credit}</p>}
       <table className="asset-table">
         <thead>

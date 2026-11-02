@@ -9,6 +9,7 @@ import { destination, distanceToLineM, findingPoint, SIDEWALK_OFFSET_M, targetBe
 import { colourOf, DEFECT_RED, itemName, SITE_ORANGE, STATUS_SENTENCE, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
 import { markerCanvas, markerName, RATIO } from "./markerArt";
+import type { UpdateDot } from "./story";
 import { namedRoads, streetText } from "./streets";
 import type { Bbox, ItemMeta, Walk } from "./types";
 
@@ -49,9 +50,10 @@ interface Props {
   items: ItemMeta[];
   hidden: Set<string>;
   focusItem: string | null; // an item opened in the panel: its findings in colour, the others grey
-  lens: Lens; // "findings" (default look) or "records"
+  lens: Lens; // "findings" (default look), "records" or "update"
   cityStates: Record<string, CityState>; // a finding's pairing with the city's records, by finding key
   records: MissedRecord[]; // the city's records in view the survey did not find
+  dots: UpdateDot[]; // the update list's records (the update lens)
   padLeft: number; // what covers the map's left on a wide screen when fitting (the introduction's photo)
   walks: Walk[];
   selected: Finding | null;
@@ -60,6 +62,7 @@ interface Props {
   onSelect: (bbox: Bbox) => void;
   onPick: (f: Finding) => void;
   onPickRecord: (r: MissedRecord) => void;
+  onPickDot: (key: string) => void;
   onReady: (getView: () => Bbox) => void;
   onStreets: (names: Record<string, string>) => void;
   children?: ReactNode; // drawn over the map (the selected finding's photo)
@@ -125,6 +128,8 @@ function nearestWalk(f: Finding | null, walks: Walk[]): number | null {
 // colour and the others go grey (docs/ui-rules.md U4); a dot's border says whether a person has something to do.
 function findingsLook(map: maplibregl.Map, focus: string | null) {
   map.setLayoutProperty("records-dot", "visibility", "none");
+  map.setLayoutProperty("update-dot", "visibility", "none");
+  map.setLayoutProperty("findings-dot", "visibility", "visible");
   map.setLayoutProperty("findings", "visibility", "visible");
   if (map.getLayer("finding-stems")) map.setLayoutProperty("finding-stems", "visibility", "visible");
   map.setLayerZoomRange("findings-dot", 0, ICON_ZOOM);
@@ -141,6 +146,8 @@ function findingsLook(map: maplibregl.Map, focus: string | null) {
 // so they never read as the hollow ring (2d review: light dots with a ring did, at zoom 17).
 function recordsLook(map: maplibregl.Map) {
   map.setLayoutProperty("records-dot", "visibility", "visible");
+  map.setLayoutProperty("update-dot", "visibility", "none");
+  map.setLayoutProperty("findings-dot", "visibility", "visible");
   map.setLayoutProperty("findings", "visibility", "none");
   if (map.getLayer("finding-stems")) map.setLayoutProperty("finding-stems", "visibility", "none");
   map.setLayerZoomRange("findings-dot", 0, 24);
@@ -148,6 +155,17 @@ function recordsLook(map: maplibregl.Map) {
     ["case", NOT_IN_LIST, "#ffffff", NO_CITY_LIST, DIMMED, ["get", "colour"]]);
   map.setPaintProperty("findings-dot", "circle-stroke-color", ["case", NOT_IN_LIST, ["get", "colour"], "#ffffff"]);
   map.setPaintProperty("findings-dot", "circle-stroke-width", ["case", NOT_IN_LIST, 3, 1.5]);
+}
+
+// The update lens: the city's records, in their item's colour, the size and the border saying what the list asks. A
+// visit is large with the site check's orange border (docs/ui-rules.md U3); a record that needs none is a small dot, so
+// the walk left to do is what stands out. Only dots: no route between them (Mapillary's terms).
+function updateLook(map: maplibregl.Map) {
+  map.setLayoutProperty("update-dot", "visibility", "visible");
+  map.setLayoutProperty("records-dot", "visibility", "none");
+  map.setLayoutProperty("findings-dot", "visibility", "none");
+  map.setLayoutProperty("findings", "visibility", "none");
+  if (map.getLayer("finding-stems")) map.setLayoutProperty("finding-stems", "visibility", "none");
 }
 
 export default function MapView(props: Props) {
@@ -173,6 +191,7 @@ export default function MapView(props: Props) {
       map.addSource("selection", { type: "geojson", data: EMPTY });
       map.addSource("findings", { type: "geojson", data: EMPTY });
       map.addSource("records", { type: "geojson", data: EMPTY });
+      map.addSource("update", { type: "geojson", data: EMPTY });
       map.addLayer({ id: "walks", type: "line", source: "walks", layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": "#64748b", "line-width": 2.5, "line-opacity": 0.55, "line-dasharray": [2, 1.5] } });
       map.addLayer({ id: "walk-picked", type: "line", source: "walks", filter: ["==", ["get", "clip"], -1],
@@ -201,6 +220,12 @@ export default function MapView(props: Props) {
       map.addLayer({ id: "findings", type: "symbol", source: "findings", minzoom: ICON_ZOOM,
         layout: { "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true,
           "symbol-sort-key": ["get", "order"] } });
+      map.addLayer({ id: "update-dot", type: "circle", source: "update", layout: { visibility: "none",
+        "circle-sort-key": ["case", ["get", "visit"], 1, 0] },
+        paint: { "circle-radius": ["case", ["get", "visit"], 7.5, 5], "circle-color": ["get", "colour"],
+          "circle-opacity": 1, "circle-stroke-opacity": 1,
+          "circle-stroke-color": ["case", ["get", "visit"], SITE_ORANGE, "#ffffff"],
+          "circle-stroke-width": ["case", ["get", "visit"], 2.5, 1.5] } });
       map.addLayer({ id: "sel-camera", type: "circle", source: "selection", filter: ["==", ["get", "part"], "camera"],
         paint: { "circle-radius": 6, "circle-color": "#111827", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
       map.addLayer({ id: "sel-marker", type: "symbol", source: "selection", filter: ["==", ["get", "part"], "marker"],
@@ -260,6 +285,21 @@ export default function MapView(props: Props) {
         `${itemName(r.item, latest.current.items)} · in the city's list, not found`; // text, never HTML
     });
     map.on("mouseleave", "records-dot", () => {
+      map.getCanvas().style.cursor = "";
+      hover.remove();
+    });
+    map.on("click", "update-dot", (e) => {
+      const key = e.features?.[0]?.properties?.key as string | undefined;
+      if (key) latest.current.onPickDot(key);
+    });
+    map.on("mousemove", "update-dot", (e) => {
+      const feature = e.features?.[0];
+      if (!feature) return;
+      map.getCanvas().style.cursor = "pointer";
+      hover.setLngLat(e.lngLat).setHTML("<strong></strong>").addTo(map);
+      hover.getElement().querySelector("strong")!.textContent = feature.properties?.tip as string; // text, never HTML
+    });
+    map.on("mouseleave", "update-dot", () => {
       map.getCanvas().style.cursor = "";
       hover.remove();
     });
@@ -498,6 +538,16 @@ export default function MapView(props: Props) {
     });
   }, [props.records, props.hidden, props.items, loaded]);
 
+  // The update list's records; an item hidden in the panel hides its records here too.
+  useEffect(() => {
+    if (!loaded) return;
+    (mapRef.current?.getSource("update") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: props.dots.filter((d) => !props.hidden.has(d.item)).map((d) => point([d.lng, d.lat],
+        { key: d.key, visit: d.visit, tip: d.tip, colour: colourOf(d.item, props.items) })),
+    });
+  }, [props.dots, props.hidden, props.items, loaded]);
+
   useEffect(() => {
     if (!loaded) return;
     (mapRef.current?.getSource("walks") as maplibregl.GeoJSONSource | undefined)?.setData({
@@ -508,12 +558,13 @@ export default function MapView(props: Props) {
     });
   }, [props.walks, loaded]);
 
-  // What the map shows: the findings, with an item opened in the panel in colour and the others grey, or the
-  // findings against the city's records.
+  // What the map shows: the findings, with an item opened in the panel in colour and the others grey, the findings
+  // against the city's records, or the update list.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
     if (props.lens === "records") recordsLook(map);
+    else if (props.lens === "update") updateLook(map);
     else findingsLook(map, props.focusItem);
   }, [props.lens, props.focusItem, loaded]);
 

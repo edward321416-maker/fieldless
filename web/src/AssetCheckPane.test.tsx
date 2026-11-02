@@ -76,6 +76,19 @@ describe("a city's credit for its records", () => {
 });
 
 describe("the page and the table", () => {
+  it("says what the check of its findings found, when there was one", () => {
+    const checked = { ...summary, trust: { ...summary.trust, findings: { n: 57, yes: 43, no: 3, unclear: 11 } } };
+    expect(renderToStaticMarkup(<AssetCheckPane scan={scan} summary={checked} findings={[]} missed={[]} />))
+      .toContain("An AI assistant checked 57 findings on their photos: 43 right, 3 wrong, 11 could not be told.");
+    expect(renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} />))
+      .not.toContain("An AI assistant checked");
+  });
+  it("offers the list on the map where the map can change", () => {
+    expect(renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} onSwitchLens={() => undefined} />))
+      .toContain("See the visits on the map");
+    expect(renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} />))
+      .not.toContain("See the visits on the map");
+  });
   it("sit above the rows, so opening them takes no scrolling past the photos", () => {
     const html = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} />);
     expect(html.indexOf("Open the report")).toBeLessThan(html.indexOf('class="asset-rows"'));

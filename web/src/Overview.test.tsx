@@ -100,13 +100,29 @@ describe("the overview", () => {
     expect(count(html, "CC BY-SA 4.0</a>")).toBe(3);
     expect(count(html, 'class="mapillary-logo"')).toBe(3); // the logo in every credit
   });
-  it("draws how the rules, the city's records and the photos become three outcomes and go back to the city", () => {
-    expect(html).toContain("How the pieces fit");
+  it("tells the story in order, after the opening: the problem, the solution, the check, what to do, what changes", () => {
+    const parts = ["The problem", "The solution", "Does it hold up?", "What you can do", "What changes", "Example surveys"];
+    const at = [html.indexOf("See the finished survey of"), ...parts.map((p) => html.indexOf(p))];
+    expect(at.every((n) => n >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+  it("says what walking costs, with the public sources", () => {
+    expect(html).toContain("14 people walked 2,336 miles in 2017, on a $400,000 budget.");
+    expect(html).toContain("2016 to 2024");
+    expect(html).toContain("In 2022 my district paid about twenty of us");
+    expect(count(html, ">Source</a>")).toBe(4); // the opening, two facts of the problem, one of what changes
+  });
+  it("draws how the rules, the city's records and the photos meet the models, and what goes back to the city", () => {
+    expect(html).toContain("A survey item is a sentence");
+    expect(html).toContain("so a new item needs no labelled photos and no trained model");
     expect(html).toContain("5 questions in the US standard");
     expect(html).toContain("1 city list");
     expect(html).toContain("SDOT street trees");
     expect(html).toContain("181 public Mapillary photos");
-    expect(html).toContain("SAM 3.1 finds each item · Muse Spark judges it and says why · Muse Spark Open double-checks possible defects");
+    for (const does of ["watches each walk", "finds each item by name", "answers the item&#x27;s question", "asks again"]) {
+      expect(html).toContain(`<span class="flow-label">${does}</span>`);
+    }
+    expect(html).toContain("Muse Glimmer&#x27;s open weights run on one Modal H100");
     expect(html).toMatch(/>2<\/strong><span[^>]*>Found and in the city&#x27;s list</);
     expect(html).toMatch(/>4<\/strong><span[^>]*>Found, not in the city&#x27;s list</);
     expect(html).toMatch(/>3<\/strong><span[^>]*>In the city&#x27;s list, not found</);
@@ -133,8 +149,7 @@ describe("the overview", () => {
     expect(html).not.toContain("End-to-end AI cost");
   });
   it("names the three tools by what they hand over, not by what the city should do", () => {
-    expect(html).toContain("After the survey");
-    expect(html).toContain("Each opens on the finished example survey.");
+    expect(html).toContain("Turn a survey into field work and city records");
     expect(html).toContain("Field check");
     expect(html).toContain("A list of what to check on site");
     expect(html).toContain("Possible defects and what the models were unsure of, each with its place, street photo and a CSV.");
@@ -161,7 +176,7 @@ describe("the overview", () => {
     expect(html).toContain("<li>red hydrant 0/4</li>");
     expect(html.indexOf("fireplug 3/4")).toBeLessThan(html.indexOf("yellow hydrant 3/4"));
     expect(html).toContain("Kept 4 of 4 that show it, 0 of 14 without it");
-    expect(html).toContain("5 found in this survey · $0.61");
+    expect(html).toContain("5 found in Capitol Hill · $0.61");
     expect(html).toContain("See it on the map");
   });
   it("offers each example survey with its rulebook, cost per km, photos and first city line", () => {
@@ -177,7 +192,7 @@ describe("the overview", () => {
   });
   it("gives the page a heading outline and keyboard buttons", () => {
     expect(html).toContain('<section class="overview" aria-labelledby="overview-title">');
-    expect(count(html, "<h3 id=")).toBe(5);
+    expect(count(html, "<h3 id=")).toBe(6); // the five parts and the example surveys
     expect(html).not.toContain("<button>");
     expect(count(html, '<button type="button"')).toBe(5); // see, survey, one run, two surveys
   });
@@ -210,7 +225,8 @@ describe("what the overview leaves out", () => {
     expect(loading).not.toContain("$");
     expect(loading).not.toContain("See the finished survey");
     expect(loading).not.toContain("One pass, every item");
-    expect(loading).not.toContain("How the pieces fit");
+    expect(loading).not.toContain("A survey item is a sentence");
+    expect(loading).not.toContain("The problem");
     expect(loading.replace(/<[^>]+>/g, "")).not.toMatch(/\d/); // no number in the text at all
   });
   it("keeps the check by eye to the survey it was measured on", () => {
@@ -259,14 +275,47 @@ describe("a city list shown as counts only", () => {
 });
 
 describe("a survey with an update list", () => {
+  const counts = { in_view: 94, seen: 53, seen_by: { Survey: 27 }, not_determined: 41, not_listed: 33, not_listed_unsure: 3, seen_unsure: 4, newer: 52 };
+  const asset_check = { city: "Seattle", items: [], totals: counts, actions: { "Compare with the list": 26 }, no_visit: 43, compare_unsure: 7,
+    left_out: { repeats: 0, wrong: 0 },
+    trust: { photo_months: ["2026-02"], controls: [{ photos: "Survey-date photos", asked: 17, both_yes: 0 }], looked_at: 0, sent_back: 0, outside_view: 0 } };
+  const listed = { ...scan, asset_check } as Scan;
+  const html = render({ scan: listed, others: [{ scan: { ...scan, id: 31, asset_check: { ...asset_check, no_visit: 9 } } as Scan, name: "New York" }] });
   it("offers the list in place of the two tools it stands in for", () => {
-    const counts = { in_view: 94, seen: 53, seen_by: {}, not_determined: 41, not_listed: 33, not_listed_unsure: 3, seen_unsure: 4, newer: 52 };
-    const asset_check = { city: "Seattle", items: [], totals: counts, actions: {}, no_visit: 43, compare_unsure: 0, left_out: { repeats: 0, wrong: 0 },
-      trust: { photo_months: [], controls: [], looked_at: 0, sent_back: 0, outside_view: 0 } };
-    const html = render({ scan: { ...scan, asset_check } as Scan });
     expect(html).toContain("43 of 94 city records need no site visit");
     expect(html).toContain("Open the update list →");
     expect(html).not.toContain("Open Dispatch");
     expect(html).not.toContain("Open GIS Diff");
+  });
+  it("walks from the records in view to the list, so the survey's count and the list's read as one", () => {
+    expect(html).toMatch(/>94<\/strong><span[^>]*>city records in the photos&#x27; view</);
+    expect(html).toMatch(/>27<\/strong><span[^>]*>found by the survey</);
+    expect(html).toMatch(/>53<\/strong><span[^>]*>seen, with second looks</);
+    expect(html).toMatch(/>43<\/strong><span[^>]*>need no site visit</);
+    expect(html).toContain("The other 51 need a visit: 41 the photos could not settle and 10 were seen but not sure enough.");
+    expect(html).toContain("Not settled does not mean missing.");
+    expect(html).toContain("26 more objects are not on the city&#x27;s lists, 7 of them not settled.");
+    expect(html).not.toContain("recorded assets"); // the first step of the walk says it
+    expect(html).not.toContain("In the city&#x27;s list, not found");
+  });
+  it("shows the control spots and where it does worst", () => {
+    expect(html).toContain("Control spots");
+    expect(html).toContain("0 of 17");
+    expect(html).toContain("Hardest example");
+    expect(html).toContain("9 of 94");
+    expect(html).toContain("New York: city records that need no site visit, photos of 2026-02");
+  });
+  it("says what changes, and for whom, from the survey's numbers", () => {
+    expect(html).toContain("The walk goes where it&#x27;s needed");
+    expect(html).toContain("For the person walking");
+    expect(html).toContain("51 of 94");
+    expect(html).toContain("places still need a visit in Capitol Hill. The day starts from those. Every row is a suggestion.");
+  });
+});
+
+describe("the agent's items", () => {
+  it("names the survey they were made on when it is not the open one", () => {
+    const html = render({ scan: { ...scan, id: 30 } as Scan, name: "Ballard", others: [{ scan, name: "Capitol Hill" }] });
+    expect(html).toContain("5 found in Capitol Hill · $0.61");
   });
 });
