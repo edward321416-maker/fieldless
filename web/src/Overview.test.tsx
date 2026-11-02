@@ -111,7 +111,7 @@ describe("the overview", () => {
     expect(html).toContain("14 people walked 2,336 miles in 2017, on a $400,000 budget.");
     expect(html).toContain("2016 to 2024");
     expect(html).toContain("In 2022 my district paid about twenty of us");
-    expect(count(html, ">Source</a>")).toBe(4); // the opening, two facts of the problem, one of what changes
+    expect(count(html, ">Source</a>")).toBe(4); // the opening and three facts of the problem
   });
   it("draws how the rules, the city's records and the photos meet the models, and what goes back to the city", () => {
     expect(html).toContain("A survey item is a sentence");
@@ -312,10 +312,12 @@ describe("a survey with an update list", () => {
     expect(html).toContain("New York: city records that need no site visit, photos of 2026-02");
   });
   it("says what changes, and for whom, from the survey's numbers", () => {
-    expect(html).toContain("The walk goes where it&#x27;s needed");
+    expect(html).toContain("Know before you go");
     expect(html).toContain("For the person walking");
     expect(html).toContain("51 of 94");
-    expect(html).toContain("places still need a visit in Capitol Hill. The day starts from those. Every row is a suggestion.");
+    expect(html).toContain("places still need a visit in Capitol Hill. Every row is a suggestion.");
+    expect(html).toContain("For the next question");
+    expect(html).toContain("Muse Spark added &quot;fire hydrant&quot; to a finished survey of Capitol Hill. Nobody walked the street again.");
   });
 });
 

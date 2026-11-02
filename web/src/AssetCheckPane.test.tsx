@@ -91,6 +91,18 @@ describe("the page and the table", () => {
     expect(renderToStaticMarkup(<AssetCheckPane scan={paid} summary={summary} findings={[]} missed={[]} />))
       .not.toContain("second looks behind this list");
   });
+  it("gives a visit the photos did not settle a survey photo from nearby, and says what it is", () => {
+    const nearby_photo = { link: "https://www.mapillary.com/app/?pKey=5", creator: "kev", captured_at: "2026-07-01T00:00:00Z",
+      license: "CC BY-SA 4.0", dist_m: 14.2 };
+    const html = renderToStaticMarkup(<ul><AssetRowCard row={row({ evidence: null, box: null, nearby_photo })} scan={scan} /></ul>);
+    expect(html).toContain("See a survey photo taken 14 m from the record&#x27;s position");
+    expect(html).toContain("It may not show the record.");
+    expect(html).toContain('href="https://www.mapillary.com/app/?pKey=5"');
+    expect(html).toContain("kev");
+    expect(html).toContain("mapillary-logo");
+    expect(html).toContain("CC BY-SA 4.0");
+    expect(renderToStaticMarkup(<ul><AssetRowCard row={row()} scan={scan} /></ul>)).not.toContain("It may not show the record.");
+  });
   it("offers the list on the map where the map can change", () => {
     expect(renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} onSwitchLens={() => undefined} />))
       .toContain("See the visits on the map");

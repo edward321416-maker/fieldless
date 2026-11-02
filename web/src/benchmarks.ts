@@ -33,18 +33,16 @@ export const BENCHMARKS: Record<string, Benchmark> = {
 // Seattle's 2020 Status & Condition Report: pp. 39 (the budget) and 115 (the tree list) of the PDF.
 const CONDITION_REPORT = "https://www.seattle.gov/documents/Departments/SDOT/About/DocumentLibrary/Reports/AMStatusCondRpt2020Final.pdf";
 
-// What walking a city takes. The last is the builder's own job, so it has no source to link.
+// What walking a city takes, and what a survey can lead to. The street lights are the builder's own job, so they have
+// no source to link.
 export const PROBLEM: Fact[] = [
   { title: "Seattle's sidewalks", big: "16 weeks", text: "14 people walked 2,336 miles in 2017, on a $400,000 budget.",
     source: BENCHMARKS.US.source },
   { title: "Seattle's street trees", big: "2016 to 2024", text: "The years the city expected to spend checking its tree list in the field.",
     source: CONDITION_REPORT },
   { title: "One district's street lights", big: "3 months",
-    text: "In 2022 my district paid about twenty of us to walk its streets and write down every street light by hand." },
+    text: "In 2022 my district paid about twenty of us to walk its streets for three months. Where each street light stood wasn't marked exactly, so we kept looking around to find it." },
+  { title: "What a survey leads to", big: "3×",
+    text: "Seattle's sidewalk repair and mitigation budget after its 2017 survey. A survey is how a city learns what to fix.",
+    source: CONDITION_REPORT },
 ];
-
-export const REPAIR_BUDGET: Fact = {
-  title: "For the street", big: "3×",
-  text: "Seattle's sidewalk repair and mitigation budget after its 2017 survey. A survey is how a city learns what to fix.",
-  source: CONDITION_REPORT,
-};

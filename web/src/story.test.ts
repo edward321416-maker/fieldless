@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM } from "./benchmarks";
-import { changeCards, compareLine, controlCheck, dotKey, hardestExample, photoSpan, recordFunnel, updateDots, visitLine } from "./story";
+import { changeCards, compareLine, controlCheck, dotKey, hardestExample, nearbyOf, photoSpan, recordFunnel, updateDots, visitLine } from "./story";
 import type { AssetCheckSummary, AssetRow, Scan } from "./types";
 
 const check = (over: Partial<AssetCheckSummary> = {}) => ({
@@ -18,9 +18,14 @@ const row = (over: Partial<AssetRow> = {}) => ({
 }) as AssetRow;
 
 describe("the problem's facts", () => {
-  it("are three, and each public one links its source", () => {
-    expect(PROBLEM).toHaveLength(3);
-    expect(PROBLEM.filter((f) => f.source)).toHaveLength(2);
+  it("each links its source, but for the builder's own job", () => {
+    expect(PROBLEM.filter((f) => !f.source).map((f) => f.title)).toEqual(["One district's street lights"]);
+  });
+  it("say what the job was like in the builder's words", () => {
+    const own = PROBLEM.find((f) => !f.source);
+    expect(own?.text).toContain("about twenty of us");
+    expect(own?.text).toContain("for three months");
+    expect(own?.text).toContain("wasn't marked exactly, so we kept looking around to find it");
   });
 });
 
@@ -64,16 +69,32 @@ describe("how far to trust it", () => {
 });
 
 describe("what changes", () => {
+  const full = check({ visits_with_photo: 51, date_gap_years: 8.2, actions: { "Update the date": 26 } });
+  const run = { target: "fire hydrant", cost_usd: 0.613, survey: "Seattle (Capitol Hill)" };
   it("says who gains what, from the survey's own numbers", () => {
-    const cards = changeCards(survey(), "Seattle (Ballard)");
-    expect(cards.map((c) => c.big)).toEqual(["51 of 94", "$3.60 /km", "3×"]);
-    expect(cards[0].text).toContain("Seattle (Ballard)");
-    expect(cards[0].text).toContain("Every row is a suggestion.");
-    expect(cards[2].source).toContain("AMStatusCondRpt2020Final.pdf");
+    const cards = changeCards(full, "Seattle (Ballard)", run);
+    expect(cards.map((c) => c.big)).toEqual(["51 of 94", "8.2 years", "$0.61"]);
+    expect(cards[0].text).toBe("places still need a visit in Seattle (Ballard), each with a survey photo from nearby. See what the place looks like before you leave. Every row is a suggestion.");
+    expect(cards[1].text).toBe("median gap between the city's date and a newer photo, on 26 records in Seattle (Ballard). Review each from a desk; the city decides.");
+    expect(cards[2].text).toBe('Muse Spark added "fire hydrant" to a finished survey of Seattle (Capitol Hill). Nobody walked the street again.');
+  });
+  it("promises a photo only when every visit has one", () => {
+    const [first] = changeCards(check({ visits_with_photo: 50 }), "Ballard");
+    expect(first.text).toBe("places still need a visit in Ballard. Every row is a suggestion.");
   });
   it("leaves out what the survey has no number for", () => {
-    const cards = changeCards(survey({ asset_check: undefined, usd_per_km: null }), null);
-    expect(cards.map((c) => c.big)).toEqual(["3×"]);
+    expect(changeCards(undefined, null)).toEqual([]);
+    expect(changeCards(check(), "Ballard").map((c) => c.big)).toEqual(["51 of 94"]);
+  });
+});
+
+describe("the photo near a city record", () => {
+  const nearby = { link: "l", creator: "a", captured_at: null, license: "CC BY-SA 4.0", dist_m: 14 };
+  const record = { key: "k", item: "street_tree", layer: "l", lat: 0, lng: 0, fields: [["UNITID", "TRE-1"]] } as never;
+  it("comes from the row of the same item and record", () => {
+    expect(nearbyOf([row({ city_record: "TRE-1", nearby_photo: nearby })], record)).toBe(nearby);
+    expect(nearbyOf([row({ city_record: "TRE-2", nearby_photo: nearby })], record)).toBeUndefined();
+    expect(nearbyOf([row({ city_record: "TRE-1", item: "pole", nearby_photo: nearby })], record)).toBeUndefined();
   });
 });
 

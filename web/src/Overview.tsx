@@ -54,6 +54,7 @@ export default function Overview(props: Props) {
   const heroColour = scan && heroEx ? colourOf(heroEx.item, scan.items) : "#1d4ed8";
   const totalFindings = Object.values(props.counts).reduce((a, b) => a + b, 0);
   const totals = scan ? cityTotals(scan.city_check, props.issues) : null;
+  const newestRun = props.runs[0];
   const launchAction = (tab: ActionTab | "custom") => {
     if (props.onLaunchAction) props.onLaunchAction(tab);
     else props.onSee();
@@ -249,8 +250,10 @@ export default function Overview(props: Props) {
             <BackToCity scan={scan} issues={props.issues} />
           </section>
           <section className="overview-part" aria-labelledby="overview-change">
-            <StoryHead n={5} label="What changes" id="overview-change" title="The walk goes where it's needed" />
-            <FactCards facts={changeCards(scan, name)} />
+            <StoryHead n={5} label="What changes" id="overview-change" title="Know before you go" />
+            <FactCards facts={changeCards(scan.asset_check, name, newestRun && {
+              target: newestRun.target, cost_usd: newestRun.cost_usd,
+              survey: [{ scan, name }, ...props.others].find((s) => s.scan.id === newestRun.scan_id)?.name ?? "an example" })} />
           </section>
           {props.others.length > 0 && (
             <Surveys first={{ scan, name: name ?? `Survey ${scan.id}` }} others={props.others} onOpenScan={props.onOpenScan} />

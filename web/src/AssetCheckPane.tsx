@@ -4,8 +4,8 @@ import type { MissedRecord } from "./cityMatch";
 import { dollars } from "./format";
 import { colourOf, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
-import { EvidencePhoto, PhotoCredit } from "./Photo";
-import type { AssetCheck, AssetCheckSummary, AssetRow, Scan } from "./types";
+import { EvidencePhoto, MiniCredit, PhotoCredit } from "./Photo";
+import type { AssetCheck, AssetCheckSummary, AssetRow, NearbyPhoto, Scan } from "./types";
 
 const ACTIONS = ["Correct the record", "Update the date", "No change", "Visit on site", "Compare with the list"];
 const NO_VISIT = ["Correct the record", "Update the date", "No change"];
@@ -45,6 +45,20 @@ export function rowTarget(row: AssetRow, findings: Finding[], missed: MissedReco
   return record ? { record } : null;
 }
 
+// What a person can look at before going to a place the photos did not settle. It is linked, so it shows on Mapillary
+// with its credit there; here it says what it is, and that it may not show the record.
+export function NearbyPhotoLink({ photo }: { photo: NearbyPhoto }) {
+  return (
+    <div className="nearby-photo">
+      <a href={photo.link} target="_blank" rel="noreferrer">
+        See a survey photo taken {Math.max(1, Math.round(photo.dist_m))} m from the record's position
+      </a>
+      <p className="hint small">It may not show the record.</p>
+      <MiniCredit evidence={{ ...photo, url: photo.link, blurred: false }} />
+    </div>
+  );
+}
+
 export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan; onShow?: () => void }) {
   const facts: [string, string][] = [
     ["City says", row.city_says],
@@ -74,6 +88,7 @@ export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan;
             <div key={name}><dt>{name}</dt><dd>{value}</dd></div>
           ))}
         </dl>
+        {row.nearby_photo && <NearbyPhotoLink photo={row.nearby_photo} />}
         {row.evidence && <PhotoCredit evidence={row.evidence} />}
         {row.how_seen === "Second look, panorama" && <p className="credit">A flat view cut from a 360-degree photo.</p>}
         {onShow && <button type="button" className="link-button action-more-btn" onClick={onShow}>Show on the map</button>}

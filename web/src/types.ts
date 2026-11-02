@@ -160,6 +160,8 @@ export interface AssetCheckSummary {
   actions: Record<string, number>; // rows per action
   no_visit: number; // city records that need no site visit
   compare_unsure: number; // objects on no list that nobody could settle
+  visits_with_photo?: number; // visits with a photo of their own or a survey photo from nearby
+  date_gap_years?: number; // median gap between the city's date and a newer photo, on the rows that update a date
   credit?: string; // the words the city's data asks to be shown with its records
   left_out: { repeats: number; wrong: number };
   trust: {
@@ -172,6 +174,15 @@ export interface AssetCheckSummary {
     record_check?: { asked: number; agree: number; differ: number; unsettled: number; sent_back: number };
     second_looks_usd?: number; // what the list's second looks cost, on top of the survey; none when there were none
   };
+}
+
+// A survey photo near a record the photos did not settle: linked on Mapillary, never served here. It may not show the record.
+export interface NearbyPhoto {
+  link: string;
+  creator: string | null;
+  captured_at: string | null;
+  license: string;
+  dist_m: number; // from the record's position to where the photo was taken
 }
 
 export interface AssetRow {
@@ -196,6 +207,7 @@ export interface AssetRow {
   position_accuracy: string;
   box: number[] | null;
   evidence: Evidence | null;
+  nearby_photo?: NearbyPhoto;
 }
 
 export interface AssetCheck extends AssetCheckSummary {

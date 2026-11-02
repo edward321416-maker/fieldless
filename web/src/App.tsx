@@ -25,7 +25,7 @@ import MapView from "./MapView";
 import PlaceSearch from "./PlaceSearch";
 import ResultsPanel from "./ResultsPanel";
 import PhotoWindow from "./PhotoWindow";
-import { dotKey, updateDots } from "./story";
+import { dotKey, nearbyOf, updateDots } from "./story";
 import { reviewProgress } from "./summary";
 import type { AssetRow, Bbox, DemoArea, Entrance, Issue, ItemRun, ItemRunSummary, Picked, Scan, ServerConfig, Walk } from "./types";
 
@@ -325,14 +325,15 @@ export default function App() {
   const onRecords = showLens && lens === "records";
   const onUpdate = showLens && lens === "update";
   const shownRecord = onRecords || onUpdate ? record : null; // its dot is on the map
+  // The update list's rows, once the map or a record's card needs them.
   useEffect(() => {
-    if (!onUpdate || !scan || assetRows?.scan === scan.id) return;
+    if (!(onUpdate || shownRecord) || !scan?.asset_check || assetRows?.scan === scan.id) return;
     let cancelled = false;
     api.assetCheck(scan.id).then((c) => !cancelled && setAssetRows({ scan: scan.id, rows: c.rows })).catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [onUpdate, scan?.id, assetRows?.scan]);
+  }, [onUpdate, !!shownRecord, scan?.id, assetRows?.scan]);
   const dots = useMemo(() => (onUpdate && assetRows?.scan === scan?.id ? updateDots(assetRows!.rows) : []),
     [onUpdate, assetRows, scan?.id]);
   // On entry to Results view, highlight the first visible finding with a street photo & viewing cone so the map
@@ -652,7 +653,10 @@ export default function App() {
                 setReviewing(false);
               }} />
           )}
-          {shownRecord && <CityRecordCard record={shownRecord} items={items} onClose={() => setRecord(null)} />}
+          {shownRecord && (
+            <CityRecordCard record={shownRecord} items={items} onClose={() => setRecord(null)}
+              nearby={assetRows?.scan === scan?.id ? nearbyOf(assetRows?.rows ?? [], shownRecord) : undefined} />
+          )}
         </div>
         {/* What is being looked at comes first; a new survey is one button away (docs/ui-rules.md U6). */}
         {(newSurvey || (!STATIC_DEMO && (!scan || !finished))) && (

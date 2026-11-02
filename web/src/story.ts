@@ -1,12 +1,14 @@
-import { REPAIR_BUDGET, type Fact } from "./benchmarks";
+import type { Fact } from "./benchmarks";
+import type { MissedRecord } from "./cityMatch";
 import { dollars } from "./format";
-import type { AssetCheckSummary, AssetRow, Scan } from "./types";
+import type { AssetCheckSummary, AssetRow, NearbyPhoto, Scan } from "./types";
 
 // The overview's story, in the order a visitor asks: the problem, how the models solve it, whether it holds up, what a
 // person can do with it, what changes (docs/specs/2026-11-02-app-story-design.md). Every number about a survey comes
 // from the server; published ones are in benchmarks.ts and measured ones in claims.ts.
 const VISIT = "Visit on site";
 const COMPARE = "Compare with the list";
+const NEW_DATE = "Update the date";
 
 export const MODEL_STEPS = [
   { model: "Muse Spark", does: "watches each walk", text: "It reads the photos as a short video and names what to look for." },
@@ -65,18 +67,32 @@ export function photoSpan(months: string[]): string | null {
   return first === last ? first : `${first} to ${last}`;
 }
 
-export function changeCards(scan: Pick<Scan, "asset_check" | "usd_per_km">, name: string | null): Fact[] {
+// Who is better off and how: each card says what a person knows before going out, from the survey's own numbers.
+export function changeCards(check: AssetCheckSummary | undefined, name: string | null,
+  run?: { target: string; cost_usd: number; survey: string } | null): Fact[] {
   const cards: Fact[] = [];
-  const a = scan.asset_check;
-  if (a) {
-    cards.push({ title: "For the person walking", big: `${visitsLeft(a)} of ${a.totals.in_view}`,
-      text: `places still need a visit in ${name ?? "this survey"}. The day starts from those. Every row is a suggestion.` });
+  const where = name ?? "this survey";
+  if (check) {
+    const visits = visitsLeft(check);
+    const photos = check.visits_with_photo === visits && visits > 0;
+    cards.push({ title: "For the person walking", big: `${visits} of ${check.totals.in_view}`,
+      text: `places still need a visit in ${where}${photos ? ", each with a survey photo from nearby. See what the place looks like before you leave" : ""}. Every row is a suggestion.` });
+    const dated = check.actions[NEW_DATE] ?? 0;
+    if (check.date_gap_years !== undefined && dated > 0) {
+      cards.push({ title: "For the person keeping the records", big: `${check.date_gap_years} years`,
+        text: `median gap between the city's date and a newer photo, on ${dated} records in ${where}. Review each from a desk; the city decides.` });
+    }
   }
-  if (scan.usd_per_km !== null) {
-    cards.push({ title: "For the city's records", big: `${dollars(scan.usd_per_km)} /km`,
-      text: "to survey again wherever new public photos appear." });
+  if (run) {
+    cards.push({ title: "For the next question", big: dollars(run.cost_usd),
+      text: `Muse Spark added "${run.target}" to a finished survey of ${run.survey}. Nobody walked the street again.` });
   }
-  return [...cards, REPAIR_BUDGET];
+  return cards;
+}
+
+// The photo near a city record, from the update list's row for it.
+export function nearbyOf(rows: AssetRow[], record: MissedRecord): NearbyPhoto | undefined {
+  return rows.find((r) => r.item === record.item && r.nearby_photo && record.fields.some(([, value]) => value === r.city_record))?.nearby_photo;
 }
 
 export interface UpdateDot {
