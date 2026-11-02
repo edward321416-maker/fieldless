@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM } from "./benchmarks";
-import { changeCards, compareLine, controlCheck, dotKey, hardestExample, nearbyOf, photoSpan, recordFunnel, updateDots, visitLine } from "./story";
+import { changeCards, compareLine, controlCheck, dotKey, hardestExample, nearbyOf, photoSpan, reachCheck, reachLine, recordFunnel,
+  updateDots, visitLine } from "./story";
 import type { AssetCheckSummary, AssetRow, Scan } from "./types";
 
 const check = (over: Partial<AssetCheckSummary> = {}) => ({
@@ -49,6 +50,22 @@ describe("from the city's records to the update list", () => {
   });
 });
 
+describe("the survey's reach", () => {
+  const reached = check({ totals: { ...check().totals, in_area: 3292 } });
+  it("starts from every city record in the box", () => {
+    expect(recordFunnel(reached).map((s) => s.n)).toEqual([3292, 94, 27, 53, 43]);
+    expect(recordFunnel(reached)[1].label).toBe("in the photos' view");
+  });
+  it("says the survey says nothing about the records it did not reach", () => {
+    expect(reachLine(reached)).toBe("The other 3,198 records in the box had no survey photo in view. This survey says nothing about them.");
+    expect(reachCheck(reached)).toMatchObject({ title: "Reach", big: "94 of 3,292" });
+  });
+  it("says nothing of reach for a list made without the box", () => {
+    expect(reachLine(check())).toBeNull();
+    expect(reachCheck(check())).toBeNull();
+  });
+});
+
 describe("how far to trust it", () => {
   it("gives the first control's numbers and the others beside them", () => {
     expect(controlCheck(check())).toMatchObject({ big: "0 of 17", how: "1 of 10 in panoramas" });
@@ -74,13 +91,13 @@ describe("what changes", () => {
   it("says who gains what, from the survey's own numbers", () => {
     const cards = changeCards(full, "Seattle (Ballard)", run);
     expect(cards.map((c) => c.big)).toEqual(["51 of 94", "8.2 years", "$0.61"]);
-    expect(cards[0].text).toBe("places still need a visit in Seattle (Ballard), each with a survey photo from nearby. See what the place looks like before you leave. Every row is a suggestion.");
+    expect(cards[0].text).toBe("records the photos reached in Seattle (Ballard) still need a visit, each with a survey photo from nearby. See what the place looks like before you leave. Every row is a suggestion.");
     expect(cards[1].text).toBe("median gap between the city's date and a newer photo, on 26 records in Seattle (Ballard). Review each from a desk; the city decides.");
     expect(cards[2].text).toBe('Muse Spark added "fire hydrant" to a finished survey of Seattle (Capitol Hill). Nobody walked the street again.');
   });
   it("promises a photo only when every visit has one", () => {
     const [first] = changeCards(check({ visits_with_photo: 50 }), "Ballard");
-    expect(first.text).toBe("places still need a visit in Ballard. Every row is a suggestion.");
+    expect(first.text).toBe("records the photos reached in Ballard still need a visit. Every row is a suggestion.");
   });
   it("leaves out what the survey has no number for", () => {
     expect(changeCards(undefined, null)).toEqual([]);

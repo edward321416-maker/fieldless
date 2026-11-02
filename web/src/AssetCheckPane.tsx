@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, assetCheckReportUrl, assetCheckTableUrl } from "./api";
 import type { MissedRecord } from "./cityMatch";
-import { dollars } from "./format";
+import { count, dollars, photoMonth } from "./format";
 import { colourOf, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
-import { EvidencePhoto, MiniCredit, PhotoCredit } from "./Photo";
+import { EvidencePhoto, MapillaryMark, PhotoCredit } from "./Photo";
 import type { AssetCheck, AssetCheckSummary, AssetRow, NearbyPhoto, Scan } from "./types";
 
 const ACTIONS = ["Correct the record", "Update the date", "No change", "Visit on site", "Compare with the list"];
@@ -54,7 +54,11 @@ export function NearbyPhotoLink({ photo }: { photo: NearbyPhoto }) {
         See a survey photo taken {Math.max(1, Math.round(photo.dist_m))} m from the record's position
       </a>
       <p className="hint small">It may not show the record.</p>
-      <MiniCredit evidence={{ ...photo, url: photo.link, blurred: false }} />
+      <p className="credit">
+        Photo by {photo.creator ?? "a Mapillary contributor"}, {photoMonth(photo.captured_at)} ·{" "}
+        <a href={photo.link} target="_blank" rel="noreferrer"><MapillaryMark alt="" /> View on Mapillary</a>
+        {" "}· <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">{photo.license}</a>
+      </p>
     </div>
   );
 }
@@ -153,8 +157,11 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
   return (
     <div className="action-pane">
       <p className="action-lead">
-        Of <strong>{totals.in_view}</strong> {summary.city} records in the photos' view, <strong>{summary.no_visit}</strong> need
-        no site visit and <strong>{visits}</strong> {visits === 1 ? "does" : "do"}.
+        {totals.in_area !== undefined
+          ? <>Of <strong>{count(totals.in_area)}</strong> {summary.city} records in the survey's box, the photos reached{" "}
+            <strong>{totals.in_view}</strong>: </>
+          : <>Of <strong>{totals.in_view}</strong> {summary.city} records in the photos' view, </>}
+        <strong>{summary.no_visit}</strong> need no site visit and <strong>{visits}</strong> {visits === 1 ? "does" : "do"}.
         {objects > 0 && <> <strong>{objects}</strong> more objects are not on the city's lists{summary.compare_unsure > 0 ? `, ${summary.compare_unsure} of them not settled` : ""}.</>}
       </p>
       <p className="hint small">

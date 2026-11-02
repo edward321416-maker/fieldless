@@ -39,6 +39,13 @@ describe("AssetCheckPane", () => {
     expect(html).toContain("<strong>26</strong> more objects are not on the city&#x27;s lists, 7 of them not settled");
   });
 
+  it("says how many records in the box the photos reached, when the list knows", () => {
+    const reached = { ...summary, totals: { ...counts, in_area: 3292 } };
+    const out = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={reached} findings={[]} missed={[]} />);
+    expect(out).toContain("Of <strong>3,292</strong> Seattle records in the survey&#x27;s box, the photos reached <strong>107</strong>:");
+    expect(out).toContain("<strong>43</strong> need no site visit and <strong>64</strong> do");
+  });
+
   it("gives every asset the same row, in columns that fit the panel", () => {
     expect(html).toContain('<th scope="row">Street tree</th><td>107</td><td>43</td><td>64</td><td>26</td>');
     expect(html).not.toContain("Correct the record");
@@ -98,7 +105,8 @@ describe("the page and the table", () => {
     expect(html).toContain("See a survey photo taken 14 m from the record&#x27;s position");
     expect(html).toContain("It may not show the record.");
     expect(html).toContain('href="https://www.mapillary.com/app/?pKey=5"');
-    expect(html).toContain("kev");
+    expect(html).toContain("Photo by kev, 2026-07");
+    expect(html).toContain("View on Mapillary");
     expect(html).toContain("mapillary-logo");
     expect(html).toContain("CC BY-SA 4.0");
     expect(renderToStaticMarkup(<ul><AssetRowCard row={row()} scan={scan} /></ul>)).not.toContain("It may not show the record.");

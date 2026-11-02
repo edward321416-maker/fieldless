@@ -288,7 +288,7 @@ describe("a survey with an update list", () => {
       .toContain("Update list second looks cost more; see its report.");
   });
   it("offers the list in place of the two tools it stands in for", () => {
-    expect(html).toContain("43 of 94 city records need no site visit");
+    expect(html).toContain("43 of the 94 city records the photos reached need no site visit");
     expect(html).toContain("Open the update list →");
     expect(html).not.toContain("Open Dispatch");
     expect(html).not.toContain("Open GIS Diff");
@@ -315,7 +315,7 @@ describe("a survey with an update list", () => {
     expect(html).toContain("Know before you go");
     expect(html).toContain("For the person walking");
     expect(html).toContain("51 of 94");
-    expect(html).toContain("places still need a visit in Capitol Hill. Every row is a suggestion.");
+    expect(html).toContain("records the photos reached in Capitol Hill still need a visit. Every row is a suggestion.");
     expect(html).toContain("For the next question");
     expect(html).toContain("Muse Spark added &quot;fire hydrant&quot; to a finished survey of Capitol Hill. Nobody walked the street again.");
   });

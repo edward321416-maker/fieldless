@@ -1,6 +1,6 @@
 import type { Fact } from "./benchmarks";
 import type { MissedRecord } from "./cityMatch";
-import { dollars } from "./format";
+import { count, dollars } from "./format";
 import type { AssetCheckSummary, AssetRow, NearbyPhoto, Scan } from "./types";
 
 // The overview's story, in the order a visitor asks: the problem, how the models solve it, whether it holds up, what a
@@ -21,8 +21,10 @@ export const visitsLeft = (a: AssetCheckSummary) => a.totals.in_view - a.no_visi
 
 // How the survey's 27 of 94 becomes the update list's 43 of 94, so the two numbers do not read as a contradiction.
 export function recordFunnel(a: AssetCheckSummary): { n: number; label: string }[] {
+  const area = a.totals.in_area;
   return [
-    { n: a.totals.in_view, label: "city records in the photos' view" },
+    ...(area !== undefined ? [{ n: area, label: "city records in the survey's box" }] : []),
+    { n: a.totals.in_view, label: area !== undefined ? "in the photos' view" : "city records in the photos' view" },
     { n: a.totals.seen_by.Survey ?? 0, label: "found by the survey" },
     { n: a.totals.seen, label: "seen, with second looks" },
     { n: a.no_visit, label: "need no site visit" },
@@ -33,6 +35,20 @@ export function visitLine(a: AssetCheckSummary): string {
   const visits = visitsLeft(a);
   const unsure = visits - a.totals.not_determined;
   return `The other ${visits} need a visit: ${a.totals.not_determined} the photos could not settle${unsure > 0 ? ` and ${unsure} were seen but not sure enough` : ""}.`;
+}
+
+// The records in the box no photo reached: the survey says nothing about them, and the page says so.
+export function reachLine(a: AssetCheckSummary): string | null {
+  const area = a.totals.in_area;
+  if (area === undefined) return null;
+  return `The other ${count(area - a.totals.in_view)} records in the box had no survey photo in view. This survey says nothing about them.`;
+}
+
+export function reachCheck(a: AssetCheckSummary): Fact | null {
+  const area = a.totals.in_area;
+  if (area === undefined) return null;
+  return { title: "Reach", big: `${a.totals.in_view} of ${count(area)}`,
+    text: "city records in the survey's box that a survey photo had in view. The survey says nothing about the rest." };
 }
 
 export function compareLine(a: AssetCheckSummary): string | null {
@@ -76,7 +92,7 @@ export function changeCards(check: AssetCheckSummary | undefined, name: string |
     const visits = visitsLeft(check);
     const photos = check.visits_with_photo === visits && visits > 0;
     cards.push({ title: "For the person walking", big: `${visits} of ${check.totals.in_view}`,
-      text: `places still need a visit in ${where}${photos ? ", each with a survey photo from nearby. See what the place looks like before you leave" : ""}. Every row is a suggestion.` });
+      text: `records the photos reached in ${where} still need a visit${photos ? ", each with a survey photo from nearby. See what the place looks like before you leave" : ""}. Every row is a suggestion.` });
     const dated = check.actions[NEW_DATE] ?? 0;
     if (check.date_gap_years !== undefined && dated > 0) {
       cards.push({ title: "For the person keeping the records", big: `${check.date_gap_years} years`,

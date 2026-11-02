@@ -54,6 +54,7 @@ interface Props {
   cityStates: Record<string, CityState>; // a finding's pairing with the city's records, by finding key
   records: MissedRecord[]; // the city's records in view the survey did not find
   dots: UpdateDot[]; // the update list's records (the update lens)
+  unreached: [string, number, number][]; // city records in the box no photo had in view, [item, lng, lat]: every lens
   padLeft: number; // what covers the map's left on a wide screen when fitting (the introduction's photo)
   walks: Walk[];
   selected: Finding | null;
@@ -192,6 +193,7 @@ export default function MapView(props: Props) {
       map.addSource("findings", { type: "geojson", data: EMPTY });
       map.addSource("records", { type: "geojson", data: EMPTY });
       map.addSource("update", { type: "geojson", data: EMPTY });
+      map.addSource("unreached", { type: "geojson", data: EMPTY });
       map.addLayer({ id: "walks", type: "line", source: "walks", layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": "#64748b", "line-width": 2.5, "line-opacity": 0.55, "line-dasharray": [2, 1.5] } });
       map.addLayer({ id: "walk-picked", type: "line", source: "walks", filter: ["==", ["get", "clip"], -1],
@@ -199,6 +201,11 @@ export default function MapView(props: Props) {
       map.addLayer({ id: "finding-stems", type: "line", source: "finding-stems", minzoom: 15,
         layout: { "line-cap": "round" },
         paint: { "line-color": "#94a3b8", "line-width": 1.2, "line-opacity": 0.45 } });
+      // Lowest of all: the city's records in the box no photo reached, small and grey, in every lens, so the box reads as
+      // what it is: the streets the photos covered, and the rest the survey says nothing about.
+      map.addLayer({ id: "unreached-dot", type: "circle", source: "unreached",
+        paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 1.5, 18, 3.5], "circle-color": "#94a3b8",
+          "circle-opacity": 0.8, "circle-stroke-width": 0 } });
       // Under the findings, so a finding is never covered by a record the survey did not find (the records lens).
       map.addLayer({ id: "records-dot", type: "circle", source: "records", layout: { visibility: "none" },
         paint: { "circle-radius": 4, "circle-color": ["get", "colour"], "circle-opacity": 0.5, "circle-stroke-width": 0 } });
@@ -537,6 +544,15 @@ export default function MapView(props: Props) {
         { key: r.key, item: r.item, colour: colourOf(r.item, props.items) })),
     });
   }, [props.records, props.hidden, props.items, loaded]);
+
+  // The records no photo reached; an item hidden in the panel hides its records here too.
+  useEffect(() => {
+    if (!loaded) return;
+    (mapRef.current?.getSource("unreached") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: props.unreached.filter(([item]) => !props.hidden.has(item)).map(([item, lng, lat]) => point([lng, lat], { item })),
+    });
+  }, [props.unreached, props.hidden, loaded]);
 
   // The update list's records; an item hidden in the panel hides its records here too.
   useEffect(() => {

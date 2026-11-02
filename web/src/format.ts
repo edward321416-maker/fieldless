@@ -86,6 +86,11 @@ export function minutes(seconds: number): string {
   return `${(seconds / 60).toFixed(1)} min`;
 }
 
+// A count with thousands separators: 3,292.
+export function count(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
 export function dollars(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }

@@ -56,7 +56,8 @@ export default function App() {
   // a record the survey did not find opens its card.
   const [lens, setLens] = useState<Lens>("findings");
   const [record, setRecord] = useState<MissedRecord | null>(null);
-  const [assetRows, setAssetRows] = useState<{ scan: number; rows: AssetRow[] } | null>(null); // the update list's rows, for the map
+  // the update list's rows and the records no photo reached, for the map and a record's card
+  const [assetRows, setAssetRows] = useState<{ scan: number; rows: AssetRow[]; unreached: [string, number, number][] } | null>(null);
   const [actionTab, setActionTab] = useState<ActionTab | undefined>(undefined);
   // The first screen's "Add a survey item": counts up per press and is taken back once the panel has opened (it
   // mounts only after the survey has loaded, so the press can come first).
@@ -325,15 +326,18 @@ export default function App() {
   const onRecords = showLens && lens === "records";
   const onUpdate = showLens && lens === "update";
   const shownRecord = onRecords || onUpdate ? record : null; // its dot is on the map
-  // The update list's rows, once the map or a record's card needs them.
+  // The update list's rows, with the survey: every lens shows the records no photo reached.
   useEffect(() => {
-    if (!(onUpdate || shownRecord) || !scan?.asset_check || assetRows?.scan === scan.id) return;
+    if (!finished || intro || !scan?.asset_check || assetRows?.scan === scan.id) return;
     let cancelled = false;
-    api.assetCheck(scan.id).then((c) => !cancelled && setAssetRows({ scan: scan.id, rows: c.rows })).catch(() => undefined);
+    api.assetCheck(scan.id)
+      .then((c) => !cancelled && setAssetRows({ scan: scan.id, rows: c.rows, unreached: c.unreached ?? [] }))
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [onUpdate, !!shownRecord, scan?.id, assetRows?.scan]);
+  }, [finished, intro, scan?.id, assetRows?.scan]);
+  const unreached = assetRows && assetRows.scan === scan?.id ? assetRows.unreached : [];
   const dots = useMemo(() => (onUpdate && assetRows?.scan === scan?.id ? updateDots(assetRows!.rows) : []),
     [onUpdate, assetRows, scan?.id]);
   // On entry to Results view, highlight the first visible finding with a street photo & viewing cone so the map
@@ -556,6 +560,7 @@ export default function App() {
         cityStates={cityStateMap}
         records={onRecords ? records : []}
         dots={dots}
+        unreached={newSurvey ? [] : unreached}
         padLeft={0}
         walks={newSurvey ? previewWalks : walks}
         selected={newSurvey ? null : selected}
@@ -576,7 +581,9 @@ export default function App() {
             setLens(l);
             setRecord(null);
           }} update={scan?.asset_check
-            ? { noVisit: scan.asset_check.no_visit, visit: scan.asset_check.totals.in_view - scan.asset_check.no_visit }
+            ? { noVisit: scan.asset_check.no_visit, visit: scan.asset_check.totals.in_view - scan.asset_check.no_visit,
+              unreached: scan.asset_check.totals.in_area !== undefined
+                ? scan.asset_check.totals.in_area - scan.asset_check.totals.in_view : undefined }
             : undefined} />
         )}
         {newSurvey && (

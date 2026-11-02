@@ -151,6 +151,7 @@ export interface AssetCounts {
   not_listed_unsure: number;
   seen_unsure: number;
   newer: number; // records with a photo newer than the city's date
+  in_area?: number; // city records in the survey's box: those in view and those no photo reached
 }
 
 export interface AssetCheckSummary {
@@ -212,6 +213,7 @@ export interface AssetRow {
 
 export interface AssetCheck extends AssetCheckSummary {
   rows: AssetRow[];
+  unreached?: [string, number, number][]; // [item, lng, lat] of each city record in the box no photo had in view
 }
 
 export interface Walk {

@@ -2,11 +2,12 @@ import type { ActionTab } from "./ActionHub";
 import { BENCHMARKS, PROBLEM, type Fact } from "./benchmarks";
 import { CHECKED_BY_EYE, GLIMMER_NOTE } from "./claims";
 import { cityTotals } from "./cityMatch";
-import { dollars } from "./format";
+import { count, dollars } from "./format";
 import { capital, colourOf, itemName } from "./items";
 import { phraseJourney, secondOpinions } from "./overviewData";
 import { MiniCredit } from "./Photo";
-import { changeCards, compareLine, controlCheck, hardestExample, MODEL_STEPS, photoSpan, recordFunnel, visitLine } from "./story";
+import { changeCards, compareLine, controlCheck, hardestExample, MODEL_STEPS, photoSpan, reachCheck, reachLine, recordFunnel,
+  visitLine } from "./story";
 import { cityLine, headline, thumbPosition } from "./summary";
 import type { AssetCheckSummary, Evidence, Issue, ItemRun, Scan } from "./types";
 
@@ -180,7 +181,7 @@ export default function Overview(props: Props) {
                   onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("dispatch")}
                 >
                   <span className="workflow-badge prio-gis">City records</span>
-                  <strong>{`${scan.asset_check.no_visit} of ${scan.asset_check.totals.in_view} city records need no site visit`}</strong>
+                  <strong>{`${scan.asset_check.no_visit} of the ${scan.asset_check.totals.in_view} city records the photos reached need no site visit`}</strong>
                   <p>A list for the city's asset team: what to correct, which dates to update, where to visit and what to compare with the list, each row with its photo, as a page, a CSV and GeoJSON.</p>
                   <span className="workflow-cta">Open the update list →</span>
                 </div>
@@ -404,11 +405,11 @@ function RecordFunnel({ check }: { check: AssetCheckSummary }) {
       <ol className="funnel">
         {recordFunnel(check).map((s) => (
           <li key={s.label} className="overview-card flow-box flow-outcome">
-            <strong className="flow-count">{s.n}</strong><span className="flow-label">{s.label}</span>
+            <strong className="flow-count">{count(s.n)}</strong><span className="flow-label">{s.label}</span>
           </li>
         ))}
       </ol>
-      <p className="hint">{visitLine(check)} Not settled does not mean missing. {compareLine(check)}</p>
+      <p className="hint">{visitLine(check)} Not settled does not mean missing. {compareLine(check)} {reachLine(check)}</p>
     </div>
   );
 }
@@ -451,6 +452,8 @@ function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others:
     cards.push({ title: "Checked photo by photo", big: `${eye.right} of ${eye.of}`,
       text: "findings the models kept were right when each photo was checked", how: eye.how });
   }
+  const reach = check ? reachCheck(check) : null;
+  if (reach) cards.unshift(reach);
   const control = check ? controlCheck(check) : null;
   if (control) cards.push(control);
   const hard = hardestExample(others);
