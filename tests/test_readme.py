@@ -2,10 +2,27 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+LIVE = "https://edward321416--fieldless-web.us-east.modal.run"
+# The credit a New York record carries (NYC Open Data's terms ask for the source, version and changes).
+NEW_YORK_CREDIT = ("City records: NYC Open Data (DOT Pedestrian Ramp Locations, Parks Forestry Tree Points, DSNY Litter "
+                   "Basket Inventory, DOT Parking Meters, DOT Bicycle Parking, DEP Hydrants), downloaded Nov 1, 2026, "
+                   "clipped to the survey area. The City of New York does not warrant them or endorse this survey.")
 
 
 def readme() -> str:
     return (ROOT / "README.md").read_text(encoding="utf-8")
+
+
+def section(text: str, start: str, end: str) -> str:
+    return text[text.index(start):text.index(end)]
+
+
+def meta_table(text: str) -> str:
+    """The "Meta AI used" table, header and rows, up to the first line that is not part of it."""
+    lines = text[text.index("## Meta AI used"):].splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("| Meta technology"))
+    last = next((i for i in range(first, len(lines)) if not lines[i].startswith("|")), len(lines))
+    return "\n".join(lines[first:last])
 
 
 def test_setup_matches_the_tested_python_and_names_the_keys():
@@ -40,7 +57,7 @@ def test_readme_matches_what_the_screens_call_things():
     assert "Differences (.geojson)" in text and "scan_<id>_city_diff.geojson" in text
     assert "P1 · Possible defect" in text
     assert "marked for review" not in text and "rows a person rejected" not in text
-    assert "faint dots are the city's records in the photos' view that the survey did not find" in text
+    assert "a faint dot for each city record in the photos' view that the survey did not find" in text
     assert "five items" not in text and "five photo checks" in text
 
 
@@ -65,8 +82,7 @@ def test_place_search_asks_only_on_enter():
 
 
 def test_every_meta_model_says_what_it_does_and_where_it_runs():
-    text = readme()
-    table = text[text.index("## Meta AI used"):text.index("In the recorded Seattle survey")]
+    table = meta_table(readme())
     header = next(l for l in table.splitlines() if l.startswith("| Meta technology"))
     assert "Runs on" in header
     rows = {l.split("|")[1].strip(): l for l in table.splitlines() if l.startswith("| **")}
@@ -82,8 +98,7 @@ def test_each_meta_model_says_which_key_it_needs():
     setup = text[text.index("### Setup"):text.index("### Survey items from a rule")]
     assert "`MODEL_API_KEY` (the Meta Model API: SAM 3.1 and Muse Spark)" in setup and "`MAPILLARY_TOKEN`" in setup
     assert "`BASETEN_API_KEY` (Muse Spark Open) is optional" in setup
-    table = text[text.index("## Meta AI used"):text.index("In the recorded Seattle survey")]
-    rows = {l.split("|")[1].strip(): l.split("|")[3] for l in table.splitlines() if l.startswith("| **")}
+    rows = {l.split("|")[1].strip(): l.split("|")[3] for l in meta_table(text).splitlines() if l.startswith("| **")}
     assert "`MODEL_API_KEY`" in rows["**SAM 3.1**"] and "`MODEL_API_KEY`" in rows["**Muse Spark**"]
     assert "`BASETEN_API_KEY`" in rows["**Muse Spark Open** (open weights)"]
     glimmer = rows["**Muse Glimmer** (open weights)"]
@@ -105,7 +120,10 @@ def test_commands_are_ones_that_run():
 def test_the_cost_caps_are_stated_without_a_false_breach():
     text = readme()
     assert "Meta API spend stays inside the $3 per-survey" in text
-    assert "ran locally with a $5 cap" in text and "$4.21 is not a limit breach" in text
+    # the two example surveys that cost more than $3 ran locally under higher caps
+    assert "ran locally under higher caps" in text
+    assert "Ballard's $3.33 and Capitol Hill's $4.21 are not limit breaches" in text
+    assert "A survey started on the live site stops at $3" in text
 
 
 def test_readme_names_the_invite_code_variables_but_gives_no_value():
@@ -119,3 +137,123 @@ def test_the_claims_the_audit_corrected():
     assert "a $400,000 budget" in text and "($400,000, 2017)" not in text
     assert "Fieldless is a narrower first pass than the 2017 survey, which recorded surface condition and slope." in text
     assert "when we looked" not in text  # Claude judged these, not a person
+
+
+def test_the_opening_leads_with_survey_productivity_and_ballard_is_the_headline():
+    text = readme()
+    opening = text[:text.index("## Why")]
+    first = opening.split("\n\n")[1]  # the paragraph after "# Fieldless"
+    assert "minutes and a few dollars per kilometer" in first
+    assert "0.92 km of Ballard" in first and "10.3 minutes" in first and "$3.33" in first and "$3.60 per km" in first
+    # docs/design-rules.md R1: no one survey item stands in the first paragraph
+    for item in (r"curb ramps?", r"poles?", r"trees?", r"litter", r"pay stations?", r"steps?", r"hydrants?", r"racks?"):
+        assert not re.search(rf"\b{item}\b", first, re.IGNORECASE), item
+    assert "**Record Update List**" in opening  # the second paragraph says what a city gets
+    # Capitol Hill is an older example. Its $4.48 per km and $4.21 belong to the results, never to the headline.
+    before_results = text[:text.index("## Results (measured)")]
+    assert "$4.48" not in before_results and "$4.21" not in before_results
+
+
+def test_try_it_links_the_three_examples_in_order_and_the_read_only_demo():
+    line = next(l for l in readme().splitlines() if l.startswith("**Try it:**"))
+    places = [line.index(f"]({LIVE}/#scan={scan})") for scan in (30, 31, 17)]  # Ballard, New York, Capitol Hill
+    assert places == sorted(places)
+    assert "https://huggingface.co/spaces/BBONG1201/fieldless" in line
+    assert f"]({LIVE}/#scan=17&item=4)" in line
+
+
+def test_the_images_are_the_update_list_and_the_agent_and_both_are_there():
+    text = readme()
+    images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
+    assert "docs/images/update-list.png" in images and "docs/images/agent-item.png" in images
+    for path in images:
+        assert (ROOT / path).stat().st_size > 10_000, path
+    assert "records-lens" not in text  # the old screen, with Capitol Hill's $4.48
+    alt = re.search(r"!\[([^\]]*)\]\(docs/images/update-list\.png\)", text).group(1)
+    assert "43 of 94" in alt and "Mapillary credit" in alt
+
+
+def test_the_update_list_uses_the_words_on_its_screens():
+    text = readme()
+    screens = "".join((ROOT / "web" / "src" / name).read_text(encoding="utf-8")
+                      for name in ("AssetCheckPane.tsx", "ActionHub.tsx"))
+    for label in ("Update list", "Correct the record", "Update the date", "No change", "Visit on site",
+                  "Compare with the list", "Open the report", "Table (.csv)", "Table (.geojson)", "Show on the map"):
+        assert label in text and label in screens, label
+    # the files and the page the server names the same way
+    server = (ROOT / "server" / "app.py").read_text(encoding="utf-8")
+    assert "update-list-<id>.csv" in text and 'filename="update-list-{scan_id}.csv"' in server
+    assert "update-list-<id>.geojson" in text and 'filename="update-list-{scan_id}.geojson"' in server
+    page = (ROOT / "assist" / "asset_check.py").read_text(encoding="utf-8")
+    assert '"<area> Record Update List"' in text and 'f"{place} Record Update List"' in page
+
+
+def test_dispatch_and_gis_diff_are_what_a_survey_without_an_update_list_shows():
+    line = next(l for l in readme().splitlines() if l.startswith("- **Dispatch and GIS Diff.**"))
+    assert "The update list takes their place on a survey that has one" in line
+    assert "A survey without one still shows them" in line
+
+
+def test_the_update_list_is_a_suggestion_and_never_more():
+    text = readme()
+    assert "Every row is a suggestion" in text and "does not replace site checks" in text
+    assert "changes nothing in the city's records" in text
+    assert not re.search(r"\b(city|asset team) (accepted|approved|signed off)", text, re.IGNORECASE)
+    # the city's date field is the city's own: nobody knows it to be the date of a site check
+    assert "field-check date" not in text and "site-check date" not in text
+    assert "`LAST_VERIFY_DATE` for trees, `VERIFICATION_DATE` for curb ramps" in text
+    # panorama rows are 2025 photos, so only the survey photos are all 2026
+    assert "all 2026 photos" not in text
+    assert 'so "2026" is true of its survey photos only' in text
+
+
+def test_results_take_ballard_then_new_york_then_capitol_hill():
+    text = readme()
+    results = section(text, "## Results (measured)", "## Data, privacy and attribution")
+    names = ("Seattle, Ballard", "New York, Park Avenue South", "Seattle, Capitol Hill")
+    starts = [results.index(f"- **{name}**") for name in names]
+    assert starts == sorted(starts)
+    ballard, new_york, capitol = results[starts[0]:starts[1]], results[starts[1]:starts[2]], results[starts[2]:]
+    for fact in ("2026-05-18 to 2026-07-01", "199 photos over 0.92 km", "five photo checks", "10.3 min", "676 model calls",
+                 "$3.33 ($3.60 per km)", "43 need no site visit (1 record to correct, 26 dates to update, 16 with no change)",
+                 "51 need a visit", "26 more objects are not on the city's lists, 7 of them not settled",
+                 "53 of the 94 were seen in photos (27 by the survey, 9 on a second look, 17 on a second look in panoramas",
+                 "41 are not determined", "27 of 94 (poles 10/22, street trees 11/45, litter cans 1/2, curb ramps 5/25, "
+                 "pay stations 0/0)", "0 of 17 (survey photos) and 1 of 10 (panoramas", "agreed with the city on 7, differed "
+                 "on 1 and left 14 not determined", "of 57 recorded findings, 43 right, 3 wrong and 11 could not be told"):
+        assert fact in ballard, fact
+    for fact in ("2026-02-02 to 2026-02-09", "181 photos over 0.70 km", "7.9 min", "641 model calls", "$2.97 ($4.24 per km)",
+                 "9 of 79 (street trees 4/29, litter cans 0/4, pay stations 3/7, curb ramps 2/39; no usable pole list)",
+                 "of 63 recorded findings, 52 right (83%), 1 wrong and 10 could not be told"):
+        assert fact in new_york, fact
+    for fact in ("from 2022", "an older example", "181 photos over 0.94 km", "7.0 min", "$4.21 ($4.48 per km)",
+                 "63 need no site visit and 44 need a visit", "45 of 107", "73 of 86 recorded findings right"):
+        assert fact in capitol, fact
+    differs = next(l for l in results.splitlines() if l.startswith("- **What differs.**"))
+    assert "newer survey photos" in differs and "lower cost per km" in differs
+    assert "match with the city's lists is lower" in differs and "share of findings judged right" in differs
+    assert " better" not in differs  # only the photo date and the cost per km differ for the better, and it is not said
+
+
+def test_the_assistant_that_judged_the_findings_is_named_and_is_not_a_person():
+    text = readme()
+    assert "by an AI assistant (Claude, the coding assistant used to build Fieldless), not by a person" in text
+    assert text.count("Checked by the AI assistant") == 3  # one line for each example
+
+
+def test_new_york_credit_is_in_data_privacy_and_attribution():
+    text = readme()
+    assert NEW_YORK_CREDIT in section(text, "## Data, privacy and attribution", "## Limits")
+
+
+def test_limits_give_photo_dates_by_example_and_the_causes_nobody_has_tested():
+    text = readme()
+    limits = section(text, "## Limits", "## Built during the Meta Global AI Developer Hackathon")
+    for fact in ("2026-05-18 to 2026-07-01", "panoramas from 2025", "2026-02-02 to 2026-02-09", "photos are from 2022",
+                 "It has no pay stations, only 2 litter-can records, and street trees are 48% of its city records (45 of 94)",
+                 "come from one Mapillary contributor", "**Suggestions only.**", "does not replace site checks",
+                 "are further model calls, and are not in the cost per km"):
+        assert fact in limits, fact
+    assert "**New York matches few of the city's records** (9 of 79), and we do not know why." in limits
+    # why New York's match is low has not been tested: no cause is named anywhere in the README
+    assert not re.search(r"\b(snow|leafless|winter|field of view)\b", text, re.IGNORECASE)
