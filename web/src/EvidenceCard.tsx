@@ -5,7 +5,7 @@ import { photoMonth, reasonText, zoomChip } from "./format";
 import { compassWord, targetBearing } from "./geo";
 import { colourOf, STATUS_SENTENCE, type Finding } from "./items";
 import { itemArt } from "./markerArt";
-import { EvidencePhoto, PhotoCredit } from "./Photo";
+import { EvidencePhoto, MiniCredit, PhotoCredit } from "./Photo";
 import { choiceForKey, choicesFor, type Choice } from "./review";
 import type { CheckCount, CityCheck, ItemMeta, Picked } from "./types";
 
@@ -217,10 +217,13 @@ export default function EvidenceCard(props: Props) {
       {props.queue && answers}
 
       {evidence && props.photoOnMap ? (
-        <p className="card-thumb">
+        <div className="card-thumb">
           <img src={evidence.url} alt="" />
-          <span className="hint small">The photo is open over the map.</span>
-        </p>
+          <div className="card-thumb-text">
+            <span className="hint small">The photo is open over the map.</span>
+            <MiniCredit evidence={evidence} />
+          </div>
+        </div>
       ) : evidence ? (
         <>
           <EvidencePhoto evidence={evidence} box={f.box} boxLabel={`the ${target}`} colour={colourOf(f.item, items)}

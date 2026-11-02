@@ -30,7 +30,9 @@ def test_the_document_has_a_cover_contents_six_sections_and_an_appendix_in_order
 
     page = report_doc.document(s)
 
-    assert page.startswith("<!doctype html>") and "<script" not in page and "<link" not in page
+    # self-contained: the one link is an empty icon, so the page asks the server for nothing
+    assert page.startswith("<!doctype html>") and "<script" not in page
+    assert '<link rel="icon" href="data:,">' in page and "<link" not in page.replace('<link rel="icon" href="data:,">', "")
     assert '<section class="cover"' in page and "Street Survey Report" in page and "Pike &amp; Pine" in page
     assert sections(page) == ["summary", "scope", "findings", "actions", "ledger", "limits", "appendix"]
     assert "@page" in page and "break-before: page" in page and "break-inside: avoid" in page
