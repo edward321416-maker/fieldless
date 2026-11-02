@@ -460,7 +460,8 @@ def create_app(settings: Settings | None = None, worker=None, preview=None, stor
             scan = found(db.get_scan, conn, scan_id, "scan")
             km = views.surveyed_km(db.frames(conn, scan_id))
         page = asset_page.document(check, area=dict(settings.demo_scans).get(scan_id), km=km,
-                                   photo_count=scan["image_count"], photo_base="../../../evidence/")
+                                   photo_count=scan["image_count"], photo_base="../../../evidence/",
+                                   survey_cost=scan["cost_usd"])
         return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/scans/{scan_id}/asset-check/table.csv")

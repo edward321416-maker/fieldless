@@ -201,3 +201,17 @@ def test_a_citys_own_credit_stands_in_for_the_plain_one():
     assert credit in asset_check.document(check) and "Testville open data." not in asset_check.document(check)
     assert asset_check.summary(check)["credit"] == credit
     assert "City data: Testville open data." in asset_check.document(CHECK)
+
+
+def test_the_page_says_what_the_second_looks_cost_beside_the_surveys_own_cost():
+    check = {**CHECK, "trust": {**CHECK["trust"], "second_looks_usd": 2.3028}}
+    page = asset_check.document(check, survey_cost=3.3274)
+    assert "<strong>Cost.</strong> The survey cost $3.33. The second looks behind this list, run separately, cost $2.30 more." in page
+    assert "The second looks behind this list, run separately, cost $2.30." in asset_check.document(check)
+    assert "behind this list" not in asset_check.document(CHECK, survey_cost=3.3274)
+
+
+def test_the_survey_cost_reaches_the_page_in_the_zip(tmp_path):
+    check = {**CHECK, "trust": {**CHECK["trust"], "second_looks_usd": 2.3028}}
+    asset_check.write(check, tmp_path, survey_cost=3.3274)
+    assert "The survey cost $3.33." in (tmp_path / "update_list.html").read_text(encoding="utf-8")

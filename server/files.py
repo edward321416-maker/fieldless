@@ -33,7 +33,8 @@ def survey_zip(scan_data: dict, standard: Standard, evidence_dir: Path, area: st
         photos = {f["properties"]["evidence"] for f in export.features(scan_data, standard)} - {None}
         if check := scan_data.get("asset_check"):
             asset_check.write(check, Path(tmp), area=area, km=views.surveyed_km(scan_data["frames"]),
-                              photo_count=scan_data["scan"].get("image_count"))
+                              photo_count=scan_data["scan"].get("image_count"),
+                              survey_cost=scan_data["scan"].get("cost_usd"))
             photos |= {f"evidence/{name}" for name in asset_check.photos(check)}
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:

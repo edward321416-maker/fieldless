@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from eval import asset_check
-from pipeline import evidence
+from pipeline import config, evidence
 
 ID_FIELDS = ["UNITID"]
 TOWN = {"city": "Testville", "items": {
@@ -364,3 +364,59 @@ def test_an_object_everyone_is_sure_of_has_nothing_to_add():
     out = result(labels={"issues": {"3": {"item": "pole", "value": "yes"}}})
     sure = next(r for r in out["rows"] if r["asset"] == "City pole" and r["status"] == asset_check.NOT_LISTED)
     assert sure["photo_shows"] == "" and out["compare_unsure"] == 1  # the unsure can is still counted
+
+
+def test_the_findings_count_only_the_rows_the_models_alone_settled():
+    data = {**DATA, "issues": [*DATA["issues"], issue(6, "pole", status="needs_review")],
+            "entrances": [{"id": 7, "review_status": "auto"}, {"id": 8, "review_status": "field_check"}]}
+    labels = {"issues": {"1": {"item": "pole", "value": "yes"}, "5": {"item": "can", "value": "no"},
+                         "6": {"item": "pole", "value": "unclear"}},
+              "entrances": {"7": {"value": "yes"}, "8": {"value": "unclear"}}}  # 5 is rejected, 6 and 8 a person looked at
+    trust = {"controls": [], "looked_at": 0, "sent_back": 0}
+    out = asset_check.build(data, CHECK, TOWN, LAYERS, STANDARD, {}, trust, labels)
+    assert out["trust"]["findings"] == {"n": 2, "yes": 2, "no": 0, "unclear": 0}
+
+
+def test_a_judgement_of_rows_that_are_no_longer_the_models_own_says_nothing():
+    labels = {"issues": {"5": {"item": "can", "value": "no"}}}  # issue 5 is rejected
+    assert "findings" not in result(labels=labels)["trust"]
+
+
+def test_what_the_assistant_said_of_a_row_still_decides_the_rows_action_whatever_its_status():
+    data = {**DATA, "issues": [*DATA["issues"][:3], {**issue(4, "can", "yes", status="field_check")}]}
+    labels = {"issues": {"4": {"item": "can", "value": "unclear"}}}
+    trust = {"controls": [], "looked_at": 0, "sent_back": 0}
+    out = asset_check.build(data, CHECK, TOWN, LAYERS, STANDARD, {}, trust, labels)
+    assert next(r for r in out["rows"] if r["status"] == asset_check.NOT_LISTED and r["asset"] == "Public can")["photo_shows"] \
+        == asset_check.NOT_SETTLED
+    assert "findings" not in out["trust"]  # but it is not a finding the models made on their own
+
+
+def write_json(path, data):
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_the_later_looks_cost_what_their_files_say(tmp_path):
+    write_json(tmp_path / "second_look_scan1.json", {"cost_usd": 1.1})
+    write_json(tmp_path / "second_look_pilot_scan1.json", {"summary": {"cost_usd": 0.25}})
+    write_json(tmp_path / "pano_look_scan1.json", {"cost_usd": 0.75})
+    write_json(tmp_path / "record_check_scan1.json", {"cost_usd": 0.5})
+    write_json(tmp_path / "second_look_scan2.json", {"cost_usd": 9.0})  # another survey's
+    (tmp_path / "evidence").mkdir()
+    for name in ("scan1_look0_7.jpg", "scan1_look1_8.jpg", "scan2_look0_9.jpg", "scan1_issue1_9.jpg"):
+        (tmp_path / "evidence" / name).write_bytes(b"jpg")  # two photos of scan 1's looks; the others are not
+    costs = asset_check.second_look_costs(tmp_path, 1)
+    assert costs["second_look"] == pytest.approx(1.1) and costs["sample"] == pytest.approx(0.25)
+    assert costs["panoramas"] == pytest.approx(0.75) and costs["record_check"] == pytest.approx(0.5)
+    assert costs["blur"] == pytest.approx(2 * 2 * config.SAM_PER_IMAGE)  # two SAM requests a photo
+    assert costs["total"] == pytest.approx(1.1 + 0.25 + 0.75 + 0.5 + costs["blur"])
+
+
+def test_a_survey_with_no_later_looks_has_nothing_more_to_pay_for(tmp_path):
+    assert asset_check.second_look_costs(tmp_path, 1)["total"] == 0
+
+
+def test_the_cost_of_the_looks_goes_into_the_file_for_the_page_and_the_app(tmp_path):
+    trust = {"controls": [], "looked_at": 0, "sent_back": 0, **asset_check.cost_trust({"second_look": 1.0, "total": 1.5})}
+    assert trust["second_looks_usd"] == 1.5 and trust["second_looks"]["second_look"] == 1.0
+    assert asset_check.cost_trust({"total": 0}) == {}

@@ -39,6 +39,7 @@ CITY_POSITION = {"position_source": "City record", "position_accuracy": "City re
 CAMERA_POSITION = {"position_source": "Camera position of the Mapillary photo",
                    "position_accuracy": "Unknown (within 50 ft)"}
 COST_CAP_USD = 0.25  # two SAM requests a photo, for the photos of one area's later looks
+BLUR_PER_PHOTO_USD = 2 * config.SAM_PER_IMAGE  # evidence.make_evidence asks SAM 3.1 for people and for plates
 WORKERS = 4
 
 
@@ -116,6 +117,41 @@ def read_differs(run_dir: Path, scan: int) -> tuple[dict, dict | None]:
     differs = {(r["item"], r["record"]): {"city_says": r["city_says"], "photo_shows": r["photo_shows"]}
                for r in checked["rows"] if r["differs"] and (r["item"], r["record"]) not in sent_back}
     return differs, {**checked["summary"], "differ": len(differs), "sent_back": len(sent_back)}
+
+
+def second_look_costs(run_dir: Path, scan: int) -> dict:
+    """What the later looks behind a survey's Asset Check cost, by part. Each look wrote the cost of its run
+    (cost_usd) beside its answers; blurring wrote none, so it is SAM's two requests for each look photo made. The
+    survey's own cost is not here: it is the scan's."""
+    def spent(name: str, *keys: str) -> float:
+        value = _read(run_dir / name)
+        for key in keys:
+            value = value.get(key) if isinstance(value, dict) else None
+        return float(value) if isinstance(value, (int, float)) else 0.0
+
+    photos = len(list((run_dir / "evidence").glob(f"scan{scan}_look*.jpg")))
+    parts = {"second_look": spent(f"second_look_scan{scan}.json", "cost_usd"),
+             "sample": spent(f"second_look_pilot_scan{scan}.json", "summary", "cost_usd"),
+             "panoramas": spent(f"pano_look_scan{scan}.json", "cost_usd"),
+             "record_check": spent(f"record_check_scan{scan}.json", "cost_usd"),
+             "blur": photos * BLUR_PER_PHOTO_USD}
+    return {**{k: round(v, 4) for k, v in parts.items()}, "total": round(sum(parts.values()), 4)}
+
+
+def cost_trust(costs: dict) -> dict:
+    """The trust entries that say what the later looks cost: none when they cost nothing."""
+    return {"second_looks": costs, "second_looks_usd": costs["total"]} if costs.get("total") else {}
+
+
+def auto_labels(data: dict, labels: dict | None) -> dict | None:
+    """The AI assistant's check of the findings that are still the models' own: the rows nobody has reviewed or rejected
+    since (status auto), the rows eval.precision draws. Its judgement of any other row stays in the file and still says
+    whether the models were sure of that row (action_of), but the row is no finding the models made on their own."""
+    if not labels:
+        return labels
+    own = {"issues": {str(i["id"]) for i in data["issues"] if i["review_status"] == "auto"},
+           "entrances": {str(e["id"]) for e in data.get("entrances", []) if e["review_status"] == "auto"}}
+    return {**labels, **{kind: {k: v for k, v in labels.get(kind, {}).items() if k in own[kind]} for kind in own}}
 
 
 def evidence_of(looks: dict[str, dict], scan: int) -> dict[Path, str]:
@@ -264,7 +300,8 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
         items.append({"item": item, "asset": name, "city_list": info["layer"], **tally(found),
                       "actions": dict(Counter(r["action"] for r in kept))})
     outside = sum(not p.get("in_view") for info in check_file["items"].values() for p in info["pairs"])
-    checked = next((r for r in precision.summary(labels) if r["item"] == "all"), None) if labels else None
+    checked = next((r for r in precision.summary(auto_labels(data, labels)) if r["item"] == "all"), None) if labels else None
+    checked = checked if checked and checked["n"] else None
     months = sorted({r["seen_in_photo_on"][:7] for r in rows if r["status"] == SEEN and r["seen_in_photo_on"]})
     no_visit = sum(bool(r["city_record"]) and r["action"] != VISIT for r in listed)
     compare_unsure = sum(r["photo_shows"] == NOT_SETTLED for r in listed)
@@ -299,6 +336,7 @@ def main(argv=None) -> Path:
     differs, record_trust = read_differs(run_dir, args.scan)
     if record_trust:
         trust["record_check"] = record_trust
+    trust.update(cost_trust(second_look_costs(run_dir, args.scan)))  # after the blur: it counts this run's photos
     out = build(data, check_file, town, layers, survey_items.load(data["scan"]["jurisdiction"]), looks, trust,
                 _read(run_dir / f"precision_scan{args.scan}.json"), differs)
     path = run_dir / f"asset_check_scan{args.scan}.json"

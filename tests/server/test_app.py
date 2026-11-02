@@ -434,7 +434,8 @@ def asset_check_file(scan_id: int) -> dict:
             "rows": [row, {**row, "status": "Not determined", "how_seen": "", "city_record": "P2", "evidence": None,
                            "seen_in_photo_on": "", "photo_newer_than_city_date": "", "box": None, "action": "Visit on site",
                            "city_says": "", "photo_shows": ""}],
-            "trust": {"photo_months": ["2025-07"], "controls": [], "looked_at": 1, "sent_back": 0, "outside_view": 0}}
+            "trust": {"photo_months": ["2025-07"], "controls": [], "looked_at": 1, "sent_back": 0, "outside_view": 0,
+                      "second_looks_usd": 1.25}}
 
 
 def with_asset_check(make):
@@ -485,6 +486,7 @@ def test_the_asset_check_page_reaches_the_evidence_photos(make):
     page = client.get(f"/api/scans/{scan_id}/asset-check/report")
     assert page.headers["content-type"].startswith("text/html") and "Capitol Hill Record Update List" in page.text
     assert f'src="../../../evidence/scan{scan_id}_look0_7.jpg"' in page.text
+    assert "The survey cost $0.33. The second looks behind this list, run separately, cost $1.25 more." in page.text
     assert client.get(f"/api/evidence/scan{scan_id}_look0_7.jpg").content == b"look"  # the name passes the server's rule
 
 
@@ -507,6 +509,7 @@ def test_the_survey_zip_carries_the_asset_check_and_its_photos(make):
     z = zipfile.ZipFile(io.BytesIO(body))
     assert {"update_list.html", "update_list.csv", "update_list.geojson", f"evidence/scan{scan_id}_look0_7.jpg"} <= set(z.namelist())
     assert f'src="evidence/scan{scan_id}_look0_7.jpg"' in z.read("update_list.html").decode("utf-8")
+    assert "The survey cost $0.33." in z.read("update_list.html").decode("utf-8")
     assert client.get(f"/api/scans/{scan_id}/files.zip").content == body  # the same bytes every time
 
 

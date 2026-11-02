@@ -209,7 +209,11 @@ def _card(row: dict, logo: str, photo_base: str) -> str:
 </article>"""
 
 
-def _trust(check: dict) -> list[str]:
+def _dollars(usd: float) -> str:
+    return f"${usd:.2f}"
+
+
+def _trust(check: dict, survey_cost: float | None = None) -> list[str]:
     trust, totals = check["trust"], check["totals"]
     lines = [f"<strong>Photo dates.</strong> The seen records are from photos taken in {_months(trust['photo_months'])}. "
              "A seen record was there on the photo's date, and may have changed since."]
@@ -237,6 +241,11 @@ def _trust(check: dict) -> list[str]:
         lines.append(f"<strong>Second looks.</strong> An AI assistant looked at the {trust['looked_at']} records two models "
                      f"had settled and sent {trust['sent_back']} back to Not determined, because the box sat on something "
                      "farther away than the record.")
+    if more := trust.get("second_looks_usd"):
+        began = f"The survey cost {_dollars(survey_cost)}. The" if survey_cost is not None else "The"
+        end = " more." if survey_cost is not None else "."
+        lines.append(f"<strong>Cost.</strong> {began} second looks behind this list, run separately, cost "
+                     f"{_dollars(more)}{end}")
     if trust.get("outside_view"):
         lines.append(f"<strong>Left out.</strong> {_count(trust['outside_view'], 'finding')} paired with a city record "
                      "outside the photo's view are counted on neither side.")
@@ -253,8 +262,9 @@ def _trust(check: dict) -> list[str]:
 
 
 def document(check: dict, area: str | None = None, km: float | None = None, photo_count: int | None = None,
-             photo_base: str = "evidence/") -> str:
-    """The page, in one file (inline CSS, no scripts). photo_base: where the page finds the evidence photos."""
+             photo_base: str = "evidence/", survey_cost: float | None = None) -> str:
+    """The page, in one file (inline CSS, no scripts). photo_base: where the page finds the evidence photos.
+    survey_cost: what the survey itself cost, the scan's own figure, to say beside what the second looks cost."""
     e, totals, logo = html.escape, check["totals"], _logo()
     place = area or check["city"]
     title = f"{place} Record Update List"
@@ -284,7 +294,7 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
     <h3>{e(unknown['asset'])}</h3><dl><dt>City record</dt><dd>{e(unknown['city_record'])}</dd></dl>
     <p class="action">{ACTIONS[VISIT]}</p></div></article>""" if unknown else "")
     columns = "".join(f"<tr><th scope=\"row\">{k}</th><td>{e(v)}</td></tr>" for k, v in COLUMNS)
-    trust = "".join(f"<li>{line}</li>" for line in _trust(check))
+    trust = "".join(f"<li>{line}</li>" for line in _trust(check, survey_cost))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{e(title)}</title><style>{CSS}</style></head><body>
@@ -335,9 +345,10 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
 
 
 def write(check: dict, out_dir: Path, area: str | None = None, km: float | None = None,
-          photo_count: int | None = None) -> None:
+          photo_count: int | None = None, survey_cost: float | None = None) -> None:
     """update_list.html, .csv and .geojson, for the survey's zip."""
     out_dir = Path(out_dir)
-    (out_dir / "update_list.html").write_text(document(check, area, km, photo_count), encoding="utf-8")
+    (out_dir / "update_list.html").write_text(document(check, area, km, photo_count, survey_cost=survey_cost),
+                                              encoding="utf-8")
     (out_dir / "update_list.csv").write_bytes(table_csv(check))
     (out_dir / "update_list.geojson").write_bytes(table_geojson(check))
