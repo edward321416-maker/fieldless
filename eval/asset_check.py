@@ -15,6 +15,7 @@ and the table a city's asset team takes. Nothing here writes to a city's records
 """
 import argparse
 import json
+import statistics
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,6 +105,21 @@ def read_looks(run_dir: Path, scan: int, frames: list[dict]) -> tuple[dict[str, 
                  **({"note": review["newer_control_note"]} if review.get("newer_control_note") else {})}]
     return looks, {"controls": [c for c in controls if c["asked"]], "looked_at": review.get("looked_at", 0),
                    "sent_back": len(sent_back)}
+
+
+def read_nearby(run_dir: Path, scan: int, frames: list[dict]) -> dict[str, dict]:
+    """The survey photo the second look chose for each record, by record: what a person can look at before going to a
+    place the photos did not settle. It shows the place, and it may not show the record: the direction it was chosen by
+    can be off, so nothing here marks a spot on it. Only linked, never served, so no blurred copy of it is made."""
+    creators = {f["image_id"]: f.get("creator") for f in frames}
+    near: dict[str, dict] = {}
+    for job in (_read(run_dir / f"second_look_scan{scan}.json") or {}).get("spots", []):
+        view = job.get("view")
+        if job["kind"] == "record" and view:
+            near.setdefault(record_key(job["city"]), {
+                "link": evidence.mapillary_link(view["image_id"]), "creator": creators.get(view["image_id"]),
+                "captured_at": view["captured_at"], "license": evidence.LICENSE, "dist_m": view.get("dist_m")})
+    return near
 
 
 def read_differs(run_dir: Path, scan: int) -> tuple[dict, dict | None]:
@@ -233,7 +249,7 @@ def tally(rows: list[dict]) -> dict:
 
 
 def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str, issues: list[dict],
-              looks: dict[str, dict]) -> list[dict]:
+              looks: dict[str, dict], nearby: dict[str, dict]) -> list[dict]:
     keys = info["id_fields"]
     by_key = {tuple(str(f["properties"].get(k)) for k in keys): f for f in features if f.get("geometry")}
     base = {"item": item, "asset": name}
@@ -258,9 +274,11 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
     rows = [record_row(pair["city"], SEEN, BY_SURVEY, issue=next(i for i in issues if i["id"] == pair["issue_id"]))
             for pair in info["pairs"] if pair.get("in_view")]
     for missed in info["missed"]:
-        look = looks.get(record_key(missed["city"]))
+        key = record_key(missed["city"])
+        look = looks.get(key)
         rows.append(record_row(missed["city"], SEEN, look["how"], look=look) if look
-                    else record_row(missed["city"], NOT_DETERMINED))
+                    else {**record_row(missed["city"], NOT_DETERMINED),
+                          **({"nearby_photo": nearby[key]} if key in nearby else {})})
     paired = {pair["issue_id"] for pair in info["pairs"]}
     for issue in issues:
         if issue["issue_type"] == item and issue["id"] not in paired:
@@ -274,18 +292,24 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
     return rows
 
 
+def years_between(city_date: str, photo_date: str) -> float:
+    """From the city's YYYY-MM to a photo's YYYY-MM-DD, in years."""
+    return (int(photo_date[:4]) - int(city_date[:4])) + (int(photo_date[5:7]) - int(city_date[5:7])) / 12
+
+
 def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]], standard, looks: dict[str, dict],
-          trust: dict, labels: dict | None = None, differs: dict | None = None) -> dict:
+          trust: dict, labels: dict | None = None, differs: dict | None = None,
+          nearby: dict[str, dict] | None = None) -> dict:
     """data as eval.store.load_scan returns it; layers: each item's GeoJSON features; looks and trust as read_looks
     returns them, each look with its evidence; labels: the AI assistant's check of the findings (eval.precision);
-    differs: the records a photo contradicts, by (item, record) (eval.record_check)."""
+    differs: the records a photo contradicts, by (item, record) (eval.record_check); nearby: as read_nearby returns it."""
     rows, listed, items = [], [], []
     left_out = Counter(repeats=0, wrong=0)
     issues = [i for i in data["issues"] if i["review_status"] != "rejected"]
     judged = (labels or {}).get("issues", {})
     for item, info in check_file["items"].items():
         name, cfg = asset_name(standard, item), town["items"][item]
-        found = item_rows(item, info, cfg, layers[item], name, issues, looks)
+        found = item_rows(item, info, cfg, layers[item], name, issues, looks, nearby or {})
         rows += found
         kept = []
         for row in found:
@@ -305,9 +329,13 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
     months = sorted({r["seen_in_photo_on"][:7] for r in rows if r["status"] == SEEN and r["seen_in_photo_on"]})
     no_visit = sum(bool(r["city_record"]) and r["action"] != VISIT for r in listed)
     compare_unsure = sum(r["photo_shows"] == NOT_SETTLED for r in listed)
+    visits_with_photo = sum(r["action"] == VISIT and bool(r.get("evidence") or r.get("nearby_photo")) for r in listed)
+    gaps = [years_between(r["city_date"], r["seen_in_photo_on"]) for r in listed if r["action"] == DATE]
     return {"scan_id": data["scan"]["id"], "city": town["city"], **({"credit": town["credit"]} if "credit" in town else {}),
             "items": items, "totals": tally(rows),
             "actions": dict(Counter(r["action"] for r in listed)), "no_visit": no_visit, "compare_unsure": compare_unsure,
+            "visits_with_photo": visits_with_photo,
+            **({"date_gap_years": round(statistics.median(gaps), 1)} if gaps else {}),
             "left_out": dict(left_out),
             "rows": listed,
             "trust": {**trust, "photo_months": months, "outside_view": outside,
@@ -338,7 +366,8 @@ def main(argv=None) -> Path:
         trust["record_check"] = record_trust
     trust.update(cost_trust(second_look_costs(run_dir, args.scan)))  # after the blur: it counts this run's photos
     out = build(data, check_file, town, layers, survey_items.load(data["scan"]["jurisdiction"]), looks, trust,
-                _read(run_dir / f"precision_scan{args.scan}.json"), differs)
+                _read(run_dir / f"precision_scan{args.scan}.json"), differs,
+                read_nearby(run_dir, args.scan, data["frames"]))
     path = run_dir / f"asset_check_scan{args.scan}.json"
     path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps({"totals": out["totals"], "trust": out["trust"]}, ensure_ascii=False, indent=1))

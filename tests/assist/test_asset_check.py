@@ -52,6 +52,49 @@ def test_a_row_without_a_photo_leaves_the_photo_cells_empty():
     assert third["status"] == "Not determined" and third["photo_url"] == "" and third["evidence_file"] == ""
 
 
+NEARBY = {"link": "https://www.mapillary.com/app/?pKey=5", "creator": "kev", "captured_at": "2026-07-01T00:00:00Z",
+          "license": "CC BY-SA 4.0", "dist_m": 14.2}
+VISIT_WITH_PHOTO = {**CHECK, "rows": [ROWS[0], {**ROWS[2], "nearby_photo": NEARBY}, *ROWS[1:2], *ROWS[3:]],
+                    "visits_with_photo": 1, "date_gap_years": 8.2}
+
+
+def test_a_visit_gives_the_nearby_photo_in_its_own_cells():
+    near = next(r for r in lines(asset_check.table_csv(VISIT_WITH_PHOTO)) if r["city_record"] == "T1")
+    assert near["nearby_photo_link"] == NEARBY["link"] and near["nearby_photo_m"] == "14.2"
+    assert near["nearby_photo_by"] == "kev" and near["nearby_photo_license"] == "CC BY-SA 4.0"
+    assert near["photo_url"] == "" and near["evidence_file"] == ""  # it settled nothing, so it is no evidence
+    assert near["status"] == "Not determined"
+
+
+def test_a_row_without_a_nearby_photo_leaves_those_cells_empty():
+    first = lines(asset_check.table_csv(VISIT_WITH_PHOTO))[0]
+    assert (first["nearby_photo_link"], first["nearby_photo_m"], first["nearby_photo_by"]) == ("", "", "")
+
+
+def test_the_new_cells_come_last_so_the_earlier_columns_do_not_move():
+    names = [k for k, _ in asset_check.COLUMNS]
+    assert names.index("evidence_file") == len(names) - 5
+    assert names[-4:] == ["nearby_photo_link", "nearby_photo_m", "nearby_photo_by", "nearby_photo_license"]
+
+
+def test_the_app_gets_the_visits_with_a_photo_and_the_date_gap_with_the_counts():
+    summary = asset_check.summary(VISIT_WITH_PHOTO)
+    assert (summary["visits_with_photo"], summary["date_gap_years"]) == (1, 8.2)
+    assert "rows" not in summary
+
+
+def test_a_list_made_before_these_counts_still_loads():
+    summary = asset_check.summary(CHECK)
+    assert "visits_with_photo" not in summary and "date_gap_years" not in summary
+
+
+def test_the_page_says_what_the_nearby_photo_is_and_credits_it():
+    page = asset_check.document(VISIT_WITH_PHOTO)
+    assert "taken 14 m from the record&#x27;s position" in page or "taken 14 m from the record's position" in page
+    assert "It may not show the record." in page
+    assert NEARBY["link"] in page and "Photo by kev" in page
+
+
 def test_text_that_starts_like_a_formula_stays_text():
     check = {**CHECK, "rows": [row(city_location="=HYPERLINK(1)")]}
     assert lines(asset_check.table_csv(check))[0]["city_location"] == "'=HYPERLINK(1)"

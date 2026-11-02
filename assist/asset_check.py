@@ -29,6 +29,7 @@ PANORAMA = "Second look, panorama"
 FIX, DATE, SAME, VISIT, COMPARE = ("Correct the record", "Update the date", "No change", "Visit on site",
                                    "Compare with the list")
 SUMMARY_FIELDS = ("city", "items", "totals", "actions", "no_visit", "compare_unsure", "left_out", "trust")
+LATER_FIELDS = ("credit", "visits_with_photo", "date_gap_years")  # a list made before they existed has none of them
 COLUMNS = (("action", "What the city could do with this row"),
            ("asset", "What the object is"),
            ("city_list", "The city list the record is on"),
@@ -50,7 +51,12 @@ COLUMNS = (("action", "What the city could do with this row"),
            ("photo_url", "The photo on Mapillary"),
            ("photo_by", "The photo's creator"),
            ("license", "The photo's licence"),
-           ("evidence_file", "The blurred photo in this download"))
+           ("evidence_file", "The blurred photo in this download"),
+           ("nearby_photo_link", "Where the photos did not settle a record: a survey photo on Mapillary taken near the "
+                                 "record's position. It may not show the record"),
+           ("nearby_photo_m", "Metres from the record's position to where that photo was taken"),
+           ("nearby_photo_by", "That photo's creator"),
+           ("nearby_photo_license", "That photo's licence"))
 ROOT = Path(__file__).resolve().parent.parent
 LOGOS = (ROOT / "web" / "public" / "mapillary-logo.png", ROOT / "web" / "dist" / "mapillary-logo.png")
 ACTIONS = {FIX: "Look at the photo, then correct the record if it holds.",
@@ -111,9 +117,12 @@ def table_rows(check: dict) -> list[dict]:
     out = []
     for row in check["rows"]:
         ev = row.get("evidence") or {}
+        near = row.get("nearby_photo") or {}
         out.append({**{k: row.get(k, "") for k, _ in COLUMNS}, "photo_url": ev.get("link", ""),
                     "photo_by": ev.get("creator") or "", "license": ev.get("license", ""),
-                    "evidence_file": f"evidence/{ev['image']}" if ev.get("image") else ""})
+                    "evidence_file": f"evidence/{ev['image']}" if ev.get("image") else "",
+                    "nearby_photo_link": near.get("link", ""), "nearby_photo_m": near.get("dist_m", ""),
+                    "nearby_photo_by": near.get("creator") or "", "nearby_photo_license": near.get("license", "")})
     return out
 
 
@@ -133,7 +142,7 @@ def table_geojson(check: dict) -> bytes:
 
 
 def summary(check: dict) -> dict:
-    return {**{k: check[k] for k in SUMMARY_FIELDS}, **({"credit": check["credit"]} if check.get("credit") else {})}
+    return {**{k: check[k] for k in SUMMARY_FIELDS}, **{k: check[k] for k in LATER_FIELDS if check.get(k) is not None}}
 
 
 def for_app(check: dict) -> dict:
@@ -207,6 +216,17 @@ def _card(row: dict, logo: str, photo_base: str) -> str:
     <p class="credit">Photo by {e(ev.get('creator') or 'a Mapillary contributor')} {logo} <a href="{e(ev['link'])}">View on Mapillary</a>, {e(ev['license'])}. Edited: {edited}.</p>
   </div>
 </article>"""
+
+
+def nearby_line(row: dict, logo: str) -> str:
+    """A linked survey photo near a record the photos did not settle, with its credit. It settled nothing."""
+    near = row.get("nearby_photo")
+    if not near:
+        return ""
+    e = html.escape
+    return (f'<p class="credit">A survey photo taken {max(1, round(near["dist_m"]))} m from the record\'s position. '
+            f'It may not show the record. Photo by {e(near.get("creator") or "a Mapillary contributor")} {logo} '
+            f'<a href="{e(near["link"])}">View on Mapillary</a>, {e(near["license"])}.</p>')
 
 
 def _dollars(usd: float) -> str:
@@ -289,10 +309,11 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
         for i in check["items"])
     foot = "".join(f"<td>{actions[a]}</td>" for a in shown)
     cards = "".join(_card(r, logo, photo_base) for r in examples(check))
-    unknown = next((r for r in check["rows"] if r["status"] == NOT_DETERMINED), None)
+    unknown = next((r for r in check["rows"] if r["status"] == NOT_DETERMINED and r.get("nearby_photo")),
+                   next((r for r in check["rows"] if r["status"] == NOT_DETERMINED), None))
     undecided = (f"""<article class="card"><div class="body"><span class="chip visit">{VISIT}</span>
     <h3>{e(unknown['asset'])}</h3><dl><dt>City record</dt><dd>{e(unknown['city_record'])}</dd></dl>
-    <p class="action">{ACTIONS[VISIT]}</p></div></article>""" if unknown else "")
+    <p class="action">{ACTIONS[VISIT]}</p>{nearby_line(unknown, logo) if unknown else ""}</div></article>""" if unknown else "")
     columns = "".join(f"<tr><th scope=\"row\">{k}</th><td>{e(v)}</td></tr>" for k, v in COLUMNS)
     trust = "".join(f"<li>{line}</li>" for line in _trust(check, survey_cost))
     return f"""<!doctype html>

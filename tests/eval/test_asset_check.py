@@ -231,7 +231,8 @@ def write_looks(run: Path, cache: Path) -> None:
     (run / "second_look_scan1.json").write_text(json.dumps({
         "summary": {"controls": 20, "controls_both_yes": 0},
         "spots": [{"kind": "record", "city": {"UNITID": "P2"}, "spark": {"answer": "yes", "visible": True, "box": [1, 2, 3, 4]},
-                   "open": {"answer": "yes", "visible": True}, "view": {"image_id": "11", "captured_at": "2022-08-30T00:00:00Z"}},
+                   "open": {"answer": "yes", "visible": True},
+                   "view": {"image_id": "11", "captured_at": "2022-08-30T00:00:00Z", "dist_m": 14.2}},
                   {"kind": "record", "city": {"UNITID": "P3"}, "spark": {"answer": "yes"}, "open": {"answer": "no"},
                    "view": {"image_id": "12", "captured_at": "2022-08-30T00:00:00Z"}},
                   {"kind": "control", "spark": {"answer": "yes"}, "open": {"answer": "yes"},
@@ -257,6 +258,58 @@ def run(tmp_path, monkeypatch):
 
 
 FRAMES = [{"image_id": "11", "creator": "bea"}]
+
+
+def test_each_record_the_second_look_asked_about_has_its_photo(run):
+    near = asset_check.read_nearby(run, 1, FRAMES)
+    assert near[asset_check.record_key({"UNITID": "P2"})] == {
+        "link": "https://www.mapillary.com/app/?pKey=11", "creator": "bea", "captured_at": "2022-08-30T00:00:00Z",
+        "license": "CC BY-SA 4.0", "dist_m": 14.2}
+    assert asset_check.record_key({"UNITID": "P3"}) in near
+    assert len(near) == 2  # a control spot is no record
+
+
+def test_no_second_look_is_no_photo(tmp_path):
+    assert asset_check.read_nearby(tmp_path, 1, []) == {}
+
+
+def nearby_result(**records):
+    photo = {"link": "l", "creator": "bea", "captured_at": "2022-08-30T00:00:00Z", "license": "CC BY-SA 4.0", "dist_m": 14.2}
+    near = {asset_check.record_key({"UNITID": r}): {**photo, "dist_m": d} for r, d in records.items()}
+    return asset_check.build(DATA, CHECK, TOWN, LAYERS, STANDARD, {}, {"controls": [], "looked_at": 0, "sent_back": 0},
+                             nearby=near)
+
+
+def test_a_record_the_photos_did_not_settle_carries_a_photo_from_nearby():
+    out = nearby_result(P2=14.2)
+    assert row(out, "P2")["nearby_photo"]["dist_m"] == 14.2
+    assert row(out, "P2")["status"] == asset_check.NOT_DETERMINED and row(out, "P2")["evidence"] is None
+
+
+def test_a_photo_from_nearby_settles_nothing():
+    plain, near = result(), nearby_result(P2=14.2, P3=3.0, P4=9.0, C1=2.0)
+    assert (near["no_visit"], near["actions"], near["totals"]) == (plain["no_visit"], plain["actions"], plain["totals"])
+
+
+def test_a_seen_record_has_its_own_photo_and_no_other():
+    assert "nearby_photo" not in row(nearby_result(P1=4.0), "P1")
+
+
+def test_the_list_counts_the_visits_that_have_a_photo():
+    visits = sum(r["action"] == asset_check.VISIT for r in result()["rows"])
+    assert result()["visits_with_photo"] == 0
+    assert nearby_result(P2=14.2, P3=3.0)["visits_with_photo"] == 2
+    assert nearby_result(P2=1.0, P3=1.0, P4=1.0, C1=1.0)["visits_with_photo"] == visits
+
+
+def test_the_list_says_how_much_newer_the_photos_are_than_the_citys_dates():
+    assert result()["date_gap_years"] == 2.2  # P1: the city's 2020-05, a photo of 2022-08
+    assert "date_gap_years" not in result_without_dates()
+
+
+def result_without_dates():
+    town = {**TOWN, "items": {**TOWN["items"], "pole": {**TOWN["items"]["pole"], "verified": False}}}
+    return asset_check.build(DATA, CHECK, town, LAYERS, STANDARD, {}, {"controls": [], "looked_at": 0, "sent_back": 0})
 
 
 def test_only_records_both_models_saw_come_back_from_the_looks(run):
