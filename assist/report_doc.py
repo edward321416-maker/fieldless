@@ -388,7 +388,7 @@ def _limits(lines: list[str]) -> str:
 def _appendix(s: dict) -> str:
     body = (f"<p>The survey's files come with its download: survey_scan{s['scan_id']}.geojson (every finding as a "
             f"point), survey_scan{s['scan_id']}_&lt;item&gt;.csv (one table per item) and the photos.</p>"
-            "<p>Street photos: Mapillary contributors, CC BY-SA 4.0; people and licence plates are blurred. "
+            "<p>Street photos: Mapillary contributors, <a href=\"https://creativecommons.org/licenses/by-sa/4.0/\">CC BY-SA 4.0</a>; people and licence plates are blurred. "
             "Survey by Fieldless.</p>")
     return _section("appendix", body)
 

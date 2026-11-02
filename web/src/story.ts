@@ -92,7 +92,7 @@ export function changeCards(check: AssetCheckSummary | undefined, name: string |
     const visits = visitsLeft(check);
     const photos = check.visits_with_photo === visits && visits > 0;
     cards.push({ title: "For the person walking", big: `${visits} of ${check.totals.in_view}`,
-      text: `records the photos reached in ${where} still need a visit${photos ? ", each with a survey photo from nearby. See what the place looks like before you leave" : ""}. Every row is a suggestion.` });
+      text: `records the photos reached in ${where} still need a visit${photos ? ", each with a survey photo, of the place or from nearby. See what the place looks like before you leave" : ""}. Every row is a suggestion.` });
     const dated = check.actions[NEW_DATE] ?? 0;
     if (check.date_gap_years !== undefined && dated > 0) {
       cards.push({ title: "For the person keeping the records", big: `${check.date_gap_years} years`,

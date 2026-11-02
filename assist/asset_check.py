@@ -40,8 +40,8 @@ COLUMNS = (("action", "What the city could do with this row"),
            ("status", f"{SEEN}, {NOT_DETERMINED} or {NOT_LISTED}"),
            ("how_seen", "Survey, Second look, or Second look, panorama (a flat view cut from a 360-degree photo)"),
            ("models_unsure", "yes when the models could not settle what the object is"),
-           ("city_date", "The city's own verification date for the record, as year and month; empty where the "
-                         "list's date says when the list was updated, not when the record was verified"),
+           ("city_date", "The city's own date for the record, as year and month, from the field its list keeps for "
+                         "checking a record; empty where the list's date only says when the list was updated"),
            ("seen_in_photo_on", "The date of the photo. This is an observation, not an inspection"),
            ("photo_newer_than_city_date", "yes when the photo is newer than the city's date"),
            ("city_condition", "The record's condition, in the city's words"),
@@ -215,7 +215,7 @@ def _card(row: dict, logo: str, photo_base: str) -> str:
     <h3>{e(row['asset'])}</h3>
     <dl>{facts}</dl>
     <p class="action">{e(ACTIONS[row['action']])}</p>
-    <p class="credit">Photo by {e(ev.get('creator') or 'a Mapillary contributor')} {logo} <a href="{e(ev['link'])}">View on Mapillary</a>, {e(ev['license'])}. Edited: {edited}.</p>
+    <p class="credit">Photo by {e(ev.get('creator') or 'a Mapillary contributor')} {logo} <a href="{e(ev['link'])}">View on Mapillary</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/">{e(ev['license'])}</a>. Edited: {edited}.</p>
   </div>
 </article>"""
 
@@ -228,7 +228,7 @@ def nearby_line(row: dict, logo: str) -> str:
     e = html.escape
     return (f'<p class="credit">A survey photo taken {max(1, round(near["dist_m"]))} m from the record\'s position. '
             f'It may not show the record. Photo by {e(near.get("creator") or "a Mapillary contributor")} {logo} '
-            f'<a href="{e(near["link"])}">View on Mapillary</a>, {e(near["license"])}.</p>')
+            f'<a href="{e(near["link"])}">View on Mapillary</a>, <a href="https://creativecommons.org/licenses/by-sa/4.0/">{e(near["license"])}</a>.</p>')
 
 
 def _dollars(usd: float) -> str:
@@ -367,7 +367,7 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
   <div class="tablewrap" style="margin-top:12px"><table class="columns"><tbody>{columns}</tbody></table></div>
 </section>
 
-<p class="meta" style="font-size:13px">Street photos: Mapillary contributors, CC BY-SA 4.0. {e(check.get('credit') or f"City data: {check['city']} open data.")}</p>
+<p class="meta" style="font-size:13px">Street photos: Mapillary contributors, <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>. {e(check.get('credit') or f"City data: {check['city']} open data.")}</p>
 </main></body></html>
 """
 

@@ -187,7 +187,8 @@ def test_every_photo_on_the_page_has_its_credit():
     page = asset_check.document(CHECK)
     shown = page.count("<figure>")
     assert shown == 2 and page.count("View on Mapillary") == shown and page.count("Photo by bea") == shown
-    assert page.count(", CC BY-SA 4.0. Edited: ") == shown
+    assert page.count(">CC BY-SA 4.0</a>. Edited: ") == shown
+    assert page.count('href="https://creativecommons.org/licenses/by-sa/4.0/"') >= shown
 
 
 def test_a_view_cut_from_a_panorama_says_so():

@@ -19,6 +19,29 @@ const STATUS_SHORT: Record<string, string> = {
   needs_review: "Models unsure", field_check: "Check on site", verified: "Confirmed", auto: "",
 };
 const FIRST = 10; // shown before "Show n more": a phone would scroll for metres
+const NAMED = 3; // creators named in the list's credit before "and n more"
+
+// The credit for the thumbnails shown (Mapillary's terms): their creators, the logo linking to Mapillary and the licence.
+export function listCredit(findings: Finding[]): { names: string; more: number; unnamed: boolean } {
+  const shown = findings.map((f) => f.picked.item.evidence).filter((e) => e);
+  const creators = [...new Set(shown.map((e) => e!.creator).filter((c): c is string => !!c))];
+  return { names: creators.slice(0, NAMED).join(", "), more: Math.max(0, creators.length - NAMED),
+    unnamed: shown.some((e) => !e!.creator) };
+}
+
+function ListCredit({ findings }: { findings: Finding[] }) {
+  const { names, more, unnamed } = listCredit(findings);
+  const who = [names, more > 0 ? `${more} more` : "", unnamed ? "other Mapillary contributors" : ""].filter(Boolean);
+  const people = who.length > 1 ? `${who.slice(0, -1).join(", ")} and ${who[who.length - 1]}` : who[0] ?? "Mapillary contributors";
+  return (
+    <p className="hint small list-credit">
+      Photos by {people} ·{" "}
+      <a href="https://www.mapillary.com" target="_blank" rel="noreferrer"><MapillaryMark alt="Mapillary" /></a> ·{" "}
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>.
+      Open a row for its photo's own link.
+    </p>
+  );
+}
 
 // One item's findings (docs/specs/2026-10-29-cleanup-design.md 4): each with its street, its photo's month, what a
 // person may have to do, and a thumbnail centred on the model's box.
@@ -82,7 +105,7 @@ export default function FindingList(props: Props) {
           Show {findings.length - shown.length} more
         </button>
       )}
-      <p className="hint small">Photos: <MapillaryMark alt="Mapillary" /> contributors, CC BY-SA 4.0. Open a row for its creator and link.</p>
+      <ListCredit findings={shown} />
     </section>
   );
 }

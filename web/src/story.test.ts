@@ -91,7 +91,7 @@ describe("what changes", () => {
   it("says who gains what, from the survey's own numbers", () => {
     const cards = changeCards(full, "Seattle (Ballard)", run);
     expect(cards.map((c) => c.big)).toEqual(["51 of 94", "8.2 years", "$0.61"]);
-    expect(cards[0].text).toBe("records the photos reached in Seattle (Ballard) still need a visit, each with a survey photo from nearby. See what the place looks like before you leave. Every row is a suggestion.");
+    expect(cards[0].text).toBe("records the photos reached in Seattle (Ballard) still need a visit, each with a survey photo, of the place or from nearby. See what the place looks like before you leave. Every row is a suggestion.");
     expect(cards[1].text).toBe("median gap between the city's date and a newer photo, on 26 records in Seattle (Ballard). Review each from a desk; the city decides.");
     expect(cards[2].text).toBe('Muse Spark added "fire hydrant" to a finished survey of Seattle (Capitol Hill). Nobody walked the street again.');
   });

@@ -43,18 +43,18 @@ def test_each_tree_with_a_position_becomes_a_point_numbered_by_sheet_and_row(tmp
         "sheet10": [["가로수 위치 정보"], ["관리청: 성동구"], HEAD,
                     ["성동구", "성수이로", "은행나무", "서울특별시 성동구 성수이로 1", "서울특별시 성동구 성수동2가 1", "127.0561", "37.5480"]],
         "sheet2": [["가로수 위치 정보"], ["관리청: 종로구"], HEAD,
-                   ["종로구", "경교장길", "양버즘나무", "서울특별시 종로구 경교장길 8", "서울특별시 종로구 평동 226", 126.966028, 37.56761832],
-                   ["종로구", "경교장길", "은행나무", None, None, None, None],
-                   ["종로구", "경교장길", "은행나무", None, None, "0", "0"]],
+                   ["종로구", "가나길", "양버즘나무", "서울특별시 종로구 가나길 1", "서울특별시 종로구 가나동 1", 127.0001, 37.5001],
+                   ["종로구", "가나길", "은행나무", None, None, None, None],
+                   ["종로구", "가나길", "은행나무", None, None, "0", "0"]],
     })
 
     found = seoul_trees.features(path)
 
     assert [f["properties"]["OBJECTID"] for f in found] == [1, 2]
-    assert found[0] == {"type": "Feature", "geometry": {"type": "Point", "coordinates": [126.966028, 37.56761832]},
-                        "properties": {"OBJECTID": 1, "자치구": "종로구", "노선": "경교장길", "수종": "양버즘나무",
-                                       "도로명 주소": "서울특별시 종로구 경교장길 8",
-                                       "지번 주소": "서울특별시 종로구 평동 226"}}
+    assert found[0] == {"type": "Feature", "geometry": {"type": "Point", "coordinates": [127.0001, 37.5001]},
+                        "properties": {"OBJECTID": 1, "자치구": "종로구", "노선": "가나길", "수종": "양버즘나무",
+                                       "도로명 주소": "서울특별시 종로구 가나길 1",
+                                       "지번 주소": "서울특별시 종로구 가나동 1"}}
     assert found[1]["properties"]["자치구"] == "성동구" and found[1]["geometry"]["coordinates"] == [127.0561, 37.548]
 
 

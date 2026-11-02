@@ -129,10 +129,11 @@ describe("one item's findings", () => {
   });
   it("shows ten at first, then the rest on request, with the photos credited", () => {
     expect(html).toContain("Show 2 more");
-    // one line under the list: the Mapillary logo in the sentence, and where each photo's own credit is
-    expect(html).toContain('<p class="hint small">Photos: <img src="/mapillary-logo.png" alt="Mapillary" class="mapillary-logo"/> '
-      + "contributors, CC BY-SA 4.0. Open a row for its creator and link.</p>");
-    expect(html).not.toContain("Photos: Mapillary contributors");
+    // one line under the list: the creators of the photos shown, the Mapillary logo and the licence as links
+    expect(html).toContain('<p class="hint small list-credit">Photos by ');
+    expect(html).toContain('<a href="https://www.mapillary.com" target="_blank" rel="noreferrer"><img src="/mapillary-logo.png" alt="Mapillary" class="mapillary-logo"/></a>');
+    expect(html).toContain('<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>');
+    expect(html).not.toContain("Open a row for its creator and link.");
   });
 });
 
