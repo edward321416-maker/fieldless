@@ -285,7 +285,7 @@ def test_the_cost_per_km_is_the_survey_and_the_second_looks_behind_the_list_cost
     assert results.count("for the survey itself") == 3  # each example's cost per km is labelled as the survey's
     assert "is the survey only, as the live app shows" in limits
     # these are Meta API charges: the open-weight calls ran on Baseten credits
-    assert "These are Meta API charges: the Muse Spark Open calls (99) ran on Baseten credits and are not priced here" in limits
+    assert "These are Meta API charges: the 87 Muse Spark Open answers in the second looks ran on Baseten credits and are not priced here" in limits
     # the figures are exact, not "about"
     for rough in ("about $2 more", "about $5.5", "about $6", "a few tens of cents"):
         assert rough not in text, rough
