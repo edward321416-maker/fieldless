@@ -116,9 +116,12 @@ def _locate(doc: dict, item: dict, name: str, problems: list[str]) -> int | None
     if len(hits) != 1:
         problems.append(f"record {wanted} ({key}) matches {len(hits)} records of {name} (exactly 1 is required)")
         return None
-    props = doc["features"][hits[0]]["properties"]
-    if ledger_review.properties_sha256(props) != item["properties_sha256"]:
+    feature = doc["features"][hits[0]]
+    if ledger_review.properties_sha256(feature["properties"]) != item["properties_sha256"]:
         problems.append(f"the properties changed since the export: record {wanted} of {name}")
+        return None
+    if item.get("position_sha256") and ledger_review.position_sha256(feature.get("geometry")) != item["position_sha256"]:
+        problems.append(f"the location changed since the export: record {wanted} of {name}")
         return None
     return hits[0]
 
@@ -216,10 +219,9 @@ def apply(check: dict, journal: dict, input_dir, output_dir, now: datetime | Non
         review_dir.mkdir()
         (review_dir / "audit.json").write_text(json.dumps(audit, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         (review_dir / "journal.json").write_text(json.dumps(journal, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-        (review_dir / "changes.csv").write_bytes(ledger_review.to_csv(ledger_review.CHANGE_COLUMNS, reviewed["changes"]).encode("utf-8-sig"))
-        (review_dir / "observations.csv").write_bytes(ledger_review.to_csv(
-            ledger_review.OBSERVATION_COLUMNS,
-            [{**o, "date_meaning": ledger_review.DATE_MEANING} for o in reviewed["observations"]]).encode("utf-8-sig"))
+        for name, columns, rows in (("changes.csv", ledger_review.CHANGE_COLUMNS, reviewed["changes"]),
+                                    ("observations.csv", ledger_review.OBSERVATION_COLUMNS, reviewed["observations"])):
+            (review_dir / name).write_bytes(ledger_review.to_csv(columns, rows).encode("utf-8"))  # as the app's files: no BOM
         _verify(stage, root, inputs, rewritten)
         out.parent.mkdir(parents=True, exist_ok=True)
         os.rename(stage, out)

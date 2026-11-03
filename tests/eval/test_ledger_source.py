@@ -155,3 +155,20 @@ def test_adding_the_source_changes_no_count_or_existing_column():
 def test_default_decisions_do_not_exist_in_the_source():
     src = fx.row_of(fx.make_check(), "P1")["ledger_source"]
     assert not {"decision", "identity", "reviewer", "reviewed_at", "approved"} & set(src)
+
+
+def test_the_source_hashes_the_exact_source_point_not_the_rounded_row_position():
+    exact = fx.layers()
+    exact["pole"][0]["geometry"]["coordinates"] = [-122.31821234567, 47.61329512345]
+    row = fx.row_of(fx.make_check(layer_map=exact), "P1")
+    assert row["ledger_source"]["position_sha256"] == ledger_review.sha256_of([-122.31821234567, 47.61329512345])
+    assert (row["lng"], row["lat"]) == (-122.318212, 47.613295)  # the display position is rounded, the hash is not
+
+
+def test_the_review_key_binds_the_position():
+    base = fx.row_of(fx.make_check(), "P1")["ledger_source"]
+    moved = fx.layers()
+    moved["pole"][0]["geometry"]["coordinates"][0] += 0.0000001  # about 1 cm: the displayed position does not change
+    after = fx.row_of(fx.make_check(layer_map=moved), "P1")["ledger_source"]
+    assert after["position_sha256"] != base["position_sha256"] and after["review_key"] != base["review_key"]
+    assert after["properties_sha256"] == base["properties_sha256"]  # only the geometry moved

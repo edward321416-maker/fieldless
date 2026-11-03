@@ -68,7 +68,7 @@ def retarget(check, record, **over):
     src = {**row["ledger_source"], **over}
     src["review_key"] = ledger_review.review_key(
         check["scan_id"], row["item"], src["layer"], src["record_key"], src["record_id"], src["properties_sha256"],
-        row.get("evidence"), row.get("box"))
+        row.get("evidence"), row.get("box"), src.get("position_sha256"))
     row["ledger_source"] = src
     return check
 
@@ -110,7 +110,7 @@ def test_the_audit_names_what_changed_who_said_so_and_what_it_does_not_mean(city
     assert files["assets/poles.geojson"]["input_sha256"] != files["assets/poles.geojson"]["output_sha256"]
     assert files["other.geojson"]["input_sha256"] == files["other.geojson"]["output_sha256"]
     assert str(tmp_path) not in json.dumps(audit)  # no local path in the audit
-    assert (out / "_ledger_review" / "changes.csv").read_text(encoding="utf-8-sig").count("\n") >= 2
+    assert (out / "_ledger_review" / "changes.csv").read_text(encoding="utf-8").count("\n") >= 2
     assert (out / "_ledger_review" / "observations.csv").is_file()
     assert load(out / "_ledger_review" / "journal.json")["decisions"][0]["record_id"] == "P1"
 
@@ -322,3 +322,39 @@ def test_the_cli_takes_the_city_file_to_tell_same_named_layers_apart(city, tmp_p
     assert ledger_apply.main([*base, "--output-dir", str(tmp_path / "no_city")]) == 2
     assert "more than one layer file" in capsys.readouterr().err
     assert ledger_apply.main([*base, "--city", "testville", "--output-dir", str(tmp_path / "with_city")]) == 0
+
+
+def move_geometry(root: Path, rel="assets/poles.geojson", index=0, dlng=0.00002):
+    path = root / rel
+    doc = load(path)
+    doc["features"][index]["geometry"]["coordinates"][0] += dlng  # about 1.5 m: properties stay equal
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+
+def test_a_record_moved_in_the_ledger_with_equal_properties_is_refused(city, tmp_path):
+    move_geometry(city)
+    reject(city, tmp_path, CHECK, journal_of("P1"), "location changed since")
+
+
+def test_an_observation_of_a_record_that_moved_is_refused_too(city, tmp_path):
+    move_geometry(city, "assets/trees.geojson", 2)
+    obs = fx.decision(CHECK, "TRE-90000", decision="observe", field=None, proposed_value=None)
+    reject(city, tmp_path, CHECK, fx.journal(obs), "location changed since")
+
+
+def test_a_record_that_lost_its_point_is_refused(city, tmp_path):
+    path = city / "assets" / "poles.geojson"
+    doc = load(path)
+    doc["features"][0]["geometry"] = None
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    reject(city, tmp_path, CHECK, journal_of("P1"), "location changed since")
+
+
+def test_a_source_made_before_positions_were_hashed_is_still_applied_on_its_properties_alone(city, tmp_path):
+    check = copy.deepcopy(CHECK)
+    row = fx.row_of(check, "P1")
+    src = row["ledger_source"]
+    del src["position_sha256"]
+    src["review_key"] = ledger_review.review_key(check["scan_id"], row["item"], src["layer"], src["record_key"],
+                                                 src["record_id"], src["properties_sha256"], row["evidence"], row["box"])
+    assert ledger_apply.apply(check, journal_of("P1", check=check), city, tmp_path / "out")["applied"] == 1

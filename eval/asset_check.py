@@ -346,7 +346,7 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
         needs = {"attribute": attribute_of(item, record, props, cfg, box, ev, attributes or {})} \
             if status == SEEN and "compare" in cfg else {}
         # the city's own record as it was read, for a reviewer's change to be checked against (eval.ledger_review)
-        source = ledger_review.make_source(scan_id, item, cfg, props, features, ev, box)
+        source = ledger_review.make_source(scan_id, item, cfg, feature, features, ev, box)
         return {**base, "city_list": info["layer"], "city_record": record,
                 "city_location": str(props.get(cfg.get("place_field")) or ""), "status": status, "how_seen": how,
                 "issue_id": issue["id"] if issue else None,

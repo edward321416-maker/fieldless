@@ -44,7 +44,7 @@ def test_a_historical_observation_is_recorded_apart_from_any_change():
     assert ledger_review.validate_journal(CHECK, journal) == []
     [seen] = ledger_review.observations(CHECK, journal)
     assert seen["photo_observed_on"] == "2022-08-30" and seen["record_id"] == "TRE-90000"
-    assert seen["photo_link"].startswith("https://www.mapillary.com/") and seen["photo_by"] == "photographer"
+    assert seen["photo_link"].startswith("https://www.mapillary.com/") and seen["photo_creator"] == "photographer"
     assert seen["photo_license"] == "CC BY-SA 4.0"
     assert "LAST_VERIFY_DATE" not in json.dumps(seen)  # a photo date is not the city's verification date
     header, *body = rows_of(ledger_review.observations_csv(CHECK, journal))
@@ -119,6 +119,8 @@ def test_observing_needs_a_confirmed_identity_and_a_photo():
     reject(check, fx.journal(fx.decision(check, "C1", decision="observe", field=None, proposed_value=None)), "no photo")
     unsure = fx.decision(check, "TRE-90000", decision="observe", identity="uncertain", field=None, proposed_value=None)
     reject(check, fx.journal(unsure), "identity must be confirmed")
+    unclear = fx.decision(check, "TRE-90000", decision="observe", evidence="unclear", field=None, proposed_value=None)
+    reject(check, fx.journal(unclear), "evidence must be clear")
 
 
 def test_the_neighbour_warning_must_be_confirmed_for_a_change_and_an_observation():
@@ -177,7 +179,7 @@ def test_two_rows_changing_one_record_field_conflict():
     twin["evidence"]["captured_at"] = "2023-01-01T00:00:00Z"
     twin["ledger_source"]["review_key"] = ledger_review.review_key(
         fx.SCAN, twin["item"], "poles.geojson", "UNITID", "P1", twin["ledger_source"]["properties_sha256"],
-        twin["evidence"], twin["box"])
+        twin["evidence"], twin["box"], twin["ledger_source"].get("position_sha256"))
     check["rows"].append(twin)
     a = fx.decision(check, "P1")
     b = {**a, "review_key": twin["ledger_source"]["review_key"], "proposed_value": "NO"}
@@ -235,9 +237,7 @@ def test_csv_keeps_quotes_commas_newlines_and_unicode_and_the_exact_before_after
     assert cells["note"] == note and cells["reviewer"] == 'Zoë, "Z"'
     assert (cells["field"], cells["before"], cells["after"]) == ("IS_LIGHT", "YES", "NO")
     assert cells["record_id"] == "P1" and cells["layer"] == "poles.geojson"
-    assert cells["reviewer_assertion"].startswith("Self-asserted")
-    assert {"review_key", "properties_sha256", "photo_observed_on", "photo_link", "photo_by", "photo_license",
-            "reviewed_at", "neighbors_checked", "scan_id", "item"} <= set(header)
+    assert cells["scan_id"] == str(fx.SCAN) and cells["neighbors_checked"] == "false"
 
 
 def test_a_formula_in_a_raw_city_value_is_defanged_in_the_csv_but_kept_exact_in_the_change():
@@ -261,3 +261,48 @@ def test_a_check_edited_to_offer_a_date_or_id_field_still_cannot_change_it(field
                                                        "suggested": None}}
     change = fx.decision(check, "TRE-90000", field=field, proposed_value="2")
     reject(check, fx.journal(change), "not an editable field")
+
+
+CHANGE_HEADER = ["review_key", "record_id", "item", "layer", "field", "before", "after", "identity", "evidence",
+                 "neighbors_checked", "reviewer", "note", "reviewed_at", "photo_observed_on", "photo_creator",
+                 "photo_link", "photo_license", "scan_id", "record_key", "properties_sha256"]
+OBSERVATION_HEADER = ["review_key", "record_id", "item", "layer", "photo_observed_on", "photo_creator", "photo_link",
+                      "photo_license", "identity", "evidence", "neighbors_checked", "reviewer", "note", "reviewed_at",
+                      "scan_id", "record_key", "properties_sha256"]
+
+
+def test_the_csv_headers_are_the_ones_the_app_writes_in_the_same_order():
+    obs = fx.decision(CHECK, "TRE-90000", decision="observe", field=None, proposed_value=None)
+    assert rows_of(ledger_review.changes_csv(CHECK, fx.journal()))[0] == CHANGE_HEADER
+    assert rows_of(ledger_review.observations_csv(CHECK, fx.journal(obs)))[0] == OBSERVATION_HEADER
+    header, row = rows_of(ledger_review.observations_csv(CHECK, fx.journal(obs)))
+    cells = dict(zip(header, row))
+    assert cells["evidence"] == "clear" and cells["photo_creator"] == "photographer"
+    text = ledger_review.changes_csv(CHECK, fx.journal())
+    assert text.endswith("\r\n") and "\ufeff" not in text
+
+
+@pytest.mark.parametrize("kind", ["observe", "hold"])
+@pytest.mark.parametrize("over", [{"field": "IS_LIGHT"}, {"proposed_value": "NO"}, {"field": "NOTE", "proposed_value": "x"}])
+def test_only_a_change_may_carry_a_field_or_a_value(kind, over):
+    # a stale edit left behind in an observation or a hold must not travel with the package
+    record = "TRE-90000" if kind == "observe" else "P1"
+    decision = fx.decision(CHECK, record, decision=kind, **{"field": None, "proposed_value": None, **over})
+    reject(CHECK, fx.journal(decision), "must be null")
+
+
+@pytest.mark.parametrize("kind", ["observe", "hold"])
+def test_a_decision_without_the_field_keys_is_the_same_as_null_for_an_observation_or_a_hold(kind):
+    decision = fx.decision(CHECK, "TRE-90000", decision=kind)
+    del decision["field"], decision["proposed_value"]
+    ledger_review.validate_journal(CHECK, fx.journal(decision))  # does not raise
+
+
+@pytest.mark.parametrize("field", ["INSPECTED_BY", "last_inspection", "verified_on", "Revalidated", "DATE_SEEN",
+                                   "HAS_UPDATE_DATE"])
+def test_any_field_naming_a_date_inspection_or_verification_is_banned_even_if_the_check_lists_it(field):
+    check = copy.deepcopy(CHECK)
+    row = fx.row_of(check, "TRE-90000")
+    row["ledger_source"]["editable_fields"] = {field: {"before": "Y", "yes": "Y", "no": "N", "question": "x",
+                                                       "suggested": None}}
+    reject(check, fx.journal(fx.decision(check, "TRE-90000", field=field, proposed_value="N")), "not an editable field")

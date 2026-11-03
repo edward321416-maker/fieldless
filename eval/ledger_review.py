@@ -99,17 +99,34 @@ def photo_of(evidence: dict | None) -> dict | None:
     return {"link": evidence.get("link"), "captured_at": evidence.get("captured_at")}
 
 
+def position_sha256(geometry) -> str | None:
+    """The hash of a record's exact source point, [lng, lat] as the city's file holds it (not a rounded display
+    position). None for a record without a point, which a snapshot then cannot bind."""
+    coords = geometry.get("coordinates") if isinstance(geometry, dict) and geometry.get("type") == "Point" else None
+    if not isinstance(coords, list) or len(coords) < 2 or not all(
+            isinstance(c, (int, float)) and not isinstance(c, bool) for c in coords[:2]):
+        return None
+    try:
+        return sha256_of([coords[0], coords[1]])
+    except ValueError:
+        return None
+
+
 def review_key(scan_id, item: str, layer: str, record_key: str, record_id: str, props_sha: str,
-               evidence: dict | None, box) -> str:
+               evidence: dict | None, box, position: str | None = None) -> str:
+    """The key a decision names its row by. A snapshot without a position hash (made before positions were bound)
+    keys as it always did."""
     return sha256_of({"v": SOURCE_VERSION, "scan": scan_id, "item": item, "layer": layer, "record_key": record_key,
                       "record_id": record_id, "properties_sha256": props_sha, "photo": photo_of(evidence),
-                      "box": box})
+                      "box": box, **({"position_sha256": position} if position else {})})
 
 
-def make_source(scan_id, item: str, cfg: dict, props: dict, features: list[dict], evidence: dict | None,
+def make_source(scan_id, item: str, cfg: dict, feature: dict, features: list[dict], evidence: dict | None,
                 box) -> dict | None:
-    """The LedgerSource of one city record, or None when the row cannot be traced to a safe layer file and a record
-    id (a city file without a layer, an unsafe path, a record without its id). features: every feature of the layer."""
+    """The LedgerSource of one city record (feature), or None when the row cannot be traced to a safe layer file and
+    a record id (a city file without a layer, an unsafe path, a record without its id). features: every feature of
+    the layer."""
+    props = feature["properties"]
     layer = layer_basename(cfg.get("layer"))
     key = cfg.get("record_field")
     if layer is None or not isinstance(key, str) or not props.get(key):
@@ -120,9 +137,10 @@ def make_source(scan_id, item: str, cfg: dict, props: dict, features: list[dict]
         return None
     record_id = record_text(props[key])
     same = sum(record_text((f.get("properties") or {}).get(key)) == record_id for f in features)
+    position = position_sha256(feature.get("geometry"))
     return {"version": SOURCE_VERSION, "layer": layer, "record_key": key, "record_id": record_id,
-            "properties_sha256": sha,
-            "review_key": review_key(scan_id, item, layer, key, record_id, sha, evidence, box),
+            "properties_sha256": sha, **({"position_sha256": position} if position else {}),
+            "review_key": review_key(scan_id, item, layer, key, record_id, sha, evidence, box, position),
             "editable_fields": editable_fields(cfg, props, same == 1),
             "identity_warnings": []}
 
@@ -195,14 +213,13 @@ DECISION_KEYS = {"review_key", "record_id", "item", "identity", "evidence", "dec
 OPTIONAL_KEYS = {"field", "proposed_value"}
 REVIEWER_MAX, NOTE_MAX = 200, 2000
 FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r", "\n")
-CHANGE_COLUMNS = ("scan_id", "item", "layer", "record_key", "record_id", "field", "before", "after",
-                  "photo_observed_on", "photo_link", "photo_by", "photo_license", "identity", "evidence",
-                  "neighbors_checked", "reviewer", "reviewer_assertion", "note", "reviewed_at", "review_key",
-                  "properties_sha256")
-OBSERVATION_COLUMNS = ("scan_id", "item", "layer", "record_key", "record_id", "photo_observed_on", "date_meaning",
-                       "photo_link", "photo_by", "photo_license", "identity", "neighbors_checked", "reviewer",
-                       "reviewer_assertion", "note", "reviewed_at", "review_key", "properties_sha256")
-DATE_MEANING = "Date of the photo. Not the city's inspection or verification date."
+# the columns and their order are the ones the app's own files have (web/src/ledgerReview.ts)
+CHANGE_COLUMNS = ("review_key", "record_id", "item", "layer", "field", "before", "after", "identity", "evidence",
+                  "neighbors_checked", "reviewer", "note", "reviewed_at", "photo_observed_on", "photo_creator",
+                  "photo_link", "photo_license", "scan_id", "record_key", "properties_sha256")
+OBSERVATION_COLUMNS = ("review_key", "record_id", "item", "layer", "photo_observed_on", "photo_creator", "photo_link",
+                       "photo_license", "identity", "evidence", "neighbors_checked", "reviewer", "note", "reviewed_at",
+                       "scan_id", "record_key", "properties_sha256")
 
 
 class LedgerError(ValueError):
@@ -246,7 +263,8 @@ def _rows_by_key(check) -> tuple[dict[str, dict], list[str]]:
             continue
         try:
             expected = review_key(scan, row["item"], src["layer"], src["record_key"], src["record_id"],
-                                  src["properties_sha256"], row.get("evidence"), row.get("box"))
+                                  src["properties_sha256"], row.get("evidence"), row.get("box"),
+                                  src.get("position_sha256"))
         except (KeyError, TypeError, ValueError):
             problems.append("check does not match its review keys: a row has a malformed ledger_source")
             continue
@@ -286,6 +304,8 @@ def _decision(n: int, d, rows: dict, check: dict, seen: set, fields: set, proble
     if d.get("record_id") != src["record_id"] or d.get("item") != row["item"]:
         fresh.append(f"{label}: record_id or item does not match its row")
     kind = d.get("decision")
+    if kind != "change" and (d.get("field") is not None or d.get("proposed_value") is not None):
+        fresh.append(f"{label}: field and proposed_value must be null unless the decision is a change")
     for name, allowed in (("identity", IDENTITIES), ("evidence", EVIDENCES), ("decision", DECISIONS)):
         if d.get(name) not in allowed:
             fresh.append(f"{label}: {name} must be one of {', '.join(allowed)}")
@@ -301,6 +321,8 @@ def _decision(n: int, d, rows: dict, check: dict, seen: set, fields: set, proble
     if kind in ("change", "observe"):
         if d.get("identity") != "confirmed":
             fresh.append(f"{label}: identity must be confirmed to {kind}")
+        if d.get("evidence") != "clear":
+            fresh.append(f"{label}: evidence must be clear to {kind}")
         if not (_text(evidence.get("captured_at"), 100) or isinstance(evidence.get("captured_at"), (int, float))) \
                 or not _text(evidence.get("link"), 2000):
             fresh.append(f"{label}: this row has no photo evidence to {kind} from")
@@ -308,8 +330,6 @@ def _decision(n: int, d, rows: dict, check: dict, seen: set, fields: set, proble
             if d.get("neighbors_checked") is not True:
                 fresh.append(f"{label}: neighbors_checked must be true: {warnings[0]}")
     if kind == "change":
-        if d.get("evidence") != "clear":
-            fresh.append(f"{label}: evidence must be clear to change a value")
         field = d.get("field")
         spec = src.get("editable_fields", {}).get(field) if isinstance(field, str) else None
         if not isinstance(spec, dict) or is_protected(field, {}):
@@ -331,12 +351,13 @@ def _decision(n: int, d, rows: dict, check: dict, seen: set, fields: set, proble
         return None
     out = {"review_key": key, "scan_id": check["scan_id"], "item": row["item"], "layer": src["layer"],
            "record_key": src["record_key"], "record_id": src["record_id"],
-           "properties_sha256": src["properties_sha256"], "identity": d["identity"], "evidence": d["evidence"],
+           "properties_sha256": src["properties_sha256"], "position_sha256": src.get("position_sha256"),
+           "identity": d["identity"], "evidence": d["evidence"],
            "neighbors_checked": d["neighbors_checked"], "reviewer": d["reviewer"], "reviewer_assertion": ASSERTION,
            "note": d["note"], "reviewed_at": d["reviewed_at"], "decision": kind}
     if kind != "hold":
         out |= {"photo_observed_on": _photo_day(evidence), "photo_link": evidence.get("link"),
-                "photo_by": evidence.get("creator") or "", "photo_license": evidence.get("license") or ""}
+                "photo_creator": evidence.get("creator") or "", "photo_license": evidence.get("license") or ""}
     if kind == "change":
         out |= {"field": d["field"], "before": src["editable_fields"][d["field"]]["before"],
                 "after": d["proposed_value"]}
@@ -406,4 +427,4 @@ def changes_csv(check: dict, journal: dict) -> str:
 
 def observations_csv(check: dict, journal: dict) -> str:
     """The photo observations as a table. The date is the photo's, never an inspection or verification date."""
-    return to_csv(OBSERVATION_COLUMNS, [{**o, "date_meaning": DATE_MEANING} for o in observations(check, journal)])
+    return to_csv(OBSERVATION_COLUMNS, observations(check, journal))
