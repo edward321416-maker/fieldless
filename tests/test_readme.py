@@ -143,8 +143,11 @@ def test_the_opening_leads_with_survey_productivity_and_ballard_is_the_headline(
     text = readme()
     opening = text[:text.index("## Why")]
     first = opening.split("\n\n")[1]  # the paragraph after "# Fieldless"
-    assert "minutes and a few dollars per kilometer" in first
-    assert "0.92 km of Ballard" in first and "10.3 minutes" in first and "$3.33" in first and "$3.60 per km" in first
+    assert "automates a first pass" in first and "human review" in first
+    assert "Ballard, Seattle" in first and "0.92 km" in first and "10.3 minutes" in first and "$3.33" in first
+    assert "Meta API subtotal of $5.63" in first and "$6.10 per km" in first
+    assert "Baseten, hosting and human review are excluded" in first
+    assert "actual fieldwork savings have not been measured" in first
     # docs/design-rules.md R1: no one survey item stands in the first paragraph
     for item in (r"curb ramps?", r"poles?", r"trees?", r"litter", r"pay stations?", r"steps?", r"hydrants?", r"racks?"):
         assert not re.search(rf"\b{item}\b", first, re.IGNORECASE), item
@@ -165,12 +168,12 @@ def test_try_it_links_the_three_examples_in_order_and_the_read_only_demo():
 def test_the_images_are_the_update_list_and_the_agent_and_both_are_there():
     text = readme()
     images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
-    assert "docs/images/update-list.png" in images and "docs/images/agent-item.png" in images
+    assert "docs/images/update-list-revised.png" in images and "docs/images/agent-item.png" in images
     for path in images:
         assert (ROOT / path).stat().st_size > 10_000, path
     assert "records-lens" not in text  # the old screen, with Capitol Hill's $4.48
-    alt = re.search(r"!\[([^\]]*)\]\(docs/images/update-list\.png\)", text).group(1)
-    assert "43 of 94" in alt and "Mapillary credit" in alt
+    alt = re.search(r"!\[([^\]]*)\]\(docs/images/update-list-revised\.png\)", text).group(1)
+    assert "29 of 94" in alt and "Mapillary credit" in alt
 
 
 def test_the_update_list_uses_the_words_on_its_screens():
@@ -215,8 +218,8 @@ def test_results_take_ballard_then_new_york_then_capitol_hill():
     assert starts == sorted(starts)
     ballard, new_york, capitol = results[starts[0]:starts[1]], results[starts[1]:starts[2]], results[starts[2]:]
     for fact in ("2026-05-18 to 2026-07-01", "199 photos over 0.92 km", "five photo checks", "10.3 min", "676 model calls",
-                 "$3.33 ($3.60 per km)", "43 need no site visit (1 record to correct, 26 dates to update, 16 with no change)",
-                 "51 need a visit", "26 more objects are not on the city's lists, 7 of them not settled",
+                 "$3.33 ($3.60 per km)", "29 are desk-review candidates (1 correction, 25 date reviews, 3 with no change proposed)",
+                 "65 need more evidence", "26 more objects are not on the city's lists, 7 of them not settled",
                  "53 of the 94 were seen in photos (27 by the survey, 9 on a second look, 17 on a second look in panoramas",
                  "41 are not determined", "27 of 94 (poles 10/22, street trees 11/45, litter cans 1/2, curb ramps 5/25, "
                  "pay stations 0/0)", "0 of 17 (survey photos) and 1 of 10 (panoramas", "agreed with the city on 7, differed "
@@ -227,7 +230,7 @@ def test_results_take_ballard_then_new_york_then_capitol_hill():
                  "of 63 recorded findings, 52 right (83%), 1 wrong and 10 could not be told"):
         assert fact in new_york, fact
     for fact in ("from 2022", "an older example", "181 photos over 0.94 km", "7.0 min", "$4.21 ($4.48 per km)",
-                 "63 need no site visit and 44 need a visit", "45 of 107", "73 of 86 recorded findings right"):
+                 "44 are desk-review candidates and 63 need more evidence", "45 of 107", "73 of 86 recorded findings right"):
         assert fact in capitol, fact
     differs = next(l for l in results.splitlines() if l.startswith("- **What differs.**"))
     assert "newer survey photos" in differs and "lower cost per km" in differs
@@ -291,7 +294,9 @@ def test_the_cost_per_km_is_the_survey_and_the_second_looks_behind_the_list_cost
         assert rough not in text, rough
     # the opening says it before anyone reads $3.60 as the price of "43 of 94"
     opening = text[:text.index("## Why")]
-    assert "The $3.33 is the survey only" in opening and "the whole list cost $5.63, or $6.10 per km" in opening
+    assert "initial 0.92 km survey" in opening and "Meta API subtotal of $5.63" in opening
+    assert "end-to-end list time and actual fieldwork savings have not been measured" in opening
+    assert "no site visit" not in opening
     # the comparison with the 2017 survey stays, and says whose figure Fieldless's is
     assert "a $400,000 budget" in text
     assert "Fieldless's per-km figure is the survey itself, not the whole update list" in results

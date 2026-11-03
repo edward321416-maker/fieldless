@@ -1,6 +1,6 @@
 # Fieldless
 
-**Street surveys without the fieldwork.** Fieldless automates a first pass from existing public street photos and prepares evidence-linked records for human review. In Ballard, Seattle, the initial 0.92 km survey took 10.3 minutes and $3.33 in Meta API charges. The separately run second looks added $2.30: a Meta API subtotal of $5.63, or about $6.10 per km, for the Record Update List. Baseten, hosting and human review are excluded; end-to-end list time and actual fieldwork savings have not been measured.
+**Street surveys without the fieldwork.** Fieldless automates a first pass from existing public street photos and prepares evidence-linked records for human review. In Ballard, Seattle, the initial 0.92 km survey took 10.3 minutes and $3.33 in Meta API charges. The separately run second looks added $2.30: a Meta API subtotal of $5.63, or $6.10 per km, for the Record Update List. Baseten, hosting and human review are excluded; end-to-end list time and actual fieldwork savings have not been measured.
 
 What a city gets from a survey is a **Record Update List**. In Ballard, the photos reached 94 of 3,292 city records in the survey's box or its photos' view (2.9%). The revised list has 29 desk-review candidates (1 correction candidate, 25 date-review candidates, 3 with no change proposed) and 65 records needing more evidence; 26 other objects are candidates to compare with the lists, including 7 unresolved ones. These are review categories, not measured visits avoided. The survey says nothing about the other 3,198 records. Each row keeps the city's available IDs and fields, the photo's observation date, evidence where available and any unresolved attribute, as a page, CSV and GeoJSON. It changes nothing in the city's records.
 
@@ -8,6 +8,8 @@ One pass over the photos records street assets (utility and streetlight poles, s
 
 **Try it:** [live app](https://edward321416--fieldless-web.us-east.modal.run) (open a finished survey, or start your own; spend is capped) · the three example surveys: [Seattle, Ballard](https://edward321416--fieldless-web.us-east.modal.run/#scan=30) · [New York, Park Avenue South](https://edward321416--fieldless-web.us-east.modal.run/#scan=31) · [Seattle, Capitol Hill](https://edward321416--fieldless-web.us-east.modal.run/#scan=17) (older photos) · [read-only demo](https://huggingface.co/spaces/BBONG1201/fieldless) (the same surveys, static) · [Capitol Hill with an item Muse Spark added](https://edward321416--fieldless-web.us-east.modal.run/#scan=17&item=4)
 
+
+![The revised Ballard app: 29 of 94 reached records are candidates for desk review; 65 need a newer photo or a field check. The map shows 3,198 records not reached by photos. The table separates five asset types, the unresolved attribute explanation and the survey plus second-look charges. The evidence photo preserves its Mapillary credit](docs/images/update-list-revised.png)
 
 ## Why
 
@@ -131,7 +133,7 @@ All numbers are measured by us with the code in `eval/` (city check, second look
 
 ## Data, privacy and attribution
 
-- Photos come from [Mapillary](https://www.mapillary.com) under CC BY-SA 4.0. Every evidence photo shows its creator, the Mapillary logo and a link. Downloaded photos are never committed; the one photo in a screenshot (`docs/images/update-list.png`) is a small evidence photo with its credit in frame.
+- Photos come from [Mapillary](https://www.mapillary.com) under CC BY-SA 4.0. Every evidence photo shows its creator, the Mapillary logo and a link. Downloaded photos are never committed; the one photo in a screenshot (`docs/images/update-list-revised.png`) is a small evidence photo with its credit in frame.
 - Faces and licence plates are blurred, and blurring is only ever added.
 - City inventories used for checking are the City of Seattle's open GIS layers (SDOT curb ramps, trees, pay stations and bike racks; Seattle City Light poles; Seattle Public Utilities litter cans). They carry no stated licence, only the City's notice that it makes no warranty of accuracy. The repo keeps only the city point IDs that label the small test sets in `assist/testsets/`, not the layers.
 - New York's city records are NYC Open Data. Credit: "City records: NYC Open Data (DOT, Parks, DSNY, DEP), downloaded Nov 1, 2026, clipped to the survey area. The City of New York does not warrant them or endorse this survey." The repo does not keep those layers either. The live API does serve the positions and the city's ids (item, longitude, latitude, ids) of the records no photo reached, so the map can show them and a click can say what each one is.
