@@ -481,6 +481,27 @@ def test_the_scan_carries_the_counts_and_the_rows_come_apart(make):
     assert rows[0]["evidence"]["url"] == f"/api/evidence/scan{scan_id}_look0_7.jpg" and rows[1]["evidence"] is None
 
 
+def test_the_rows_carry_the_ledger_source_and_the_scan_to_the_app_as_saved(make):
+    from eval import ledger_review
+    scan_id, *_ = seed()
+    check = asset_check_file(scan_id)
+    for row in check["rows"]:
+        row["ledger_source"] = {"version": 1, "layer": "poles.geojson", "record_key": "UNITID",
+                                "record_id": row["city_record"], "properties_sha256": "a" * 64,
+                                "editable_fields": {"IS_LIGHT": {"before": "YES", "yes": "YES", "no": "NO",
+                                                                 "question": "Lamp?", "suggested": None}},
+                                "identity_warnings": ["nearby"]}
+        row["ledger_source"]["review_key"] = ledger_review.review_key(
+            scan_id, row["item"], "poles.geojson", "UNITID", row["city_record"], "a" * 64, row["evidence"], row["box"])
+    (config.run_dir("server") / f"asset_check_scan{scan_id}.json").write_text(json.dumps(check), encoding="utf-8")
+    client, _ = make(demo_scans=((scan_id, "Capitol Hill"),))
+    app = client.get(f"/api/scans/{scan_id}/asset-check").json()
+    assert app["scan_id"] == scan_id
+    assert [r["ledger_source"] for r in app["rows"]] == [r["ledger_source"] for r in check["rows"]]
+    assert "ledger_source" not in json.dumps(client.get(f"/api/scans/{scan_id}").json())  # not in the scan's brief
+    assert "ledger_source" not in client.get(f"/api/scans/{scan_id}/asset-check/table.csv").text
+
+
 def test_the_asset_check_page_reaches_the_evidence_photos(make):
     client, scan_id = with_asset_check(make)
     page = client.get(f"/api/scans/{scan_id}/asset-check/report")

@@ -159,7 +159,7 @@ def summary(check: dict) -> dict:
 
 def for_app(check: dict) -> dict:
     """The check as the app reads it: each photo with the address the server gives it."""
-    return {**summary(check), "rows": [{**row, "evidence": views.evidence_json(row.get("evidence"))}
+    return {**summary(check), "scan_id": check["scan_id"], "rows": [{**row, "evidence": views.evidence_json(row.get("evidence"))}
                                        for row in check["rows"]], "unreached": check.get("unreached", []),
             "unreached_fields": check.get("unreached_fields", {})}
 

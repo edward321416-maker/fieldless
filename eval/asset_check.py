@@ -12,6 +12,9 @@ and the ones whose box sat on something other than the record. Those rows go bac
 
 Writes <run>/asset_check_scan<N>.json. The server attaches it to the scan; assist.asset_check turns it into the page
 and the table a city's asset team takes. Nothing here writes to a city's records.
+
+Each row of a city record also carries `ledger_source`: that record's own properties as the city's file held them (hash,
+id, the one yes/no field a reviewer may change), which eval.ledger_review checks a reviewer's changes against.
 """
 import argparse
 import json
@@ -20,7 +23,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from eval import attribute_state, precision
+from eval import attribute_state, ledger_review, precision
 from eval.city import box_of
 from eval.city_check import load_city
 from eval.second_look import is_seen
@@ -323,7 +326,8 @@ def attribute_of(item: str, record: str, props: dict, cfg: dict, box, ev, attrib
 
 
 def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str, issues: list[dict],
-              looks: dict[str, dict], nearby: dict[str, dict], attributes: dict | None = None) -> list[dict]:
+              looks: dict[str, dict], nearby: dict[str, dict], attributes: dict | None = None,
+              scan_id=None) -> list[dict]:
     keys = info["id_fields"]
     by_key = {tuple(str(f["properties"].get(k)) for k in keys): f for f in features if f.get("geometry")}
     base = {"item": item, "asset": name}
@@ -341,6 +345,8 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
         # a record seen in a photo has its object checked; its yes/no field, where the list has one, is a second check
         needs = {"attribute": attribute_of(item, record, props, cfg, box, ev, attributes or {})} \
             if status == SEEN and "compare" in cfg else {}
+        # the city's own record as it was read, for a reviewer's change to be checked against (eval.ledger_review)
+        source = ledger_review.make_source(scan_id, item, cfg, props, features, ev, box)
         return {**base, "city_list": info["layer"], "city_record": record,
                 "city_location": str(props.get(cfg.get("place_field")) or ""), "status": status, "how_seen": how,
                 "issue_id": issue["id"] if issue else None,
@@ -349,7 +355,7 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
                 "photo_newer_than_city_date": "yes" if last and seen_on and seen_on[:7] > last else "",
                 "city_condition": str(props.get(cfg.get("condition_field")) or "").strip(),
                 "lat": round(lat, 6), "lng": round(lng, 6), **CITY_POSITION,
-                "box": box, "evidence": ev, **needs}
+                "box": box, "evidence": ev, **needs, **({"ledger_source": source} if source else {})}
 
     rows = [record_row(pair["city"], SEEN, BY_SURVEY, issue=next(i for i in issues if i["id"] == pair["issue_id"]))
             for pair in info["pairs"] if pair.get("in_view")]
@@ -421,7 +427,8 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
     judged = (labels or {}).get("issues", {})
     for item, info in check_file["items"].items():
         name, cfg = asset_name(standard, item), town["items"][item]
-        found = item_rows(item, info, cfg, layers[item], name, issues, looks, nearby or {}, attributes)
+        found = item_rows(item, info, cfg, layers[item], name, issues, looks, nearby or {}, attributes,
+                          data["scan"]["id"])
         rows += found
         kept, item_open = [], Counter()
         for row in found:
@@ -445,7 +452,9 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
             if action == VISIT:
                 extra["visit_reason"] = visit_reason(row, label, attribute, cfg)
                 unresolved += is_open and row["status"] == SEEN and sure_of(row, label)
+            ledger_review.suggest(row.get("ledger_source"), attribute)
             kept.append({**row, "action": action, **said(row, action, differ, cfg, sure_of(row, label)), **extra})
+        ledger_review.add_neighbor_warnings(kept)
         listed += kept
         needing = [r for r in kept if "attribute_state" in r]
         items.append({"item": item, "asset": name, "city_list": info["layer"], **tally(found),
