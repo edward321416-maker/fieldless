@@ -70,6 +70,14 @@ describe("AssetCheckPane", () => {
     expect(html).toContain(`href="${assetCheckTableUrl(17, "geojson")}"`);
   });
 
+  it("offers a review for the ledger, closed, and applies nothing", () => {
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*>Review for ledger<\/button>/);
+    expect(html).toContain("Nothing is applied");
+    expect(html).not.toContain("Prepared changes"); // the review itself opens on request
+    expect(html).toContain("Every row is a suggestion"); // the list, its counts and its table are as before
+    expect(html).toContain('<th scope="row">Street tree</th><td>107</td><td>43</td><td>64</td><td>26</td>');
+  });
+
   it("never gets ahead of the city's decision", () => {
     for (const word of ["Add to DB", "Unrecorded", "verified", "confirmed", "patch"]) expect(html).not.toContain(word);
   });

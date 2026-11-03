@@ -4,6 +4,7 @@ import type { MissedRecord } from "./cityMatch";
 import { count, dollars, photoMonth } from "./format";
 import { colourOf, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
+import LedgerReviewPane from "./LedgerReviewPane";
 import { EvidencePhoto, MapillaryMark, PhotoCredit } from "./Photo";
 import type { AssetCheck, AssetCheckSummary, AssetRow, NearbyPhoto, Scan } from "./types";
 
@@ -124,11 +125,13 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
   const present = ACTIONS.filter((a) => summary.actions[a]);
   const [action, setAction] = useState(present.includes(FIRST) ? FIRST : present[0]);
   const [expanded, setExpanded] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
     let live = true;
     setCheck(null);
     setFailed(false);
+    setReviewing(false); // a review belongs to one scan
     api.assetCheck(scan.id).then((c) => live && setCheck(c), () => live && setFailed(true));
     return () => {
       live = false;
@@ -220,12 +223,18 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
         <a className="action-export-btn" href={assetCheckTableUrl(scan.id, "csv")} download>Table (.csv)</a>
         <a className="action-export-btn" href={assetCheckTableUrl(scan.id, "geojson")} download>Table (.geojson)</a>
       </div>
+      <div className="ledger-entry">
+        <button type="button" className="action-export-btn" aria-expanded={reviewing} disabled={!check}
+          onClick={() => setReviewing((v) => !v)}>Review for ledger</button>
+        <p className="hint small">Check each record against its photo and prepare change files for the city's ledger. Nothing is applied here.</p>
+      </div>
+      {reviewing && check && <LedgerReviewPane scan={scan} city={summary.city} rows={check.rows} showFor={show} />}
       {failed && <p className="hint small">The rows could not be loaded. The report and the table still have them.</p>}
-      <ul className="asset-rows">
+      <ul className="asset-rows" hidden={reviewing}>
         {shown.map((r) => <AssetRowCard key={`${r.item} ${r.city_record} ${r.evidence?.url ?? ""} ${r.lat}`} row={r} scan={scan} onShow={show(r)} />)}
       </ul>
       {action === VISIT && <p className="hint small">Not determined does not mean missing. These need a newer photo or a field check.</p>}
-      {rows.length > SHOWN && (
+      {!reviewing && rows.length > SHOWN && (
         <button type="button" className="link-button action-more-btn" onClick={() => setExpanded((v) => !v)}>
           {expanded ? "Show fewer" : `Show all ${rows.length}`}
         </button>

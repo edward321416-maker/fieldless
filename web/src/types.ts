@@ -200,7 +200,54 @@ export interface NearbyPhoto {
   dist_m: number; // from the record's position to where the photo was taken
 }
 
+// The city record a row came from, as the review for the ledger needs it (spec 2026-11-04 "Fixed contract"). Absent on rows
+// of older lists: those cannot be reviewed for the ledger.
+export interface LedgerEditableField {
+  before: unknown;
+  yes: string; // the city's own value for yes
+  no: string; // the city's own value for no
+  question: string;
+  suggested: string | null;
+}
+
+export interface LedgerSource {
+  version: 1;
+  layer: string; // a safe file name such as curb_ramps.geojson
+  record_key: string;
+  record_id: string;
+  properties_sha256: string;
+  review_key: string; // given by the list: binds the scan, item, record, source snapshot, photo and box. Never made here.
+  editable_fields: Record<string, LedgerEditableField>;
+  identity_warnings: string[]; // a nearby record of the same item photographed within seconds: a warning, not a verdict
+}
+
+export type LedgerIdentity = "confirmed" | "uncertain" | "different";
+export type LedgerEvidence = "clear" | "unclear";
+export type LedgerChoice = "change" | "observe" | "hold";
+
+export interface LedgerDecision {
+  review_key: string;
+  record_id: string;
+  item: string;
+  identity: LedgerIdentity;
+  evidence: LedgerEvidence;
+  decision: LedgerChoice;
+  field: string | null;
+  proposed_value: string | null;
+  neighbors_checked: boolean;
+  reviewer: string;
+  note: string;
+  reviewed_at: string;
+}
+
+export interface LedgerJournal {
+  schema_version: 1;
+  scan_id: number;
+  decisions: LedgerDecision[];
+}
+
 export interface AssetRow {
+  ledger_source?: LedgerSource;
   item: string;
   asset: string;
   action: string; // what the city could do with this row
