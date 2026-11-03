@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ActionTab } from "./ActionHub";
 import { api, ApiError, STATIC_DEMO } from "./api";
 import { clampBboxToMax, contentBounds } from "./bbox";
@@ -20,6 +20,7 @@ import { isFinished } from "./format";
 import HowMade from "./HowMade";
 import { findingsOf, itemName, keyOf, type Finding } from "./items";
 import LandingNav from "./LandingNav";
+import { LedgerReviewContext } from "./LedgerReviewContext";
 import LensSwitch, { type Lens } from "./LensSwitch";
 import MapView from "./MapView";
 import PlaceSearch from "./PlaceSearch";
@@ -38,6 +39,7 @@ function scanFromHash(): number | null {
 }
 
 export default function App() {
+  const ledgerReview = useContext(LedgerReviewContext);
   const [config, setConfig] = useState<ServerConfig | null>(null);
   const [demos, setDemos] = useState<DemoArea[]>([]);
   const [selecting, setSelecting] = useState(false);
@@ -239,6 +241,7 @@ export default function App() {
   }, []);
 
   function openScan(id: number) {
+    ledgerReview?.setSession((previous) => previous?.scanId === id ? previous : null);
     setPicked(null);
     setFar(null);
     setHideFeatured(false);

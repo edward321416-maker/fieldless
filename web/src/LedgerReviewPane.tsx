@@ -1,4 +1,5 @@
-import { useReducer, type Dispatch } from "react";
+import { useContext, useReducer, type Dispatch } from "react";
+import { LedgerReviewContext } from "./LedgerReviewContext";
 import { colourOf } from "./items";
 import {
   EMPTY_DRAFT, buildJournal, decisionFromDraft, draftProblems, editableNames, exportFiles, has, photoDay, proposalChoices, reviewSignature,
@@ -314,6 +315,13 @@ export default function LedgerReviewPane({ scan, city, check, showFor }: PanePro
 }
 
 function Session(props: PaneProps) {
-  const [state, dispatch] = useReducer(reviewReducer, undefined, initialReviewState);
+  const ledger = useContext(LedgerReviewContext);
+  const [localState, localDispatch] = useReducer(reviewReducer, undefined, initialReviewState);
+  const signature = reviewSignature(props.scan.id, props.check.rows);
+  const state = ledger?.session?.signature === signature ? ledger.session.state : localState;
+  const dispatch: Dispatch<ReviewAction> = ledger ? (action) => {
+    ledger.setSession((previous) => ({ scanId: props.scan.id, signature, open: true,
+      state: reviewReducer(previous?.signature === signature ? previous.state : initialReviewState(), action) }));
+  } : localDispatch;
   return <LedgerReviewView {...props} state={state} dispatch={dispatch} save={saveFile} />;
 }

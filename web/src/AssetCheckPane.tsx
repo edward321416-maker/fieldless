@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { api, assetCheckReportUrl, assetCheckTableUrl } from "./api";
 import type { MissedRecord } from "./cityMatch";
 import { count, dollars, photoMonth } from "./format";
 import { colourOf, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
-import LedgerReviewPane from "./LedgerReviewPane";
+import LedgerReviewPane, { initialReviewState } from "./LedgerReviewPane";
+import { LedgerReviewContext } from "./LedgerReviewContext";
+import { reviewSignature } from "./ledgerReview";
 import { EvidencePhoto, MapillaryMark, PhotoCredit } from "./Photo";
 import type { AssetCheck, AssetCheckSummary, AssetRow, NearbyPhoto, Scan } from "./types";
 
@@ -120,18 +122,19 @@ interface Props {
 // The Record Update List: each row with what the city could do with it (eval.asset_check). "Not determined" does not
 // mean missing, and nothing here changes the city's records.
 export default function AssetCheckPane({ scan, summary, findings, missed, onPickFinding, onPickRecord, onSwitchLens }: Props) {
+  const ledger = useContext(LedgerReviewContext);
   const [check, setCheck] = useState<AssetCheck | null>(null);
   const [failed, setFailed] = useState(false);
   const present = ACTIONS.filter((a) => summary.actions[a]);
   const [action, setAction] = useState(present.includes(FIRST) ? FIRST : present[0]);
   const [expanded, setExpanded] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
+  const [reviewing, setReviewing] = useState(ledger?.session?.scanId === scan.id && ledger.session.open);
 
   useEffect(() => {
     let live = true;
     setCheck(null);
     setFailed(false);
-    setReviewing(false); // a review belongs to one scan
+    setReviewing(ledger?.session?.scanId === scan.id && ledger.session.open);
     api.assetCheck(scan.id).then((c) => live && setCheck(c), () => live && setFailed(true));
     return () => {
       live = false;
@@ -225,7 +228,15 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
       </div>
       <div className="ledger-entry">
         <button type="button" className="action-export-btn" aria-expanded={reviewing} disabled={!check}
-          onClick={() => setReviewing((v) => !v)}>Review for ledger</button>
+          onClick={() => {
+            const next = !reviewing;
+            setReviewing(next);
+            if (ledger && check) {
+              const signature = reviewSignature(scan.id, check.rows);
+              ledger.setSession((previous) => ({ scanId: scan.id, signature, open: next,
+                state: previous?.signature === signature ? previous.state : initialReviewState() }));
+            }
+          }}>Review for ledger</button>
         <p className="hint small">Check each record against its photo and prepare change files for the city's ledger. Nothing is applied here.</p>
       </div>
       {reviewing && check && <LedgerReviewPane scan={scan} city={summary.city} check={check} showFor={show} />}
