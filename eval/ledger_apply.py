@@ -3,10 +3,17 @@
     python -m eval.ledger_apply --check ledger-review-scan30-source.json --journal ledger-review-scan30-journal.json \\
         --input-dir data/seattle/ballard --output-dir data/seattle-ballard-revised --city seattle-ballard
 
+or, with the one file the app's handoff panel downloads (eval.ledger_package), instead of --check and --journal:
+
+    python -m eval.ledger_apply --package ledger-review-scan30-package.json --input-dir ... --output-dir ... --city ...
+
 --check is the Asset Check of the survey (the file eval.asset_check wrote, or the source list the app downloaded),
---journal the review package the app downloaded, --input-dir the city's own GeoJSON layers the check was made from,
---output-dir a folder that does not exist yet, and --city the name of a city file shipped in eval/cities. Exit 0: the
-folder was written. Exit 2: something was refused and nothing was written.
+--journal the review journal the app downloaded, --package the review package (source, journal, manifest and CSV files in
+one JSON file; the CSV text and manifest are rebuilt and compared, never trusted). Give --package or the pair, not both.
+--input-dir is the city's own GeoJSON layers the check was made from, --output-dir a folder that does not exist yet, and
+--city the name of a city file shipped in eval/cities. --dry-run makes every check below against the input folder and
+prints the plan; it creates no folder and writes no file. Exit 0: the folder was written (or, with --dry-run, would be).
+Exit 2: something was refused and nothing was written.
 
 What a change may touch comes from the city file (--city), never from the downloaded check: the item, its layer, its id
 key and the one yes/no field with its two raw values. The check only says what a reviewer was offered, so a check edited
@@ -37,7 +44,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from eval import ledger_review
+from eval import ledger_package, ledger_review
 from eval.city_check import load_city
 from eval.ledger_review import LedgerError
 
@@ -179,12 +186,10 @@ def _dump(doc: dict) -> bytes:
     return (json.dumps(doc, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
 
 
-def apply(check: dict, journal: dict, input_dir, output_dir, now: datetime | None = None, town: dict | None = None) -> dict:
-    """Validate everything, then write the revised copy. Returns the audit. Raises LedgerError (nothing written).
-    town: the trusted city file, as eval.city_check.load_city returns it for a file of eval/cities. A package with changes
-    needs it; its layers also tell same-named layers of different folders apart and are the only ones copied. Without
-    it (observations and holds alone) every *.geojson under the folder is a candidate. This function cannot tell
-    whether the caller's mapping is the repository's: only the CLI loads it by name."""
+def _preflight(check: dict, journal: dict, input_dir, output_dir, town: dict | None) -> dict:
+    """Every check of a run that can be made without writing: the journal against the check, the output and input
+    folders, the city file, and each change against the layer files themselves. Creates nothing, not even a folder.
+    Raises LedgerError listing the problems; otherwise returns what a run would do."""
     root, out = Path(input_dir).resolve(), Path(output_dir).resolve()
     problems: list[str] = []
     if not root.is_dir():
@@ -211,7 +216,33 @@ def apply(check: dict, journal: dict, input_dir, output_dir, now: datetime | Non
     rewritten, landed = _plan(reviewed, root, paths, problems)
     if problems:
         raise LedgerError(problems)
+    return {"root": root, "out": out, "reviewed": reviewed, "paths": paths, "rewritten": rewritten, "landed": landed}
 
+
+def dry_run(check: dict, journal: dict, input_dir, output_dir, town: dict | None = None) -> dict:
+    """What apply() would do, after every check it makes and before anything is written. Creates no folder and no file,
+    not even the staging folder, and writes nothing to the input folder. Raises LedgerError exactly when apply() would
+    refuse for a reason that can be known without writing (a full disk or a race during the copy cannot be). The plan
+    lists each change as apply() would audit it, and the layers that would be written again."""
+    plan = _preflight(check, journal, input_dir, output_dir, town)
+    reviewed = plan["reviewed"]
+    return {"dry_run": True, "scan_id": journal["scan_id"], "output": str(plan["out"]), "applied": len(plan["landed"]),
+            "observed": len(reviewed["observations"]), "held": len(reviewed["holds"]), "changes": plan["landed"],
+            "observations": reviewed["observations"], "holds": reviewed["holds"],
+            "layers_rewritten": sorted(plan["rewritten"]),
+            "whitelist": {"checked_against_city_file": town is not None, "city": (town or {}).get("city")},
+            "notice": NOTICE}
+
+
+def apply(check: dict, journal: dict, input_dir, output_dir, now: datetime | None = None, town: dict | None = None) -> dict:
+    """Validate everything, then write the revised copy. Returns the audit. Raises LedgerError (nothing written).
+    town: the trusted city file, as eval.city_check.load_city returns it for a file of eval/cities. A package with changes
+    needs it; its layers also tell same-named layers of different folders apart and are the only ones copied. Without
+    it (observations and holds alone) every *.geojson under the folder is a candidate. This function cannot tell
+    whether the caller's mapping is the repository's: only the CLI loads it by name."""
+    plan = _preflight(check, journal, input_dir, output_dir, town)
+    root, out, reviewed, paths = plan["root"], plan["out"], plan["reviewed"], plan["paths"]
+    rewritten, landed = plan["rewritten"], plan["landed"]
     inputs = {p.relative_to(root).as_posix(): _sha(p.read_bytes()) for p in _layer_files(root, paths)
               if _inside(p.resolve(), root)}
     stage = out.parent / f".{out.name}.staging-{uuid.uuid4().hex[:8]}"
@@ -282,10 +313,32 @@ def trusted_city(name: str) -> dict:
         raise LedgerError([f"the city file {name!r} could not be loaded from eval/cities ({err})"]) from None
 
 
+def _plan_lines(plan: dict) -> list[str]:
+    lines = []
+    for c in plan["changes"]:
+        lines.append(f"  change  {c['record_id']} ({c['item']}) {c['layer']}: {c['field']} {c['before']!r} -> {c['after']!r}"
+                     f"  [would rewrite {c['output_file']}]")
+    for o in plan["observations"]:
+        lines.append(f"  observe {o['record_id']} ({o['item']}) {o['layer']}: seen in a photo of {o['photo_observed_on']}; "
+                     f"no value changes")
+    for h in plan["holds"]:
+        lines.append(f"  hold    {h['record_id']} ({h['item']}) {h['layer']}: nothing to apply")
+    return lines
+
+
+def _noun(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--check", required=True, help="the survey's Asset Check JSON")
-    parser.add_argument("--journal", required=True, help="the review package JSON the app downloaded")
+    parser.add_argument("--package", help="the review package the app downloaded (one JSON file): the alternative to "
+                                          "--check plus --journal, never combined with them")
+    parser.add_argument("--check", help="the survey's Asset Check JSON (with --journal; not with --package)")
+    parser.add_argument("--journal", help="the review journal JSON the app downloaded (with --check; not with --package)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="make every check of a real run against the input folder and print what would be applied; "
+                             "create no folder and write no file")
     parser.add_argument("--input-dir", required=True, help="the city's GeoJSON folder, left untouched")
     parser.add_argument("--output-dir", required=True, help="a new folder for the revised copy")
     parser.add_argument("--city", help="the trusted city file, a name in eval/cities without .toml (for example "
@@ -294,13 +347,32 @@ def main(argv=None) -> int:
                                        "and only its layers are copied")
     args = parser.parse_args(argv)
     try:
+        if args.package is not None and (args.check is not None or args.journal is not None):
+            raise LedgerError(["--package is an alternative to --check and --journal: give the package or the pair, not both"])
+        if args.package is None and (args.check is None or args.journal is None):
+            raise LedgerError(["give --package FILE, or both --check FILE and --journal FILE"])
         town = trusted_city(args.city) if args.city is not None else None
-        audit = apply(_load(args.check, "check"), _load(args.journal, "journal"), args.input_dir, args.output_dir, town=town)
+        if args.package is not None:
+            check, journal = ledger_package.load_package(args.package)
+        else:
+            check, journal = _load(args.check, "check"), _load(args.journal, "journal")
+        if args.dry_run:
+            plan = dry_run(check, journal, args.input_dir, args.output_dir, town=town)
+        else:
+            audit = apply(check, journal, args.input_dir, args.output_dir, town=town)
     except LedgerError as err:
         print("REFUSED, nothing was written:", file=sys.stderr)
         for problem in err.problems:
             print(f"  - {problem}", file=sys.stderr)
         return 2
+    if args.dry_run:
+        print(f"DRY RUN, nothing was written: {_noun(plan['applied'], 'change')} would be applied, "
+              f"{_noun(plan['observed'], 'observation')}, {plan['held']} on hold. {args.output_dir} does not exist yet and was "
+              f"not created. Every source and city-file check of a real run passed.")
+        for line in _plan_lines(plan):
+            print(line)
+        print(NOTICE)
+        return 0
     n = audit["applied"]
     print(f"{n} change{'s' if n != 1 else ''} applied, {audit['observed']} observations, {audit['held']} on hold; "
           f"wrote {args.output_dir} (audit: {REVIEW_DIR}/audit.json). {NOTICE}")

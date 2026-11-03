@@ -64,14 +64,17 @@ Open **Review for ledger** in the Update list to check the record ID, position a
 
 The browser prepares a review journal, a source snapshot, a changes CSV and a separate observations CSV. Reviews stay in the current tab: download them before leaving. Only explicitly reviewed changes to configured yes/no attributes enter the changes CSV. Both CSV files are UTF-8 with one leading byte-order mark (so Excel reads Korean and accented text) and every row says in its own columns that the reviewer name is self-asserted (`reviewer_assertion`), that the change is prepared and not applied to any official ledger (`application_status`), and that the date is the photo's, not an inspection date (`date_meaning`). Photo dates never replace official inspection or verification dates; tree observations stay observations. Uncertain identity or unreadable evidence stays on hold. The review workspace also works on the static demo without writing to its server.
 
-To check the review against an authorized local copy of the city's GeoJSON layers and create a **separate revised copy**, run from the repository:
+The **Handoff package** panel also offers all of this as one JSON file (`kind: fieldless-ledger-review`: the source list, the journal, a manifest and the two CSV files). The CSV text in it is only a convenience: the tool rebuilds it from the source and journal and refuses a package whose files or manifest differ. The panel previews each proposed change as before and after. That preview is the proposal prepared in the browser; it does **not** validate the city's current GeoJSON. The package is not signed and its reviewer names are self-asserted.
+
+To check the review against an authorized local copy of the city's current GeoJSON layers, first do a **dry run**. It makes every check of a real run, prints what would be applied and creates no folder or file:
 
 ```bash
-python -m eval.ledger_apply --check ledger-review-scan30-source.json \
-  --journal ledger-review-scan30-journal.json \
+python -m eval.ledger_apply --package ledger-review-scan30-package.json \
   --input-dir path/to/current-city-layers --output-dir path/to/new-reviewed-copy \
-  --city seattle-ballard
+  --city seattle-ballard --dry-run
 ```
+
+Then run the same command without `--dry-run` to create a **separate revised copy** (a new folder; an existing one is never overwritten). `--package FILE` is the alternative to `--check ledger-review-scan30-source.json --journal ledger-review-scan30-journal.json` for the separately downloaded files; combining the two forms is refused. The full guide covers the supported GeoJSON and cities, source mismatches and the institution's approval and import: [docs/ledger-workflow.md](docs/ledger-workflow.md).
 
 `--city` names a city file shipped in `eval/cities` (here `seattle-ballard`). A package with changes needs it: the item, layer, id key, the one yes/no field and its two raw values are taken from that file, not from the downloaded source snapshot, so a snapshot edited to offer another field or other values is refused. A package of observations and holds alone can be applied without it.
 

@@ -1,0 +1,532 @@
+{
+  "schema_version": 1,
+  "kind": "fieldless-ledger-review",
+  "scan_id": 7,
+  "source": {
+    "city": "Testville",
+    "items": [
+      {
+        "item": "pole",
+        "asset": "City pole",
+        "city_list": "City poles",
+        "in_view": 3,
+        "seen": 3,
+        "seen_by": {
+          "Survey": 3
+        },
+        "not_determined": 0,
+        "not_listed": 0,
+        "not_listed_unsure": 0,
+        "seen_unsure": 0,
+        "newer": 2,
+        "actions": {
+          "Visit on site": 3
+        },
+        "attribute_checks": {
+          "required": 3,
+          "agree": 0,
+          "different": 0,
+          "unsettled": 0,
+          "not_checked": 3,
+          "open_by": {
+            "no_check": 2,
+            "city_value_blank": 1
+          }
+        }
+      },
+      {
+        "item": "tree",
+        "asset": "Street tree",
+        "city_list": "City trees",
+        "in_view": 3,
+        "seen": 3,
+        "seen_by": {
+          "Survey": 3
+        },
+        "not_determined": 0,
+        "not_listed": 0,
+        "not_listed_unsure": 0,
+        "seen_unsure": 0,
+        "newer": 3,
+        "actions": {
+          "Update the date": 3
+        }
+      },
+      {
+        "item": "can",
+        "asset": "Public can",
+        "city_list": "City cans",
+        "in_view": 1,
+        "seen": 0,
+        "seen_by": {},
+        "not_determined": 1,
+        "not_listed": 0,
+        "not_listed_unsure": 0,
+        "seen_unsure": 0,
+        "newer": 0,
+        "actions": {
+          "Visit on site": 1
+        }
+      }
+    ],
+    "totals": {
+      "in_view": 7,
+      "seen": 6,
+      "seen_by": {
+        "Survey": 6
+      },
+      "not_determined": 1,
+      "not_listed": 0,
+      "not_listed_unsure": 0,
+      "seen_unsure": 0,
+      "newer": 5
+    },
+    "actions": {
+      "Visit on site": 4,
+      "Update the date": 3
+    },
+    "no_visit": 3,
+    "compare_unsure": 0,
+    "left_out": {
+      "repeats": 0,
+      "wrong": 0
+    },
+    "trust": {
+      "controls": [],
+      "looked_at": 0,
+      "sent_back": 0,
+      "photo_months": [
+        "2022-08"
+      ],
+      "outside_view": 0
+    },
+    "visits_with_photo": 3,
+    "date_gap_years": 1.9,
+    "desk_review_candidates": 3,
+    "attribute_checks": {
+      "required": 3,
+      "agree": 0,
+      "different": 0,
+      "unsettled": 0,
+      "not_checked": 3,
+      "open_by": {
+        "no_check": 2,
+        "city_value_blank": 1
+      }
+    },
+    "visits_attribute_unresolved": 3,
+    "scan_id": 7,
+    "rows": [
+      {
+        "item": "pole",
+        "asset": "City pole",
+        "city_list": "City poles",
+        "city_record": "P1",
+        "city_location": "",
+        "status": "Seen in photo",
+        "how_seen": "Survey",
+        "models_unsure": "",
+        "city_date": "2020-05",
+        "seen_in_photo_on": "2022-08-30",
+        "photo_newer_than_city_date": "yes",
+        "city_condition": "",
+        "lat": 47.6,
+        "lng": -122.3,
+        "position_source": "City record",
+        "position_accuracy": "City record",
+        "box": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "evidence": {
+          "url": "/api/evidence/scan7_issue1_9.jpg",
+          "creator": "photographer",
+          "captured_at": "2022-08-30T10:00:00Z",
+          "link": "https://www.mapillary.com/app/?pKey=91",
+          "license": "CC BY-SA 4.0",
+          "blurred": false
+        },
+        "ledger_source": {
+          "version": 1,
+          "layer": "poles.geojson",
+          "record_key": "UNITID",
+          "record_id": "P1",
+          "properties_sha256": "e9035730acd063ae0db50175fa126d87564c5089bcae160f66d49a53cb5b1a0f",
+          "position_sha256": "0eaf8b8ccc3d11034b3658dcb64f0780c6e8c710fa1c6d999a8423c37a165c2d",
+          "review_key": "5bb4f957c964354002e14337509574b173ee409aa1db162a3c5043809c56cafb",
+          "editable_fields": {
+            "IS_LIGHT": {
+              "before": "YES",
+              "yes": "YES",
+              "no": "NO",
+              "question": "Does the pole hold a lamp?",
+              "suggested": null
+            }
+          },
+          "identity_warnings": []
+        },
+        "action": "Visit on site",
+        "city_says": "",
+        "photo_shows": "",
+        "attribute_field": "IS_LIGHT",
+        "attribute_state": "not_checked",
+        "attribute_note": "Holds a street light: the photo of this record was not asked about this field",
+        "action_if_attribute_agrees": "Update the date",
+        "visit_reason": "The record is there in a photo, but the city's \"Holds a street light\" is not settled: the photo of this record was not asked about this field. A newer photo or a field check is needed."
+      },
+      {
+        "item": "pole",
+        "asset": "City pole",
+        "city_list": "City poles",
+        "city_record": "P2",
+        "city_location": "",
+        "status": "Seen in photo",
+        "how_seen": "Survey",
+        "models_unsure": "",
+        "city_date": "2020-05",
+        "seen_in_photo_on": "2022-08-30",
+        "photo_newer_than_city_date": "yes",
+        "city_condition": "",
+        "lat": 47.61,
+        "lng": -122.3,
+        "position_source": "City record",
+        "position_accuracy": "City record",
+        "box": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "evidence": {
+          "url": "/api/evidence/scan7_issue2_9.jpg",
+          "creator": "photographer",
+          "captured_at": "2022-08-30T10:00:00Z",
+          "link": "https://www.mapillary.com/app/?pKey=92",
+          "license": "CC BY-SA 4.0",
+          "blurred": false
+        },
+        "ledger_source": {
+          "version": 1,
+          "layer": "poles.geojson",
+          "record_key": "UNITID",
+          "record_id": "P2",
+          "properties_sha256": "e6b521bb56cc3fffa16795325ff5c31f398985a8a4dd07b4e2b7883ec49a3db4",
+          "position_sha256": "99e56274b495b7fd322cd46ade7f20e3c89f425ef123153c08236a819b4c4b5a",
+          "review_key": "791a93575e48eb01243524f41fab9bb7af5d37d28fe6459bb8bd204f177482f2",
+          "editable_fields": {},
+          "identity_warnings": []
+        },
+        "action": "Visit on site",
+        "city_says": "",
+        "photo_shows": "",
+        "attribute_field": "IS_LIGHT",
+        "attribute_state": "not_checked",
+        "attribute_note": "The city list has no value for this field, so there is nothing to compare",
+        "action_if_attribute_agrees": "Update the date",
+        "visit_reason": "The record is there in a photo, but the city's IS_LIGHT is not settled: the city list has no value for this field, so there is nothing to compare. A newer photo or a field check is needed."
+      },
+      {
+        "item": "pole",
+        "asset": "City pole",
+        "city_list": "City poles",
+        "city_record": "P3",
+        "city_location": "",
+        "status": "Seen in photo",
+        "how_seen": "Survey",
+        "models_unsure": "",
+        "city_date": "",
+        "seen_in_photo_on": "2022-08-30",
+        "photo_newer_than_city_date": "",
+        "city_condition": "",
+        "lat": 47.63,
+        "lng": -122.3,
+        "position_source": "City record",
+        "position_accuracy": "City record",
+        "box": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "evidence": {
+          "url": "/api/evidence/scan7_issue3_9.jpg",
+          "creator": "photographer",
+          "captured_at": "2022-08-30T10:00:00Z",
+          "link": "https://www.mapillary.com/app/?pKey=93",
+          "license": "CC BY-SA 4.0",
+          "blurred": false
+        },
+        "ledger_source": {
+          "version": 1,
+          "layer": "poles.geojson",
+          "record_key": "UNITID",
+          "record_id": "P3",
+          "properties_sha256": "ad28712380d0c423239810f4d4537f2ee9a3f164a19f562d2c558959d3819b9d",
+          "position_sha256": "ff7f666b757da859955fac1eb3ac2ad53c5f1ff5c47d78cc65d9be18e6dd67d1",
+          "review_key": "f47a9dfbd2928577c633d771726a2299a377ea81cbe5c7829063335b1a2d30a9",
+          "editable_fields": {},
+          "identity_warnings": []
+        },
+        "action": "Visit on site",
+        "city_says": "",
+        "photo_shows": "",
+        "attribute_field": "IS_LIGHT",
+        "attribute_state": "not_checked",
+        "attribute_note": "Holds no street light: the photo of this record was not asked about this field",
+        "action_if_attribute_agrees": "No change",
+        "visit_reason": "The record is there in a photo, but the city's \"Holds no street light\" is not settled: the photo of this record was not asked about this field. A newer photo or a field check is needed."
+      },
+      {
+        "item": "tree",
+        "asset": "Street tree",
+        "city_list": "City trees",
+        "city_record": "TRE-53943",
+        "city_location": "",
+        "status": "Seen in photo",
+        "how_seen": "Survey",
+        "models_unsure": "",
+        "city_date": "2020-09",
+        "seen_in_photo_on": "2022-08-30",
+        "photo_newer_than_city_date": "yes",
+        "city_condition": "",
+        "lat": 47.7,
+        "lng": -122.3,
+        "position_source": "City record",
+        "position_accuracy": "City record",
+        "box": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "evidence": {
+          "url": "/api/evidence/scan7_issue4_9.jpg",
+          "creator": "photographer",
+          "captured_at": "2022-08-30T10:00:00Z",
+          "link": "https://www.mapillary.com/app/?pKey=94",
+          "license": "CC BY-SA 4.0",
+          "blurred": false
+        },
+        "ledger_source": {
+          "version": 1,
+          "layer": "trees.geojson",
+          "record_key": "UNITID",
+          "record_id": "TRE-53943",
+          "properties_sha256": "c006dc48b64426a4fa654ac08e90286f719b0b461ed59ceffac6034db50a2c4c",
+          "position_sha256": "ff4ffe3f9e754035103e51396dd89d99430cb3eaf5b9f5bc6914866ed694ee86",
+          "review_key": "74b817ba1f6c438704d7933f1b0a53d1b8ee8d85277983bb1561d4ba49689509",
+          "editable_fields": {},
+          "identity_warnings": [
+            "Record TRE-53948 of the same item is 7.8 m away and was photographed 7 s from this one: check these are two different objects."
+          ]
+        },
+        "action": "Update the date",
+        "city_says": "LAST_VERIFY_DATE 2020-09",
+        "photo_shows": "Seen in a photo of 2022-08-30"
+      },
+      {
+        "item": "tree",
+        "asset": "Street tree",
+        "city_list": "City trees",
+        "city_record": "TRE-53948",
+        "city_location": "",
+        "status": "Seen in photo",
+        "how_seen": "Survey",
+        "models_unsure": "",
+        "city_date": "2020-09",
+        "seen_in_photo_on": "2022-08-30",
+        "photo_newer_than_city_date": "yes",
+        "city_condition": "",
+        "lat": 47.70007,
+        "lng": -122.3,
+        "position_source": "City record",
+        "position_accuracy": "City record",
+        "box": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "evidence": {
+          "url": "/api/evidence/scan7_issue5_9.jpg",
+          "creator": "photographer",
+          "captured_at": "2022-08-30T10:00:07Z",
+          "link": "https://www.mapillary.com/app/?pKey=95",
+          "license": "CC BY-SA 4.0",
+          "blurred": false
+        },
+        "ledger_source": {
+          "version": 1,
+          "layer": "trees.geojson",
+          "record_key": "UNITID",
+          "record_id": "TRE-53948",
+          "properties_sha256": "8e5628b94434ec05770e425c536a64a32bfec097259fc60d2f206b7b506547da",
+          "position_sha256": "175f3e5ca56632ddc2799ab90fa12eb3da8a01f532848025f2ea72a6d4cf73d2",
+          "review_key": "560da5f46f10bd18c072cb0d91db572da9f9a1a3c81e3aef44a113fbd83533b3",
+          "editable_fields": {},
+          "identity_warnings": [
+            "Record TRE-53943 of the same item is 7.8 m away and was photographed 7 s from this one: check these are two different objects."
+          ]
+        },
+        "action": "Update the date",
+        "city_says": "LAST_VERIFY_DATE 2020-09",
+        "photo_shows": "Seen in a photo of 2022-08-30"
+      },
+      {
+        "item": "tree",
+        "asset": "Street tree",
+        "city_list": "City trees",
+        "city_record": "TRE-90000",
+        "city_location": "",
+        "status": "Seen in photo",
+        "how_seen": "Survey",
+        "models_unsure": "",
+        "city_date": "2020-09",
+        "seen_in_photo_on": "2022-08-30",
+        "photo_newer_than_city_date": "yes",
+        "city_condition": "",
+        "lat": 47.71,
+        "lng": -122.3,
+        "position_source": "City record",
+        "position_accuracy": "City record",
+        "box": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "evidence": {
+          "url": "/api/evidence/scan7_issue6_9.jpg",
+          "creator": "photographer",
+          "captured_at": "2022-08-30T10:00:07Z",
+          "link": "https://www.mapillary.com/app/?pKey=96",
+          "license": "CC BY-SA 4.0",
+          "blurred": false
+        },
+        "ledger_source": {
+          "version": 1,
+          "layer": "trees.geojson",
+          "record_key": "UNITID",
+          "record_id": "TRE-90000",
+          "properties_sha256": "e80fae46299b892da38dcbfec69d07c0f5c69e27581e273490467ce12707e67c",
+          "position_sha256": "6a69f5d33ee6fc0c5415bbc9d29ae0fb8e1f9e9f2aa2c82e19278bd23f757d5a",
+          "review_key": "6e9e0a9e49c00384e288d789abd58cf04e39148542b1cb3646b36faf35f75de3",
+          "editable_fields": {},
+          "identity_warnings": []
+        },
+        "action": "Update the date",
+        "city_says": "LAST_VERIFY_DATE 2020-09",
+        "photo_shows": "Seen in a photo of 2022-08-30"
+      },
+      {
+        "item": "can",
+        "asset": "Public can",
+        "city_list": "City cans",
+        "city_record": "C1",
+        "city_location": "",
+        "status": "Not determined",
+        "how_seen": "",
+        "models_unsure": "",
+        "city_date": "",
+        "seen_in_photo_on": "",
+        "photo_newer_than_city_date": "",
+        "city_condition": "",
+        "lat": 47.8,
+        "lng": -122.3,
+        "position_source": "City record",
+        "position_accuracy": "City record",
+        "box": null,
+        "evidence": null,
+        "ledger_source": {
+          "version": 1,
+          "layer": "litter.geojson",
+          "record_key": "UNITID",
+          "record_id": "C1",
+          "properties_sha256": "f0b9c439f1654e6b90d432d2bfa647baa40ede328ffedd0571506d346659f26d",
+          "position_sha256": "83264f9e75da18af54e59445715c7c5ebf75a5fbb4ed1129e239c888b8089c11",
+          "review_key": "27d48588bc8472a70f78a1c7bf91b26555aa197a80609c7bec1862c5cbac786d",
+          "editable_fields": {},
+          "identity_warnings": []
+        },
+        "action": "Visit on site",
+        "city_says": "",
+        "photo_shows": "",
+        "visit_reason": "No photo settled whether this record is there. A newer photo or a field check is needed."
+      }
+    ],
+    "unreached": [],
+    "unreached_fields": {}
+  },
+  "journal": {
+    "schema_version": 1,
+    "scan_id": 7,
+    "decisions": [
+      {
+        "review_key": "5bb4f957c964354002e14337509574b173ee409aa1db162a3c5043809c56cafb",
+        "record_id": "P1",
+        "item": "pole",
+        "identity": "confirmed",
+        "evidence": "clear",
+        "decision": "change",
+        "field": "IS_LIGHT",
+        "proposed_value": "NO",
+        "neighbors_checked": false,
+        "reviewer": "=김검토, \"Zoë\"",
+        "note": "+사유 \"확인\", café\n=둘째 줄",
+        "reviewed_at": "2026-11-04T09:30:00.000Z"
+      },
+      {
+        "review_key": "74b817ba1f6c438704d7933f1b0a53d1b8ee8d85277983bb1561d4ba49689509",
+        "record_id": "TRE-53943",
+        "item": "tree",
+        "identity": "confirmed",
+        "evidence": "clear",
+        "decision": "observe",
+        "field": null,
+        "proposed_value": null,
+        "neighbors_checked": true,
+        "reviewer": "@이름",
+        "note": "-관측, 'quoted'",
+        "reviewed_at": "2026-11-04T09:31:00.000Z"
+      },
+      {
+        "review_key": "6e9e0a9e49c00384e288d789abd58cf04e39148542b1cb3646b36faf35f75de3",
+        "record_id": "TRE-90000",
+        "item": "tree",
+        "identity": "confirmed",
+        "evidence": "clear",
+        "decision": "observe",
+        "field": null,
+        "proposed_value": null,
+        "neighbors_checked": false,
+        "reviewer": "Zoë",
+        "note": "plain",
+        "reviewed_at": "2026-11-04T09:32:00.000Z"
+      },
+      {
+        "review_key": "f47a9dfbd2928577c633d771726a2299a377ea81cbe5c7829063335b1a2d30a9",
+        "record_id": "P3",
+        "item": "pole",
+        "identity": "uncertain",
+        "evidence": "unclear",
+        "decision": "hold",
+        "field": null,
+        "proposed_value": null,
+        "neighbors_checked": false,
+        "reviewer": "A. Tester",
+        "note": "보류",
+        "reviewed_at": "2026-11-04T09:33:00.000Z"
+      }
+    ]
+  },
+  "manifest": {
+    "notice": "Prepared only; not applied to an official ledger.",
+    "reviewer_assertion": "Self-asserted; not authenticated municipal approval."
+  },
+  "files": {
+    "changes_csv": "﻿review_key,record_id,item,layer,field,before,after,identity,evidence,neighbors_checked,reviewer,reviewer_assertion,note,reviewed_at,application_status,photo_observed_on,date_meaning,photo_creator,photo_link,photo_license,scan_id,record_key,properties_sha256\r\n5bb4f957c964354002e14337509574b173ee409aa1db162a3c5043809c56cafb,P1,pole,poles.geojson,IS_LIGHT,YES,NO,confirmed,clear,false,\"'=김검토, \"\"Zoë\"\"\",Self-asserted by the reviewer in the app; not an authenticated municipal approval.,\"'+사유 \"\"확인\"\", café\n=둘째 줄\",2026-11-04T09:30:00.000Z,Prepared only. Not applied to any official ledger.,2022-08-30,Date of the photo (an observation). Not the city's inspection or verification date.,photographer,https://www.mapillary.com/app/?pKey=91,CC BY-SA 4.0,7,UNITID,e9035730acd063ae0db50175fa126d87564c5089bcae160f66d49a53cb5b1a0f\r\n",
+    "observations_csv": "﻿review_key,record_id,item,layer,photo_observed_on,date_meaning,photo_creator,photo_link,photo_license,identity,evidence,neighbors_checked,reviewer,reviewer_assertion,note,reviewed_at,application_status,scan_id,record_key,properties_sha256\r\n74b817ba1f6c438704d7933f1b0a53d1b8ee8d85277983bb1561d4ba49689509,TRE-53943,tree,trees.geojson,2022-08-30,Date of the photo (an observation). Not the city's inspection or verification date.,photographer,https://www.mapillary.com/app/?pKey=94,CC BY-SA 4.0,confirmed,clear,true,'@이름,Self-asserted by the reviewer in the app; not an authenticated municipal approval.,\"'-관측, 'quoted'\",2026-11-04T09:31:00.000Z,Prepared only. Not applied to any official ledger.,7,UNITID,c006dc48b64426a4fa654ac08e90286f719b0b461ed59ceffac6034db50a2c4c\r\n6e9e0a9e49c00384e288d789abd58cf04e39148542b1cb3646b36faf35f75de3,TRE-90000,tree,trees.geojson,2022-08-30,Date of the photo (an observation). Not the city's inspection or verification date.,photographer,https://www.mapillary.com/app/?pKey=96,CC BY-SA 4.0,confirmed,clear,false,Zoë,Self-asserted by the reviewer in the app; not an authenticated municipal approval.,plain,2026-11-04T09:32:00.000Z,Prepared only. Not applied to any official ledger.,7,UNITID,e80fae46299b892da38dcbfec69d07c0f5c69e27581e273490467ce12707e67c\r\n"
+  }
+}
