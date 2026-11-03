@@ -58,6 +58,22 @@ Today a row can be "Update the date" only where the city's list has a verificati
 
 Every row is a suggestion for the city to decide on. The list changes nothing in a city's records, never fills one of the city's date fields (the photo's date has its own column, "Seen in photo on": an observation, not an inspection), and does not replace site checks. Rows from the city's lists keep the city's position; an object on no list carries the camera's position, rated Unknown (within 50 ft), so some may be records already listed. The page says it was prepared by Fieldless from public street photos, is not a city document, and has not been reviewed by the city.
 
+### Review a proposed ledger change
+
+Open **Review for ledger** in the Update list to check the record ID, position and dated photo. Confirm that it is the same asset and that its attribute is readable, choose the actual value, and enter a reviewer name and reason. Nearby records with photos taken seconds apart need another identity check. Nothing is approved by default. The entered reviewer name is a self-declared review, not an authenticated municipal approval.
+
+The browser prepares a review journal, a source snapshot, a changes CSV and a separate observations CSV. Reviews stay in the current tab: download them before leaving. Only explicitly reviewed changes to configured yes/no attributes enter the changes CSV. Photo dates never replace official inspection or verification dates; tree observations stay observations. Uncertain identity or unreadable evidence stays on hold. The review workspace also works on the static demo without writing to its server.
+
+To check the review against an authorized local copy of the city's GeoJSON layers and create a **separate revised copy**, run from the repository:
+
+```bash
+python -m eval.ledger_apply --check ledger-review-scan30-source.json \
+  --journal ledger-review-scan30-journal.json \
+  --input-dir path/to/current-city-layers --output-dir path/to/new-reviewed-copy
+```
+
+The tool checks the source snapshot, exact record ID, original properties, position and before value before writing any changes. Missing or duplicate IDs, stale data and disallowed fields reject the package. It preserves the input files and writes an audit alongside the new copy. The city's authorized operator still decides whether and how to import that copy into the official ledger. No city API or official ledger is changed by Fieldless.
+
 ## How it works
 
 ```
