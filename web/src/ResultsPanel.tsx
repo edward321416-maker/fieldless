@@ -7,6 +7,7 @@ import { isFinished, yearsSpan } from "./format";
 import { colourOf, itemName, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
 import ShareButton from "./ShareButton";
+import ReviewCosts from "./ReviewCosts";
 import { checkLine, cityLine, headline, itemNote, statusNote, unsureCount } from "./summary";
 import type { Scan } from "./types";
 
@@ -69,6 +70,7 @@ export default function ResultsPanel(props: Props) {
 
       <div className="headline-one">
         <div className="headline-main">
+          <span className="hint small">Survey only</span>
           <strong>{top.big} <small>{top.unit}</small></strong>
           <span className="headline-meta">{top.line}</span>
         </div>
@@ -79,6 +81,8 @@ export default function ResultsPanel(props: Props) {
           </span>
         )}
       </div>
+
+      <ReviewCosts scan={scan} />
 
       <div className="found-head">
         <div className="found-head-top">

@@ -60,7 +60,7 @@ const count = (html: string, s: string) => html.split(s).length - 1;
 describe("the overview", () => {
   const html = render();
   it("opens with what Fieldless does and its cost per km beside walking, then where to go", () => {
-    expect(html).toContain("Street surveys without the fieldwork");
+    expect(html).toContain("Review street records from existing photos");
     expect(html).toContain("$106");
     expect(html).toContain("$4.48");
     expect(html).toContain("0.94 km in 7.0 min · $4.21 for the survey");
@@ -222,7 +222,7 @@ describe("what the overview leaves out", () => {
   });
   it("shows only the opening and what needs no data while the example loads", () => {
     const loading = render({ scan: null, name: null, issues: [], counts: {}, examples: [], runs: [], others: [] });
-    expect(loading).toContain("Street surveys without the fieldwork");
+    expect(loading).toContain("Review street records from existing photos");
     expect(loading).toContain("Survey your own streets");
     expect(loading).not.toContain("$");
     expect(loading).not.toContain("See the finished survey");
@@ -286,7 +286,7 @@ describe("a survey with an update list", () => {
   it("says under the cost that the list's second looks cost more, when it had some", () => {
     const looks = { ...asset_check, trust: { ...asset_check.trust, second_looks_usd: 2.3 } };
     expect(render({ scan: { ...scan, asset_check: looks } as unknown as Scan }))
-      .toContain("Update list second looks cost more; see its report.");
+      .toContain("Follow-ups:");
   });
   it("offers the list in place of the two tools it stands in for", () => {
     expect(html).toContain("43 of the 94 city records the photos reached are candidates for desk review");

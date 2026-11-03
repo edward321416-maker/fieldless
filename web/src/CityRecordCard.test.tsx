@@ -24,7 +24,7 @@ describe("a city record the survey did not find", () => {
     const row = { item: "street_tree", city_record: "TRE-54698", action: "Update the date", how_seen: "Second look, panorama",
       seen_in_photo_on: "2025-09-04" } as never;
     const html = renderToStaticMarkup(<CityRecordCard record={record} items={items} row={row} onClose={() => undefined} />);
-    expect(html).toContain("Seen in a photo of 2025-09-04, on a second look in a panorama; the survey itself did not find it. Suggestion: Update the date.");
+    expect(html).toContain("Seen in a photo of 2025-09-04, on a second look in a panorama; the survey itself did not find it. Suggestion: Review newer photo evidence.");
     expect(html).not.toContain("Check on site");
   });
   it("says a record no photo reached is one the survey says nothing about, with the city's credit", () => {

@@ -1,6 +1,7 @@
 import type { Fact } from "./benchmarks";
 import type { MissedRecord } from "./cityMatch";
 import { count, dollars } from "./format";
+import { actionLabel } from "./reviewLabels";
 import type { AssetCheckSummary, AssetRow, NearbyPhoto, Scan, UnreachedEntry } from "./types";
 
 // The overview's story, in the order a visitor asks: the problem, how the models solve it, whether it holds up, what a
@@ -137,7 +138,7 @@ const SETTLED = ["Correct the record", "Update the date", "No change"];
 export function recordLine(row: AssetRow | undefined): string {
   if (row && SETTLED.includes(row.action) && row.seen_in_photo_on) {
     const how = SEEN_HOW[row.how_seen] ? `, ${SEEN_HOW[row.how_seen]}` : "";
-    return `Seen in a photo of ${row.seen_in_photo_on}${how}; the survey itself did not find it. Suggestion: ${row.action}.`;
+    return `Seen in a photo of ${row.seen_in_photo_on}${how}; the survey itself did not find it. Suggestion: ${actionLabel(row.action)}.`;
   }
   // there in a photo, but the city's yes or no for it is open: the row says which and why
   if (row?.status === "Seen in photo" && row.visit_reason && row.seen_in_photo_on) {

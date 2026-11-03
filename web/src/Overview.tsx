@@ -6,6 +6,7 @@ import { count, dollars } from "./format";
 import { capital, colourOf, itemName } from "./items";
 import { phraseJourney, secondOpinions } from "./overviewData";
 import { MiniCredit } from "./Photo";
+import ReviewCosts from "./ReviewCosts";
 import { changeCards, compareLine, controlCheck, hardestExample, MODEL_STEPS, photoSpan, reachCheck, reachLine, recordFunnel,
   visitLine } from "./story";
 import { cityLine, headline, thumbPosition } from "./summary";
@@ -66,7 +67,7 @@ export default function Overview(props: Props) {
       <div className="overview-hero">
         <div className="overview-opening">
           <span className="overview-kicker">AI street survey from public photos</span>
-          <h2 id="overview-title">Street surveys without the fieldwork</h2>
+          <h2 id="overview-title">Review street records from existing photos</h2>
           <p className="overview-lead">
             Cities send people to walk every block and write down what is on the street. Fieldless reads the public street
             photos that already exist and maps what a photo can show, each finding with its photo.
@@ -80,17 +81,17 @@ export default function Overview(props: Props) {
                 </div>
               )}
               <div className="compare-card compare-ours">
-                <span className="compare-label">Fieldless</span>
+                <span className="compare-label">Fieldless · survey only</span>
                 <strong>{dollars(scan.usd_per_km)}<small> /km</small></strong>
               </div>
             </div>
           )}
           {scan && <p className="overview-headline">{headline(scan, bench).line}</p>}
+          {scan && <ReviewCosts scan={scan} />}
           {scan && bench && (
             <p className="intro-scope">
               On foot: {bench.name}: {bench.scope}. Fieldless: this example{name ? `, ${name}` : ""}. {bench.caveat}{" "}
               <a href={bench.source} target="_blank" rel="noreferrer">Source</a>
-              {scan.asset_check?.trust.second_looks_usd !== undefined && " Update list second looks cost more; see its report."}
             </p>
           )}
           <div className="overview-actions">
@@ -182,7 +183,7 @@ export default function Overview(props: Props) {
                 >
                   <span className="workflow-badge prio-gis">City records</span>
                   <strong>{`${scan.asset_check.no_visit} of the ${scan.asset_check.totals.in_view} city records the photos reached are candidates for desk review`}</strong>
-                  <p>A list for the city's asset team: what to correct, which dates to update, where to visit and what to compare with the list, each row with its photo where a photo settled it, as a page, a CSV and GeoJSON.</p>
+                  <p>A list for the city's asset team: proposed corrections, newer photo evidence, places to check and objects to compare with the list, each row with its photo where a photo settled it. Review the evidence and prepare a handoff package.</p>
                   <span className="workflow-cta">Open the update list →</span>
                 </div>
               ) : (
