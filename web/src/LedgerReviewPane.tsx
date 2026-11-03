@@ -2,7 +2,7 @@ import { useReducer, type Dispatch } from "react";
 import { colourOf } from "./items";
 import {
   EMPTY_DRAFT, buildJournal, decisionFromDraft, draftProblems, editableNames, exportFiles, has, photoDay, proposalChoices, reviewSignature,
-  reviewableRows, sourceOf, validateJournal, type Draft, type ExportFile,
+  reviewableRows, sourceFile, sourceOf, validateJournal, type Draft, type ExportFile, type LedgerCheck,
 } from "./ledgerReview";
 import { EvidencePhoto, PhotoCredit } from "./Photo";
 import type { AssetRow, LedgerDecision, LedgerJournal, Scan } from "./types";
@@ -60,12 +60,14 @@ export function journalOf(rows: AssetRow[], scanId: number, state: ReviewState):
   return buildJournal(scanId, decisions);
 }
 
-export type DownloadKind = "journal" | "changes" | "observations";
+export type DownloadKind = "journal" | "changes" | "observations" | "source";
 const KINDS: DownloadKind[] = ["journal", "changes", "observations"];
 
 // Builds one of the three files from what is recorded and hands it over. It throws when there is nothing recorded or the
 // package does not pass the checks, so a file never carries something the backend would reject.
-export function runDownload(kind: DownloadKind, rows: AssetRow[], scanId: number, state: ReviewState, save: (file: ExportFile) => void): void {
+export function runDownload(kind: DownloadKind, check: LedgerCheck, scanId: number, state: ReviewState, save: (file: ExportFile) => void): void {
+  if (kind === "source") return save(sourceFile(check, scanId));
+  const rows = check.rows;
   const journal = journalOf(rows, scanId, state);
   if (journal.decisions.length === 0) throw new Error("There is nothing to download: no decision has been recorded.");
   save(exportFiles(rows, journal, scanId)[KINDS.indexOf(kind)]);
@@ -101,7 +103,7 @@ function Choice({ name, value, label, checked, disabled, onPick }: { name: strin
 interface ViewProps {
   scan: Scan;
   city: string;
-  rows: AssetRow[];
+  check: LedgerCheck; // the whole list, as given
   state: ReviewState;
   dispatch: Dispatch<ReviewAction>;
   showFor?: (row: AssetRow) => (() => void) | undefined;
@@ -110,7 +112,8 @@ interface ViewProps {
 
 // The review for the ledger: one record at a time, with its photo, and the files to keep. It changes nothing but this
 // page's own memory: no request is made and no city record is touched.
-export function LedgerReviewView({ scan, city, rows, state, dispatch, showFor, save }: ViewProps) {
+export function LedgerReviewView({ scan, city, check: list, state, dispatch, showFor, save }: ViewProps) {
+  const rows = list.rows;
   const queue = reviewableRows(rows);
   const without = rows.filter((r) => r.city_record && !queue.includes(r)).length;
   const journal = journalOf(rows, scan.id, state);
@@ -121,7 +124,7 @@ export function LedgerReviewView({ scan, city, rows, state, dispatch, showFor, s
   const current = queue[index];
   const files = (kind: DownloadKind, enabled: boolean, label: string) => (
     <button key={kind} type="button" className="ledger-download" disabled={!enabled}
-      onClick={() => runDownload(kind, rows, scan.id, state, save)}>{label}</button>
+      onClick={() => runDownload(kind, list, scan.id, state, save)}>{label}</button>
   );
   const nextOpen = queue.findIndex((r, i) => i > index && !state.decisions[keyOf(r)]);
   const status = (
@@ -171,9 +174,10 @@ export function LedgerReviewView({ scan, city, rows, state, dispatch, showFor, s
               {files("journal", journal.decisions.length > 0, "Download journal (.json)")}
               {files("changes", check.changes.length > 0, "Download changes (.csv)")}
               {files("observations", check.observations.length > 0, "Download observations (.csv)")}
+              {files("source", true, "Download source list (.json)")}
             </div>
             <p className="hint small">
-              The journal holds every decision, the holds too. The changes file holds only recorded changes, the observations file only
+              The journal is checked against this exact list: download both and keep them together. The journal holds every decision, the holds too. The changes file holds only recorded changes, the observations file only
               photo observations. A hold appears in neither.
             </p>
           </div>
@@ -300,13 +304,13 @@ function RecordCard({ row, uid, scan, state, dispatch, onShow }: { row: AssetRow
 interface PaneProps {
   scan: Scan;
   city: string;
-  rows: AssetRow[];
+  check: LedgerCheck;
   showFor?: (row: AssetRow) => (() => void) | undefined;
 }
 
 // A review belongs to one scan and one set of source snapshots: when either changes it starts again, empty.
-export default function LedgerReviewPane({ scan, city, rows, showFor }: PaneProps) {
-  return <Session key={reviewSignature(scan.id, rows)} scan={scan} city={city} rows={rows} showFor={showFor} />;
+export default function LedgerReviewPane({ scan, city, check, showFor }: PaneProps) {
+  return <Session key={reviewSignature(scan.id, check.rows)} scan={scan} city={city} check={check} showFor={showFor} />;
 }
 
 function Session(props: PaneProps) {

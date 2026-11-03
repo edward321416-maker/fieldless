@@ -13,11 +13,12 @@ const ramp = row();
 const tree = treeRow(53943, ["TRE-53948 is 3 m away and was photographed 2 s apart."]);
 const old = row({ city_record: "OLD-1" }, null);
 const rows: AssetRow[] = [ramp, tree, old];
+const chk = (list: AssetRow[] = rows) => ({ scan_id: 17, city: "Seattle", totals: { in_view: 3 }, rows: list });
 const CHANGE: Draft = { ...EMPTY_DRAFT, identity: "confirmed", evidence: "clear", decision: "change",
   field: "HAS_DETECTABLE_WARNING", proposed: "Yes", note: "The panel is visible." };
 
 function render(state: ReviewState = initialReviewState(), list: AssetRow[] = rows, showFor?: (r: AssetRow) => (() => void) | undefined) {
-  return renderToStaticMarkup(<LedgerReviewView scan={scan} city="Seattle" rows={list} state={state} dispatch={() => {}} showFor={showFor} save={() => {}} />);
+  return renderToStaticMarkup(<LedgerReviewView scan={scan} city="Seattle" check={chk(list)} state={state} dispatch={() => {}} showFor={showFor} save={() => {}} />);
 }
 function run(actions: Parameters<typeof reviewReducer>[1][], from = initialReviewState()): ReviewState {
   return actions.reduce(reviewReducer, from);
@@ -165,8 +166,8 @@ describe("recording decisions", () => {
     const s = run([{ type: "reviewer", value: "A" }, { type: "draft", key, patch: { decision: "hold", note: "wait" } },
       { type: "record", row: ramp, now: NOW }]);
     const files: { name: string; text: string }[] = [];
-    runDownload("journal", rows, 17, s, (f) => files.push(f));
-    runDownload("changes", rows, 17, s, (f) => files.push(f));
+    runDownload("journal", chk(), 17, s, (f) => files.push(f));
+    runDownload("changes", chk(), 17, s, (f) => files.push(f));
     expect(JSON.parse(files[0].text).decisions).toHaveLength(1);
     expect(JSON.parse(files[0].text).decisions[0]).toMatchObject({ decision: "hold", field: null, proposed_value: null });
     expect(files[1].text.trim().split("\r\n")).toHaveLength(1);
@@ -197,9 +198,9 @@ describe("downloads", () => {
       { type: "record", row: tree, now: NOW },
     ], recordRamp("=1+1"));
     const save = vi.fn();
-    runDownload("journal", rows, 17, s, save);
-    runDownload("changes", rows, 17, s, save);
-    runDownload("observations", rows, 17, s, save);
+    runDownload("journal", chk(), 17, s, save);
+    runDownload("changes", chk(), 17, s, save);
+    runDownload("observations", chk(), 17, s, save);
     const [journal, changes, observations] = save.mock.calls.map((c) => c[0]);
     expect(journal.name).toBe("ledger-review-scan17-journal.json");
     expect(JSON.parse(journal.text).decisions.map((d: { record_id: string }) => d.record_id)).toEqual(["RAMP-12", "TRE-53943"]);
@@ -220,11 +221,28 @@ describe("downloads", () => {
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Download observations/);
   });
 
+  it("hand over the whole list the journal was made on, untouched, even before anything is recorded", () => {
+    const save = vi.fn();
+    runDownload("source", chk(), 17, initialReviewState(), save);
+    const file = save.mock.calls[0][0];
+    expect(file.name).toBe("ledger-review-scan17-source.json");
+    expect(file.mime).toBe("application/json");
+    expect(JSON.parse(file.text)).toEqual(JSON.parse(JSON.stringify(chk()))); // every key and row, the ones with no source too
+  });
+
+  it("offer the list as a file next to the journal, and say they belong together", () => {
+    const html = render();
+    expect(html).toMatch(/<button[^>]*>Download source list \(\.json\)<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*disabled[^>]*>Download source list/);
+    expect(html).toMatch(/journal .* checked against .* list/i);
+    expect(render(initialReviewState(), [old])).not.toContain("Download source list");
+  });
+
   it("do not include a decision for a row that is no longer in the list", () => {
     const s = recordRamp();
     const next = [treeRow(53948)];
     expect(journalOf(next, 17, s).decisions).toEqual([]);
-    expect(() => runDownload("journal", next, 17, s, () => {})).toThrow(/nothing/i);
+    expect(() => runDownload("journal", chk(next), 17, s, () => {})).toThrow(/nothing/i);
   });
 
   it("are for the scan on screen", () => {
@@ -266,7 +284,7 @@ describe("the map and the keyboard", () => {
 
 describe("a pane with a different source", () => {
   it("starts empty: a decision recorded for one list is not in the next", () => {
-    const html = renderToStaticMarkup(<LedgerReviewPane scan={{ ...scan, id: 18 } as Scan} city="Seattle" rows={[row({}, source({ review_key: "rk-other" }))]} />);
+    const html = renderToStaticMarkup(<LedgerReviewPane scan={{ ...scan, id: 18 } as Scan} city="Seattle" check={chk([row({}, source({ review_key: "rk-other" }))])} />);
     expect(html).toMatch(/<dt>Changes<\/dt><dd>0<\/dd>/);
     expect(html).toContain("Not reviewed");
   });

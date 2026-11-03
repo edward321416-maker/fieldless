@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NOW, PHOTO, row, source, treeRow } from "./ledgerFixtures";
 import {
   EMPTY_DRAFT, changesCsv, csvCell, decisionFromDraft, draftProblems, exportFiles, observationsCsv, photoDay, proposalChoices,
-  reviewSignature, reviewableRows, sourceOf, validateJournal,
+  reviewSignature, reviewableRows, sourceFile, sourceOf, validateJournal,
 } from "./ledgerReview";
 import type { Draft } from "./ledgerReview";
 import type { LedgerDecision, LedgerJournal } from "./types";
@@ -190,7 +190,7 @@ describe("a journal is checked as the backend will check it", () => {
     expect(out.errors).toEqual([]);
     expect(out.changes).toHaveLength(1);
     expect(out.changes[0]).toMatchObject({ record_id: "RAMP-12", layer: "curb_ramps.geojson", field: "HAS_DETECTABLE_WARNING",
-      before: "No", after: "Yes", photo_observed_on: "2025-07-11", photo_by: "kev", photo_link: PHOTO.link, photo_license: "CC BY-SA 4.0" });
+      before: "No", after: "Yes", photo_observed_on: "2025-07-11", photo_creator: "kev", photo_link: PHOTO.link, photo_license: "CC BY-SA 4.0" });
     expect(out.observations).toHaveLength(1);
     expect(out.observations[0]).toMatchObject({ record_id: "TRE-53943", layer: "street_trees.geojson", photo_observed_on: "2025-07-11" });
     expect(out.holds).toHaveLength(1);
@@ -306,15 +306,15 @@ describe("the CSV files", () => {
   const rows = [row(), treeRow()];
   const decisions = () => [decide(rows[0], { ...CHANGE, note: '=cmd|"x", é 한글' }, "+Reviewer"), decide(rows[1], OBSERVE)];
 
-  it("list only validated changes in the changes file, with the backend's columns", () => {
+  it("list only validated changes in the changes file, with the backend's columns (the ones in interface-checkpoint.md)", () => {
     const hold = row({ city_record: "RAMP-99" }, source({ review_key: "rk-99", record_id: "RAMP-99" }));
     const csv = changesCsv([...rows, hold], journal([...decisions(), decide(hold, HOLD)]), 17);
     const lines = csv.split("\r\n");
-    expect(lines[0]).toBe("scan_id,item,layer,record_key,record_id,field,before,after,photo_observed_on,photo_link,photo_by,photo_license,identity,"
-      + "evidence,neighbors_checked,reviewer,reviewer_assertion,note,reviewed_at,review_key,properties_sha256");
+    expect(lines[0]).toBe("review_key,record_id,item,layer,field,before,after,identity,evidence,neighbors_checked,reviewer,note,reviewed_at,"
+      + "photo_observed_on,photo_creator,photo_link,photo_license,scan_id,record_key,properties_sha256");
     expect(lines).toHaveLength(3); // header, one change, the closing line break
-    expect(lines[1]).toContain("17,curb_ramp,curb_ramps.geojson,fid:12,RAMP-12,HAS_DETECTABLE_WARNING,No,Yes,2025-07-11,https://www.mapillary.com/app/?pKey=7,kev,CC BY-SA 4.0,confirmed,clear,false,'+Reviewer,");
-    expect(lines[1]).toContain("Self-asserted by the reviewer in the app; not an authenticated municipal approval.");
+    expect(lines[1]).toContain("RAMP-12,curb_ramp,curb_ramps.geojson,HAS_DETECTABLE_WARNING,No,Yes,confirmed,clear,false,'+Reviewer,");
+    expect(lines[1]).toContain("2025-07-11,kev,https://www.mapillary.com/app/?pKey=7,CC BY-SA 4.0,17,fid:12,");
     expect(lines[1]).toContain(`"'=cmd|""x"", é 한글"`);
     expect(lines[1]).not.toContain("RAMP-99");
     expect(lines[1]).not.toContain("TRE-53943");
@@ -323,12 +323,10 @@ describe("the CSV files", () => {
   it("keep the photo date and credit in the observations file, without holds or changes", () => {
     const csv = observationsCsv(rows, journal(decisions()), 17);
     const lines = csv.split("\r\n");
-    expect(lines[0]).toBe("scan_id,item,layer,record_key,record_id,photo_observed_on,date_meaning,photo_link,photo_by,photo_license,identity,"
-      + "neighbors_checked,reviewer,reviewer_assertion,note,reviewed_at,review_key,properties_sha256");
+    expect(lines[0]).toBe("review_key,record_id,item,layer,photo_observed_on,photo_creator,photo_link,photo_license,identity,evidence,"
+      + "neighbors_checked,reviewer,note,reviewed_at,scan_id,record_key,properties_sha256");
     expect(lines).toHaveLength(3);
-    expect(lines[1]).toContain("17,street_tree,street_trees.geojson,fid:53943,TRE-53943,2025-07-11,");
-    expect(lines[1]).toContain("Date of the photo. Not the city's inspection or verification date.");
-    expect(lines[1]).toContain("https://www.mapillary.com/app/?pKey=7,kev,CC BY-SA 4.0,confirmed");
+    expect(lines[1]).toContain("TRE-53943,street_tree,street_trees.geojson,2025-07-11,kev,https://www.mapillary.com/app/?pKey=7,CC BY-SA 4.0,confirmed,clear");
     expect(lines[1]).not.toContain("RAMP-12");
   });
 
@@ -353,6 +351,22 @@ describe("the files to download", () => {
     expect(parsed.decisions.map((d: LedgerDecision) => d.decision)).toEqual(["change", "observe", "hold"]); // the hold is kept here
     expect(files[1].text).not.toContain("RAMP-99");
     expect(files[2].text).not.toContain("RAMP-99");
+  });
+});
+
+describe("the source list file", () => {
+  it("is the whole check as it was given, named for the scan", () => {
+    const check = { scan_id: 17, city: "Seattle", totals: { in_view: 2 }, rows: [row(), treeRow()] };
+    const file = sourceFile(check, 17);
+    expect(file.name).toBe("ledger-review-scan17-source.json");
+    expect(file.mime).toBe("application/json");
+    expect(JSON.parse(file.text)).toEqual(JSON.parse(JSON.stringify(check)));
+    expect(file.text.endsWith("\n")).toBe(true);
+  });
+
+  it("is not made from another scan's list", () => {
+    expect(() => sourceFile({ scan_id: 18, rows: [row()] }, 17)).toThrow(/scan/i);
+    expect(() => sourceFile({ rows: [row()] }, 17)).toThrow(/scan/i);
   });
 });
 

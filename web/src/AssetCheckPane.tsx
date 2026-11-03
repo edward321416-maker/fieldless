@@ -228,7 +228,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
           onClick={() => setReviewing((v) => !v)}>Review for ledger</button>
         <p className="hint small">Check each record against its photo and prepare change files for the city's ledger. Nothing is applied here.</p>
       </div>
-      {reviewing && check && <LedgerReviewPane scan={scan} city={summary.city} rows={check.rows} showFor={show} />}
+      {reviewing && check && <LedgerReviewPane scan={scan} city={summary.city} check={check} showFor={show} />}
       {failed && <p className="hint small">The rows could not be loaded. The report and the table still have them.</p>}
       <ul className="asset-rows" hidden={reviewing}>
         {shown.map((r) => <AssetRowCard key={`${r.item} ${r.city_record} ${r.evidence?.url ?? ""} ${r.lat}`} row={r} scan={scan} onShow={show(r)} />)}

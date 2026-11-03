@@ -17,8 +17,6 @@ const DATE_FIELD = /date|verif|inspect|install|updated/i;
 const REVIEWER_MAX = 200;
 const NOTE_MAX = 2000;
 const JOURNAL_KEYS = ["schema_version", "scan_id", "decisions"];
-const ASSERTION = "Self-asserted by the reviewer in the app; not an authenticated municipal approval.";
-const DATE_MEANING = "Date of the photo. Not the city's inspection or verification date.";
 const SAFE_LAYER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const PHOTO_DAY = /^\d{4}-\d{2}-\d{2}/;
@@ -213,7 +211,7 @@ export function decisionProblems(row: AssetRow, d: unknown): string[] {
 
 export interface Attribution {
   photo_observed_on: string;
-  photo_by: string;
+  photo_creator: string;
   photo_link: string;
   photo_license: string;
 }
@@ -229,8 +227,7 @@ interface Common extends Attribution {
   reviewer: string;
   note: string;
   reviewed_at: string;
-  reviewer_assertion: string;
-  scan_id: number;
+    scan_id: number;
   record_key: string;
   properties_sha256: string;
 }
@@ -288,7 +285,7 @@ export function validateJournal(rows: AssetRow[], journal: LedgerJournal, scanId
     const common = {
       review_key: source.review_key, record_id: source.record_id, item: row.item, layer: source.layer, identity: decision.identity,
       evidence: decision.evidence, neighbors_checked: decision.neighbors_checked, reviewer: decision.reviewer, note: decision.note,
-      reviewed_at: decision.reviewed_at, reviewer_assertion: ASSERTION, photo_observed_on: photoDay(row), photo_by: row.evidence?.creator ?? "",
+      reviewed_at: decision.reviewed_at, photo_observed_on: photoDay(row), photo_creator: row.evidence?.creator ?? "",
       photo_link: row.evidence?.link ?? "", photo_license: row.evidence?.license ?? "", scan_id: scanId, record_key: source.record_key,
       properties_sha256: source.properties_sha256,
     };
@@ -315,13 +312,12 @@ export function csvCell(value: unknown): string {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-// The columns, in the backend's order (eval/ledger_review.py).
-const CHANGE_COLUMNS = ["scan_id", "item", "layer", "record_key", "record_id", "field", "before", "after", "photo_observed_on", "photo_link",
-  "photo_by", "photo_license", "identity", "evidence", "neighbors_checked", "reviewer", "reviewer_assertion", "note", "reviewed_at",
-  "review_key", "properties_sha256"] as const;
-const OBSERVATION_COLUMNS = ["scan_id", "item", "layer", "record_key", "record_id", "photo_observed_on", "date_meaning", "photo_link",
-  "photo_by", "photo_license", "identity", "neighbors_checked", "reviewer", "reviewer_assertion", "note", "reviewed_at", "review_key",
+// The columns, in the order of interface-checkpoint.md that eval/ledger_review.py writes too.
+const CHANGE_COLUMNS = ["review_key", "record_id", "item", "layer", "field", "before", "after", "identity", "evidence", "neighbors_checked",
+  "reviewer", "note", "reviewed_at", "photo_observed_on", "photo_creator", "photo_link", "photo_license", "scan_id", "record_key",
   "properties_sha256"] as const;
+const OBSERVATION_COLUMNS = ["review_key", "record_id", "item", "layer", "photo_observed_on", "photo_creator", "photo_link", "photo_license",
+  "identity", "evidence", "neighbors_checked", "reviewer", "note", "reviewed_at", "scan_id", "record_key", "properties_sha256"] as const;
 
 function table(columns: readonly string[], entries: Record<string, unknown>[]): string {
   return [columns.join(","), ...entries.map((e) => columns.map((c) => csvCell(e[c])).join(","))].map((line) => `${line}\r\n`).join("");
@@ -338,7 +334,7 @@ export function changesCsv(rows: AssetRow[], journal: LedgerJournal, scanId: num
 }
 
 export function observationsCsv(rows: AssetRow[], journal: LedgerJournal, scanId: number): string {
-  return table(OBSERVATION_COLUMNS, accepted(rows, journal, scanId).observations.map((o) => ({ ...o, date_meaning: DATE_MEANING })));
+  return table(OBSERVATION_COLUMNS, accepted(rows, journal, scanId).observations as unknown as Record<string, unknown>[]);
 }
 
 export function buildJournal(scanId: number, decisions: LedgerDecision[]): LedgerJournal {
@@ -361,4 +357,16 @@ export function exportFiles(rows: AssetRow[], journal: LedgerJournal, scanId: nu
     { name: `ledger-review-scan${scanId}-changes.csv`, mime: "text/csv", text: changesCsv(rows, journal, scanId) },
     { name: `ledger-review-scan${scanId}-observations.csv`, mime: "text/csv", text: observationsCsv(rows, journal, scanId) },
   ];
+}
+
+// The Asset Check the journal was made on: the whole list, as it was given, so a person can keep the two together and the
+// local application can check the journal against it. It is not edited here.
+export interface LedgerCheck {
+  scan_id?: number;
+  rows: AssetRow[];
+}
+
+export function sourceFile(check: LedgerCheck, scanId: number): ExportFile {
+  if (check.scan_id !== scanId) throw new Error(`The list is for scan ${String(check.scan_id)}, not scan ${scanId}.`);
+  return { name: `ledger-review-scan${scanId}-source.json`, mime: "application/json", text: `${JSON.stringify(check, null, 2)}\n` };
 }
