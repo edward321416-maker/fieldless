@@ -259,8 +259,9 @@ def _trust(check: dict, survey_cost: float | None = None) -> list[str]:
                      f"{totals['seen']} seen records. Those rows say so in the table.")
     lines.append("<strong>Candidates for desk review.</strong> A record is a candidate here when the models were sure of "
                  "it, the AI assistant's check, where there was one, agreed, it was there on the photo's date, and, "
-                 "where its city list has a yes or no a photo can answer, a model reading the photo agreed with the "
-                 "city. It is not a measured count of avoided site visits.")
+                 "where its city list has a yes or no a photo can answer, that check was settled: either agreement "
+                 "with the city or a difference the two models agree on, for human review. It is not a measured "
+                 "count of avoided site visits.")
     if attributes := check.get("attribute_checks"):
         left = attributes["unsettled"] + attributes["not_checked"]
         lines.append(f"<strong>Seen in a photo is not the same as checked.</strong> {left} of the {attributes['required']} "
