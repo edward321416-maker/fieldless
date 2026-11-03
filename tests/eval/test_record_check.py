@@ -2,7 +2,9 @@ import json
 from dataclasses import dataclass
 from types import SimpleNamespace
 
-from eval import asset_check, record_check
+import pytest
+
+from eval import asset_check, attribute_state, record_check
 from pipeline.cost import CostCapReached
 
 YES = {"answer": "yes", "visible": True, "box": [], "confidence": 0.9, "note": ""}
@@ -128,3 +130,58 @@ def test_the_asset_check_reads_what_differs_without_what_the_assistant_sent_back
 
 def test_no_record_check_is_nothing_to_read(tmp_path):
     assert asset_check.read_differs(tmp_path, 1) == ({}, None)
+
+
+# --- the state of each record's attribute check (agree / different / unsettled), kept per record -------------------
+
+def checked(city_value, spark, other=None, differs=False):
+    return {"item": "pole", "record": "P1", "city_value": city_value, "spark": spark, "open": other, "differs": differs}
+
+
+@pytest.mark.parametrize("raw, state, reason", [
+    (checked("no", NO), "agree", ""),
+    (checked("no", YES, YES, differs=True), "different", ""),
+    (checked("no", UNCLEAR), "unsettled", "unclear"),
+    (checked("no", {**YES, "visible": False}), "unsettled", "not_visible"),
+    (checked("no", {"answer": "error", "error": "bad"}), "unsettled", "error"),
+    (checked("no", {"answer": "not_asked", "error": "cap"}), "unsettled", "not_asked"),
+    (checked("no", YES, NO), "unsettled", "models_disagree"),
+    (checked("no", YES, UNCLEAR), "unsettled", "models_disagree"),
+    (checked("no", YES, {"answer": "error", "error": "down"}), "unsettled", "second_model_error"),
+    (checked("no", YES, None), "unsettled", "second_model_error"),
+    (checked("no", None), "unsettled", "error"),
+])
+def test_every_record_check_ends_in_one_named_state(raw, state, reason):
+    assert attribute_state.state_of(raw) == {"state": state, "reason": reason}
+
+
+def test_the_records_written_by_a_check_say_their_state(tmp_path):
+    out = record_check.run(jobs(("P1", "no"), ("P2", "yes")), Spark([NO, UNCLEAR]), Open(YES), STANDARD, TOWN,
+                           run_dir(tmp_path), workers=1)
+    assert [(r["state"], r["reason"]) for r in out] == [("agree", ""), ("unsettled", "unclear")]
+    assert record_check.unsettled_by(out) == {"unclear": 1}
+
+
+def test_what_stayed_unsettled_is_counted_by_why():
+    rows = [checked("no", UNCLEAR), checked("no", UNCLEAR), checked("no", YES, NO), checked("no", NO)]
+    assert record_check.unsettled_by(rows) == {"unclear": 2, "models_disagree": 1}
+
+
+def test_a_saved_check_without_states_is_read_as_if_it_had_them(tmp_path):
+    rows = [{"item": "pole", "record": "P1", "city_value": "no", "spark": NO, "open": None, "differs": False},
+            {"item": "pole", "record": "P2", "city_value": "yes", "spark": UNCLEAR, "open": None, "differs": False},
+            {"item": "pole", "record": "P3", "city_value": "no", "spark": YES, "open": YES, "differs": True,
+             "city_says": "Not lit", "photo_shows": "Lit"},
+            {"item": "pole", "record": "P4", "city_value": "no", "spark": YES, "open": YES, "differs": True}]
+    (tmp_path / "record_check_scan1.json").write_text(json.dumps(
+        {"summary": {"asked": 4, "agree": 1, "differ": 2, "unsettled": 1}, "rows": rows}), encoding="utf-8")
+    (tmp_path / "look_review_scan1.json").write_text(json.dumps(
+        {"not_different": [{"item": "pole", "record": "P4", "why": "The box is on a tree."}]}), encoding="utf-8")
+    states = asset_check.read_attributes(tmp_path, 1)
+    assert {k: (v["state"], v["reason"]) for k, v in states.items()} == {
+        ("pole", "P1"): ("agree", ""), ("pole", "P2"): ("unsettled", "unclear"),
+        ("pole", "P3"): ("different", ""), ("pole", "P4"): ("unsettled", "sent_back")}
+
+
+def test_no_record_check_is_no_state_at_all(tmp_path):
+    assert asset_check.read_attributes(tmp_path, 1) == {}

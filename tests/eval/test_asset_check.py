@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from eval import asset_check
+from eval import asset_check, record_check
 from pipeline import config, evidence
 
 ID_FIELDS = ["UNITID"]
@@ -522,3 +522,143 @@ def test_the_cost_of_the_looks_goes_into_the_file_for_the_page_and_the_app(tmp_p
     trust = {"controls": [], "looked_at": 0, "sent_back": 0, **asset_check.cost_trust({"second_look": 1.0, "total": 1.5})}
     assert trust["second_looks_usd"] == 1.5 and trust["second_looks"]["second_look"] == 1.0
     assert asset_check.cost_trust({"total": 0}) == {}
+
+
+# --- an object seen is not an attribute checked ---------------------------------------------------------------------
+
+LIT = {"field": "LIT", "yes": "Y", "no": "N", "ask": "Is it lit?", "says_yes": "Lit", "says_no": "Not lit"}
+TOWN_LIT = {**TOWN, "items": {**TOWN["items"], "pole": {**TOWN["items"]["pole"], "compare": LIT}}}
+LAYERS_LIT = {**LAYERS, "pole": layer({"UNITID": "P1", "CHECKED": "2020-05-01", "PLACE": "1 Main St", "COND": "GOOD ", "LIT": "Y"},
+                                      {"UNITID": "P2", "CHECKED": 1727740800000, "LIT": "N"},
+                                      {"UNITID": "P3", "CHECKED": "", "LIT": "Y"}, {"UNITID": "P4"}, {"UNITID": "P5"})}
+BOTH_SEEN = {asset_check.record_key({"UNITID": "P2"}): NEWER}
+TRUST = {"controls": [], "looked_at": 0, "sent_back": 0}
+
+
+def build_lit(attributes=None, town=TOWN_LIT, layers=LAYERS_LIT, differs=None, looks=BOTH_SEEN):
+    return asset_check.build(DATA, CHECK, town, layers, STANDARD, looks, TRUST, None, differs, None, attributes)
+
+
+def test_a_seen_record_whose_attribute_was_not_checked_is_not_a_record_that_needs_no_visit():
+    out = build_lit()  # no record check was run: nothing was asked about the pole's light
+    for record in ("P1", "P2"):
+        r = row(out, record)
+        assert r["status"] == asset_check.SEEN and r["action"] == asset_check.VISIT
+        assert (r["attribute_field"], r["attribute_state"]) == ("LIT", "not_checked")
+    assert out["no_visit"] == 0 and out["desk_review_candidates"] == 0
+
+
+def test_the_record_that_is_there_keeps_its_presence_and_dates_while_its_attribute_is_open():
+    out = build_lit({("pole", "P2"): {"state": "unsettled", "reason": "unclear"}})
+    r = row(out, "P2")
+    assert r["action"] == asset_check.VISIT and r["status"] == asset_check.SEEN and r["how_seen"] == asset_check.BY_PANORAMA
+    assert (r["city_date"], r["seen_in_photo_on"], r["photo_newer_than_city_date"]) == ("2024-10", "2025-07-11", "yes")
+    assert r["attribute_state"] == "unsettled" and r["attribute_field"] == "LIT"
+    assert "Not lit" in r["attribute_note"]  # the city's side of what is open
+    assert "newer photo or a field check" in r["visit_reason"] and "Not lit" in r["visit_reason"]
+    assert r["city_says"] == "" and r["photo_shows"] == ""  # nothing is claimed about either side
+
+
+def test_a_record_whose_attribute_the_photos_agree_with_can_still_get_a_date_or_stay_as_it_is():
+    out = build_lit({("pole", "P1"): {"state": "agree", "reason": ""}, ("pole", "P2"): {"state": "agree", "reason": ""}})
+    assert row(out, "P1")["action"] == asset_check.DATE and row(out, "P2")["action"] == asset_check.DATE
+    assert row(out, "P1")["attribute_state"] == "agree" and not row(out, "P1").get("visit_reason")
+    assert out["no_visit"] == 2 == out["desk_review_candidates"]
+
+
+def test_an_attribute_the_models_both_found_different_is_to_correct_and_says_so():
+    differs = {("pole", "P2"): {"city_says": "Not lit", "photo_shows": "Lit"}}
+    out = build_lit({("pole", "P2"): {"state": "different", "reason": ""}}, differs=differs)
+    r = row(out, "P2")
+    assert (r["action"], r["attribute_state"], r["city_says"], r["photo_shows"]) == (asset_check.FIX, "different", "Not lit", "Lit")
+
+
+def test_a_difference_without_a_saved_state_still_counts_as_different():
+    differs = {("pole", "P2"): {"city_says": "Not lit", "photo_shows": "Lit"}}
+    r = row(build_lit({("pole", "P1"): {"state": "agree", "reason": ""}}, differs=differs), "P2")
+    assert (r["action"], r["attribute_state"]) == (asset_check.FIX, "different")
+
+
+def test_the_two_reasons_a_record_was_never_asked_about_are_told_apart():
+    blank = {**LAYERS_LIT, "pole": layer({"UNITID": "P1", "CHECKED": "2020-05-01", "LIT": ""},
+                                         {"UNITID": "P2", "CHECKED": 1727740800000, "LIT": "N"},
+                                         {"UNITID": "P3"}, {"UNITID": "P4"}, {"UNITID": "P5"})}
+    out = build_lit(layers=blank)
+    assert row(out, "P1")["attribute_state"] == "not_checked" and "no value" in row(out, "P1")["attribute_note"]
+    assert row(out, "P2")["attribute_state"] == "not_checked" and "was not asked" in row(out, "P2")["attribute_note"]
+
+
+def test_an_item_with_no_attribute_to_check_is_judged_as_it_was():
+    out = result()  # TOWN has no compare for any item
+    assert all("attribute_state" not in r and "attribute_field" not in r for r in out["rows"])
+    assert "attribute_checks" not in out
+    assert row(result(BOTH_SEEN), "P2")["action"] == asset_check.DATE
+
+
+def test_only_a_visit_row_says_why_it_needs_a_newer_photo_or_a_field_check():
+    out = result()
+    for r in out["rows"]:
+        assert bool(r.get("visit_reason")) == (r["action"] == asset_check.VISIT)
+    assert "No photo settled" in row(out, "P3")["visit_reason"]
+
+
+def test_what_is_still_open_is_counted_whole_and_per_item():
+    out = build_lit({("pole", "P1"): {"state": "agree", "reason": ""}, ("pole", "P2"): {"state": "unsettled", "reason": "unclear"}})
+    assert out["attribute_checks"] == {"required": 2, "agree": 1, "different": 0, "unsettled": 1, "not_checked": 0,
+                                       "open_by": {"unclear": 1}}
+    assert out["visits_attribute_unresolved"] == 1
+    pole = next(i for i in out["items"] if i["item"] == "pole")
+    assert pole["attribute_checks"]["required"] == 2 and "attribute_checks" not in next(i for i in out["items"] if i["item"] == "can")
+    assert out["no_visit"] == out["desk_review_candidates"] == 1  # the key stays; the new key says what it counts
+
+
+def test_the_visit_count_still_adds_up_with_the_photo_covered_records():
+    out = build_lit({("pole", "P1"): {"state": "unsettled", "reason": "unclear"}})
+    records = [r for r in out["rows"] if r["city_record"]]
+    assert len(records) == out["totals"]["in_view"]
+    assert out["actions"][asset_check.VISIT] == sum(r["action"] == asset_check.VISIT for r in records)
+    assert out["no_visit"] == len(records) - out["actions"][asset_check.VISIT]
+
+
+def test_the_action_of_a_seen_record_waits_for_its_attribute_but_not_for_its_presence():
+    seen, yes = row_of(asset_check.SEEN), {"value": "yes"}
+    assert asset_check.action_of(seen, yes, None, True, {"state": "agree"}) == asset_check.DATE
+    assert asset_check.action_of(seen, yes, None, False, {"state": "agree"}) == asset_check.SAME
+    for state in ("unsettled", "not_checked"):
+        assert asset_check.action_of(seen, yes, None, True, {"state": state}) == asset_check.VISIT
+        assert asset_check.action_of(seen, yes, None, False, {"state": state}) == asset_check.VISIT
+    assert asset_check.action_of(seen, yes, {"city_says": "a", "photo_shows": "b"}, True, {"state": "different"}) == asset_check.FIX
+    off = row_of(asset_check.NOT_LISTED, newer="")
+    assert asset_check.action_of(off, yes, None, False, {"state": "unsettled"}) == asset_check.COMPARE
+
+
+def test_offline_never_blurs_and_says_which_photos_still_need_it(tmp_path):
+    with pytest.raises(SystemExit, match="not blurred yet"):
+        asset_check.blur_looks(blurrable(tmp_path), tmp_path, 1, offline=True)  # no api, no key: nothing may be asked
+    assert not (tmp_path / "evidence").exists() and not (tmp_path / "look_evidence_scan1.json").exists()
+
+
+def test_offline_reads_the_photos_already_blurred_and_asks_for_nothing(tmp_path, no_segments):
+    asset_check.blur_looks(blurrable(tmp_path), tmp_path, 1, api=FakeSam())
+    looks = blurrable(tmp_path)
+    assert asset_check.blur_looks(looks, tmp_path, 1, offline=True) == 0.0
+    assert looks["a"]["evidence"]["image"] == "scan1_look0_21.jpg"
+
+
+def test_a_visit_waiting_on_its_attribute_says_what_it_would_be_if_the_attribute_agreed():
+    out = build_lit()
+    assert row(out, "P1")["action_if_attribute_agrees"] == asset_check.DATE
+    assert row(out, "P2")["action_if_attribute_agrees"] == asset_check.DATE
+    unsettled = build_lit({("pole", "P2"): {"state": "unsettled", "reason": "unclear"}})
+    assert row(unsettled, "P2")["action_if_attribute_agrees"] == asset_check.DATE
+    agreed = build_lit({("pole", "P2"): {"state": "agree", "reason": ""}})
+    assert "action_if_attribute_agrees" not in row(agreed, "P2")  # nothing is waiting
+    assert "action_if_attribute_agrees" not in row(build_lit(), "P3")  # the photos did not settle the record at all
+
+
+def test_the_first_asset_check_still_leaves_the_seen_records_for_the_record_check_to_ask_about():
+    # the order of a run is Asset Check, Record Check, Asset Check: the first must not hide the rows the second asks
+    first = build_lit()
+    layers = {"pole": {r["UNITID"]: r for r in (f["properties"] for f in LAYERS_LIT["pole"])}}
+    jobs = record_check.jobs_for(first, TOWN_LIT, layers)
+    assert [(j["record"], j["city_value"]) for j in jobs] == [("P1", "yes"), ("P2", "no")]

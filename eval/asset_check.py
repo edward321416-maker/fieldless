@@ -20,7 +20,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from eval import precision
+from eval import attribute_state, precision
 from eval.city import box_of
 from eval.city_check import load_city
 from eval.second_look import is_seen
@@ -36,6 +36,15 @@ BY_SURVEY, BY_LOOK, BY_PANORAMA = "Survey", "Second look", "Second look, panoram
 FIX, DATE, SAME, VISIT, COMPARE = ("Correct the record", "Update the date", "No change", "Visit on site",
                                    "Compare with the list")
 NOT_SETTLED = "Not settled what this is"
+REASONS = {"unclear": "the photo is too unclear, cropped or far away to answer it",
+           "not_visible": "the part of the object that answers it is not in view",
+           "error": "the model's answer failed", "not_asked": "the check was not run",
+           "models_disagree": "two models did not agree", "second_model_error": "the second model did not answer",
+           "sent_back": "an AI assistant looked at the photo and sent the difference back",
+           "no_check": "the photo of this record was not asked about this field",
+           "city_value_blank": "the city list has no value for this field, so there is nothing to compare",
+           "no_photo": "no photo box was kept to ask about"}
+NEEDS_NEWER = "A newer photo or a field check is needed."
 CITY_POSITION = {"position_source": "City record", "position_accuracy": "City record"}
 CAMERA_POSITION = {"position_source": "Camera position of the Mapillary photo",
                    "position_accuracy": "Unknown (within 50 ft)"}
@@ -135,6 +144,24 @@ def read_differs(run_dir: Path, scan: int) -> tuple[dict, dict | None]:
     return differs, {**checked["summary"], "differ": len(differs), "sent_back": len(sent_back)}
 
 
+def read_attributes(run_dir: Path, scan: int) -> dict[tuple[str, str], dict]:
+    """Where each asked record's attribute check ended, by (item, record): agree, different or unsettled and why
+    (eval.attribute_state). A difference the AI assistant looked at and sent back is unsettled, not agreed: it says the
+    models were wrong about the photo, not that the city's field is right. Nothing is read where no check was run."""
+    checked = _read(run_dir / f"record_check_scan{scan}.json")
+    if not checked:
+        return {}
+    review = _read(run_dir / f"look_review_scan{scan}.json") or {}
+    sent_back = {(r["item"], str(r["record"])) for r in review.get("not_different", [])}
+    out = {}
+    for r in checked["rows"]:
+        key, state = (r["item"], str(r["record"])), attribute_state.state_of(r)
+        if state["state"] == attribute_state.DIFFERENT and key in sent_back:
+            state = {"state": attribute_state.UNSETTLED, "reason": "sent_back"}
+        out[key] = state
+    return out
+
+
 def second_look_costs(run_dir: Path, scan: int) -> dict:
     """What the later looks behind a survey's Asset Check cost, by part. Each look wrote the cost of its run
     (cost_usd) beside its answers; blurring wrote none, so it is SAM's two requests for each look photo made. The
@@ -176,15 +203,19 @@ def evidence_of(looks: dict[str, dict], scan: int) -> dict[Path, str]:
             for n, photo in enumerate(sorted({v["photo"] for v in looks.values()}, key=str))}
 
 
-def blur_looks(looks: dict[str, dict], run_dir: Path, scan: int, api=None) -> float:
+def blur_looks(looks: dict[str, dict], run_dir: Path, scan: int, api=None, offline: bool = False) -> float:
     """Give every look its blurred evidence photo, with Mapillary's attribution. A failed blur raises, so an unblurred
     photo is never stored. Photos already blurred are not sent again: <run>/look_evidence_scan<N>.json keeps what each
-    blur found. Returns what the blurring spent."""
+    blur found. offline: blur nothing and ask nothing; stop if a photo is not blurred yet. Returns what the blurring
+    spent."""
     names = evidence_of(looks, scan)
     folder = run_dir / "evidence"
     made_path = run_dir / f"look_evidence_scan{scan}.json"
     made = _read(made_path) or {}
     missing = [p for p, name in names.items() if name not in made or not (folder / name).is_file()]
+    if missing and offline:
+        raise SystemExit(f"--offline: {len(missing)} look photos are not blurred yet, and nothing is sent to be: "
+                         + ", ".join(names[p] for p in missing))
     meter = CostMeter(COST_CAP_USD)
     if missing and api is None:
         api = MetaApi(run_dir / "calls_second_look.jsonl", meter)
@@ -212,17 +243,22 @@ def sure_of(row: dict, label: dict | None) -> bool:
     return row["models_unsure"] != "yes" and (label is None or label.get("value") == "yes")
 
 
-def action_of(row: dict, label: dict | None, differs: dict | None, verified: bool) -> str | None:
+def action_of(row: dict, label: dict | None, differs: dict | None, verified: bool,
+              attribute: dict | None = None) -> str | None:
     """What a city does with a row. None: the AI assistant found the object wrong or a repeat, so it leaves the list.
     A visit is always a city record, so one number means the same on every surface; an object on no list is to compare,
     sure of or not. verified: the list's date says when the city last verified the record, not just when the list was
-    written."""
+    written. attribute: how the check of the city's yes/no field for the record ended, where its list has one. An
+    object that is there says nothing about that field, so a record whose field is unsettled or was never checked is a
+    visit too, and keeps the status and the dates it was seen with."""
     if row["status"] == NOT_LISTED:
         return None if label and (label.get("dup_of") is not None or label.get("value") == "no") else COMPARE
     if row["status"] == NOT_DETERMINED or not sure_of(row, label):
         return VISIT
     if differs:
         return FIX
+    if attribute and attribute["state"] in attribute_state.OPEN:
+        return VISIT
     return DATE if verified and row["photo_newer_than_city_date"] == "yes" else SAME
 
 
@@ -238,6 +274,32 @@ def said(row: dict, action: str, differs: dict | None, cfg: dict, sure: bool = T
     return {"city_says": "", "photo_shows": ""}
 
 
+def attribute_cells(attribute: dict, cfg: dict) -> dict:
+    """The attribute check as the table says it: which field, how it ended, and the city's side with the reason."""
+    says, state, reason = attribute["says"], attribute["state"], attribute["reason"]
+    why = {attribute_state.AGREE: "a model reading the photo agrees",
+           attribute_state.DIFFERENT: "two models reading the photo say otherwise"}.get(state) or REASONS[reason]
+    return {"attribute_field": cfg["compare"]["field"], "attribute_state": state,
+            "attribute_note": f"{says}: {why}" if says else why[:1].upper() + why[1:]}
+
+
+def visit_reason(row: dict, label: dict | None, attribute: dict | None, cfg: dict) -> str:
+    """Why a row is a visit, in words: the photos alone do not settle it."""
+    if row["status"] == NOT_DETERMINED:
+        return f"No photo settled whether this record is there. {NEEDS_NEWER}"
+    if not sure_of(row, label) or not attribute:
+        return f"The models were not sure what the object is. {NEEDS_NEWER}"
+    named = f"the city's \"{attribute['says']}\"" if attribute["says"] else f"the city's {cfg['compare']['field']}"
+    return f"The record is there in a photo, but {named} is not settled: {REASONS[attribute['reason']]}. {NEEDS_NEWER}"
+
+
+def attribute_counts(rows: list[dict], reasons: Counter) -> dict:
+    """How the attribute checks of these rows ended; reasons: why the open ones are open."""
+    states = Counter(r["attribute_state"] for r in rows)
+    return {"required": len(rows), **{state: states[state] for state in attribute_state.STATES},
+            "open_by": dict(reasons)}
+
+
 def tally(rows: list[dict]) -> dict:
     status = Counter(r["status"] for r in rows)
     return {"in_view": status[SEEN] + status[NOT_DETERMINED], "seen": status[SEEN],
@@ -248,8 +310,20 @@ def tally(rows: list[dict]) -> dict:
             "newer": sum(r["photo_newer_than_city_date"] == "yes" for r in rows)}
 
 
+def attribute_of(item: str, record: str, props: dict, cfg: dict, box, ev, attributes: dict) -> dict:
+    """How the check of a seen record's yes/no field ended, with what the city says in its own words. A record the check
+    was not run for is not checked, and why: the city's value is blank, no photo box was kept, or it was never asked."""
+    compare = cfg["compare"]
+    value = {compare["yes"]: "yes", compare["no"]: "no"}.get(props.get(compare["field"]))
+    state = attributes.get((item, record))
+    if state is None:
+        reason = "city_value_blank" if not value else "no_photo" if not (box and ev) else "no_check"
+        state = {"state": attribute_state.NOT_CHECKED, "reason": reason}
+    return {**state, "says": compare.get(f"says_{value}", "") if value else ""}
+
+
 def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str, issues: list[dict],
-              looks: dict[str, dict], nearby: dict[str, dict]) -> list[dict]:
+              looks: dict[str, dict], nearby: dict[str, dict], attributes: dict | None = None) -> list[dict]:
     keys = info["id_fields"]
     by_key = {tuple(str(f["properties"].get(k)) for k in keys): f for f in features if f.get("geometry")}
     base = {"item": item, "asset": name}
@@ -262,7 +336,12 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
         last = month(props.get(cfg["checked_field"])) if cfg.get("checked_field") and cfg.get("verified") else ""
         ev = (issue or {}).get("evidence") or (look or {}).get("evidence")
         seen_on = str((ev or {}).get("captured_at") or "")[:10]
-        return {**base, "city_list": info["layer"], "city_record": str(city.get(cfg["record_field"]) or city.get(keys[0])),
+        box = box_of(issue) if issue else (look or {}).get("box")
+        record = str(city.get(cfg["record_field"]) or city.get(keys[0]))
+        # a record seen in a photo has its object checked; its yes/no field, where the list has one, is a second check
+        needs = {"attribute": attribute_of(item, record, props, cfg, box, ev, attributes or {})} \
+            if status == SEEN and "compare" in cfg else {}
+        return {**base, "city_list": info["layer"], "city_record": record,
                 "city_location": str(props.get(cfg.get("place_field")) or ""), "status": status, "how_seen": how,
                 "issue_id": issue["id"] if issue else None,
                 "models_unsure": "yes" if issue and issue.get("object_label") == "unclear" else "",
@@ -270,7 +349,7 @@ def item_rows(item: str, info: dict, cfg: dict, features: list[dict], name: str,
                 "photo_newer_than_city_date": "yes" if last and seen_on and seen_on[:7] > last else "",
                 "city_condition": str(props.get(cfg.get("condition_field")) or "").strip(),
                 "lat": round(lat, 6), "lng": round(lng, 6), **CITY_POSITION,
-                "box": box_of(issue) if issue else (look or {}).get("box"), "evidence": ev}
+                "box": box, "evidence": ev, **needs}
 
     rows = [record_row(pair["city"], SEEN, BY_SURVEY, issue=next(i for i in issues if i["id"] == pair["issue_id"]))
             for pair in info["pairs"] if pair.get("in_view")]
@@ -328,30 +407,50 @@ def unreached(check_file: dict, layers: dict[str, list[dict]], bbox: list[float]
 
 def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]], standard, looks: dict[str, dict],
           trust: dict, labels: dict | None = None, differs: dict | None = None,
-          nearby: dict[str, dict] | None = None) -> dict:
+          nearby: dict[str, dict] | None = None, attributes: dict | None = None) -> dict:
     """data as eval.store.load_scan returns it; layers: each item's GeoJSON features; looks and trust as read_looks
     returns them, each look with its evidence; labels: the AI assistant's check of the findings (eval.precision);
-    differs: the records a photo contradicts, by (item, record) (eval.record_check); nearby: as read_nearby returns it."""
+    differs: the records a photo contradicts, by (item, record) (eval.record_check); nearby: as read_nearby returns it;
+    attributes: where each asked record's attribute check ended, by (item, record), as read_attributes returns it.
+    An item whose city file names a yes/no field a photo can answer ([items.<id>.compare]) needs that check for every
+    record it saw: a record without it is a visit, however sure the models are that the object is there."""
     rows, listed, items = [], [], []
     left_out = Counter(repeats=0, wrong=0)
+    open_by, unresolved = Counter(), 0
     issues = [i for i in data["issues"] if i["review_status"] != "rejected"]
     judged = (labels or {}).get("issues", {})
     for item, info in check_file["items"].items():
         name, cfg = asset_name(standard, item), town["items"][item]
-        found = item_rows(item, info, cfg, layers[item], name, issues, looks, nearby or {})
+        found = item_rows(item, info, cfg, layers[item], name, issues, looks, nearby or {}, attributes)
         rows += found
-        kept = []
+        kept, item_open = [], Counter()
         for row in found:
             label = judged.get(str(row.pop("issue_id")))
             differ = (differs or {}).get((item, row["city_record"]))
-            action = action_of(row, label, differ, bool(cfg.get("verified")))
+            attribute = row.pop("attribute", None)
+            if attribute and differ and attribute["state"] != attribute_state.DIFFERENT:
+                attribute = {**attribute, "state": attribute_state.DIFFERENT, "reason": ""}  # the difference is there to read
+            action = action_of(row, label, differ, bool(cfg.get("verified")), attribute)
             if action is None:
                 left_out["repeats" if label.get("dup_of") is not None else "wrong"] += 1
-            else:
-                kept.append({**row, "action": action, **said(row, action, differ, cfg, sure_of(row, label))})
+                continue
+            extra = attribute_cells(attribute, cfg) if attribute else {}
+            is_open = bool(attribute) and attribute["state"] in attribute_state.OPEN
+            if is_open:
+                open_by[attribute["reason"]] += 1
+                item_open[attribute["reason"]] += 1
+                # the record check asks about the rows whose object is settled; this keeps them findable while open
+                if (waiting := action_of(row, label, None, bool(cfg.get("verified")))) != VISIT:
+                    extra["action_if_attribute_agrees"] = waiting
+            if action == VISIT:
+                extra["visit_reason"] = visit_reason(row, label, attribute, cfg)
+                unresolved += is_open and row["status"] == SEEN and sure_of(row, label)
+            kept.append({**row, "action": action, **said(row, action, differ, cfg, sure_of(row, label)), **extra})
         listed += kept
+        needing = [r for r in kept if "attribute_state" in r]
         items.append({"item": item, "asset": name, "city_list": info["layer"], **tally(found),
-                      "actions": dict(Counter(r["action"] for r in kept))})
+                      "actions": dict(Counter(r["action"] for r in kept)),
+                      **({"attribute_checks": attribute_counts(needing, item_open)} if needing else {})})
     outside = sum(not p.get("in_view") for info in check_file["items"].values() for p in info["pairs"])
     checked = next((r for r in precision.summary(auto_labels(data, labels)) if r["item"] == "all"), None) if labels else None
     checked = checked if checked and checked["n"] else None
@@ -367,10 +466,15 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
         reach = {"unreached": far, "unreached_fields": far_fields}
     compare_unsure = sum(r["photo_shows"] == NOT_SETTLED for r in listed)
     visits_with_photo = sum(r["action"] == VISIT and bool(r.get("evidence") or r.get("nearby_photo")) for r in listed)
+    needing = [r for r in listed if "attribute_state" in r]
     gaps = [years_between(r["city_date"], r["seen_in_photo_on"]) for r in listed if r["action"] == DATE]
     return {"scan_id": data["scan"]["id"], "city": town["city"], **({"credit": town["credit"]} if "credit" in town else {}),
             "items": items, "totals": totals, **reach,
-            "actions": dict(Counter(r["action"] for r in listed)), "no_visit": no_visit, "compare_unsure": compare_unsure,
+            "actions": dict(Counter(r["action"] for r in listed)), "no_visit": no_visit,
+            "desk_review_candidates": no_visit,  # what no_visit counts, named for what it is: not a measured avoided visit
+            "compare_unsure": compare_unsure,
+            **({"attribute_checks": attribute_counts(needing, open_by), "visits_attribute_unresolved": unresolved}
+               if needing else {}),
             "visits_with_photo": visits_with_photo,
             **({"date_gap_years": round(statistics.median(gaps), 1)} if gaps else {}),
             "left_out": dict(left_out),
@@ -384,6 +488,8 @@ def main(argv=None) -> Path:
     parser.add_argument("--run", required=True)
     parser.add_argument("--scan", type=int, required=True)
     parser.add_argument("--city", default="seattle", help="a file in eval/cities, without .toml")
+    parser.add_argument("--offline", action="store_true",
+                        help="make no model call: use the blurred photos already made, and stop if one is missing")
     args = parser.parse_args(argv)
     run_dir = config.run_dir(args.run)
     conn = open_ro(run_dir / "threshold.db")
@@ -397,14 +503,15 @@ def main(argv=None) -> Path:
     layers = {item: json.loads((root / town["items"][item]["layer"]).read_text(encoding="utf-8"))["features"]
               for item in check_file["items"]}
     looks, trust = read_looks(run_dir, args.scan, data["frames"])
-    spent = blur_looks(looks, run_dir, args.scan)
+    spent = blur_looks(looks, run_dir, args.scan, offline=args.offline)
     differs, record_trust = read_differs(run_dir, args.scan)
+    attributes = read_attributes(run_dir, args.scan)
     if record_trust:
         trust["record_check"] = record_trust
     trust.update(cost_trust(second_look_costs(run_dir, args.scan)))  # after the blur: it counts this run's photos
     out = build(data, check_file, town, layers, survey_items.load(data["scan"]["jurisdiction"]), looks, trust,
                 _read(run_dir / f"precision_scan{args.scan}.json"), differs,
-                read_nearby(run_dir, args.scan, data["frames"]))
+                read_nearby(run_dir, args.scan, data["frames"]), attributes)
     path = run_dir / f"asset_check_scan{args.scan}.json"
     path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps({"totals": out["totals"], "trust": out["trust"]}, ensure_ascii=False, indent=1))

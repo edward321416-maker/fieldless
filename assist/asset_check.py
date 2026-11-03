@@ -2,8 +2,10 @@
 (eval.asset_check makes the rows, eval.record_check compares them).
 
 Why it says what it says:
-- Each row says what the city could do with it, and how many places need no site visit is the first thing on the page.
-  A row is a suggestion: the city decides.
+- Each row says what the city could do with it, and how many records are candidates for desk review is the first thing
+  on the page. That is not a count of site visits avoided: nobody measured one. A row is a suggestion: the city decides.
+- A record seen in a photo has its object seen, not its attributes checked. Where the city's list has a yes or no a photo
+  can answer, a record whose answer the photos left open is a visit, and the row says which attribute and why.
 - "Seen in photo" is an observation, not the city's inspection, so the table has its own date column and never fills
   the city's date fields. "Not determined" does not mean missing.
 - A record keeps the city's position. An object not on the list carries the camera's position, rated Unknown (within
@@ -29,7 +31,9 @@ PANORAMA = "Second look, panorama"
 FIX, DATE, SAME, VISIT, COMPARE = ("Correct the record", "Update the date", "No change", "Visit on site",
                                    "Compare with the list")
 SUMMARY_FIELDS = ("city", "items", "totals", "actions", "no_visit", "compare_unsure", "left_out", "trust")
-LATER_FIELDS = ("credit", "visits_with_photo", "date_gap_years")  # a list made before they existed has none of them
+# a list made before they existed has none of them
+LATER_FIELDS = ("credit", "visits_with_photo", "date_gap_years", "desk_review_candidates", "attribute_checks",
+                "visits_attribute_unresolved")
 COLUMNS = (("action", "What the city could do with this row"),
            ("asset", "What the object is"),
            ("city_list", "The city list the record is on"),
@@ -57,13 +61,20 @@ COLUMNS = (("action", "What the city could do with this row"),
                                  "record's position. It may not show the record"),
            ("nearby_photo_m", "Metres from the record's position to where that photo was taken"),
            ("nearby_photo_by", "That photo's creator"),
-           ("nearby_photo_license", "That photo's licence"))
+           ("nearby_photo_license", "That photo's licence"),
+           ("attribute_field", "Where the city's list has a yes or no a photo can answer: the field it is in"),
+           ("attribute_state", "agree, different, unsettled or not_checked: how the check of that field ended. Seen in "
+                               "photo says the object is there, not that this field was checked"),
+           ("attribute_note", "The city's side of that field and why it is still open, where it is"),
+           ("action_if_attribute_agrees", "Where a record is there in a photo but its field is open: what this row would "
+                                          "suggest if the field agreed with the photo, so its date is not lost"),
+           ("visit_reason", "Why a Visit on site row needs a newer photo or a field check"))
 ROOT = Path(__file__).resolve().parent.parent
 LOGOS = (ROOT / "web" / "public" / "mapillary-logo.png", ROOT / "web" / "dist" / "mapillary-logo.png")
 ACTIONS = {FIX: "Look at the photo, then correct the record if it holds.",
            DATE: "Review the city's date. The photo is newer.",
            SAME: "Keep the record as it is.",
-           VISIT: "The photos do not settle this. It needs a newer photo or a site visit.",
+           VISIT: "The photos do not settle this. It needs a newer photo or a field check.",
            COMPARE: "Compare with nearby records, then decide."}
 ORDER = (FIX, DATE, SAME, VISIT, COMPARE)
 
@@ -246,14 +257,23 @@ def _trust(check: dict, survey_cost: float | None = None) -> list[str]:
     if totals.get("seen_unsure"):
         lines.append(f"<strong>Models unsure.</strong> The models were unsure of {totals['seen_unsure']} of the "
                      f"{totals['seen']} seen records. Those rows say so in the table.")
-    lines.append("<strong>No site visit.</strong> A record needs no visit here when the models were sure of it and the "
-                 "AI assistant's check, where there was one, agreed. It was there on the photo's date.")
+    lines.append("<strong>Candidates for desk review.</strong> A record is a candidate here when the models were sure of "
+                 "it, the AI assistant's check, where there was one, agreed, it was there on the photo's date, and, "
+                 "where its city list has a yes or no a photo can answer, a model reading the photo agreed with the "
+                 "city. It is not a measured count of avoided site visits.")
+    if attributes := check.get("attribute_checks"):
+        left = attributes["unsettled"] + attributes["not_checked"]
+        lines.append(f"<strong>Seen in a photo is not the same as checked.</strong> {left} of the {attributes['required']} "
+                     f"seen records with an attribute to check had it left open: {attributes['unsettled']} unsettled and "
+                     f"{attributes['not_checked']} not checked. Each is a visit row that says which attribute and why, "
+                     "because a newer photo or a field check is needed.")
     if compared := trust.get("record_check"):
         lines.append(f"<strong>Records compared.</strong> Asked about {_count(compared['asked'], 'seen record')} whose "
                      f"city list holds a yes or no a photo can answer. The models agreed with the city on "
                      f"{compared['agree']}, two models disagreed with it on {compared['differ']}, and "
                      f"{compared['unsettled']} stayed unsettled. An AI assistant looked at the photos of those that "
-                     f"differed and sent {compared['sent_back']} back.")
+                     f"differed and sent {compared['sent_back']} back. This is a prototype of model agreement with "
+                     "the city's list, not an independent evaluation.")
     lines.append("<strong>Pairing.</strong> A finding is paired with a city record by the photo's position and viewing "
                  "direction, not by a model comparing the two.")
     for c in trust["controls"]:
@@ -301,7 +321,9 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
     what = {FIX: "The photo and the city's record say different things. Two models agree on the photo.",
             DATE: "Seen in a photo newer than the city's verification date.",
             SAME: "Seen in a photo, with no verification date to update.",
-            VISIT: f"{_count(visits, 'city record')} the photos did not settle. Not determined does not mean missing.",
+            VISIT: f"{_count(visits, 'city record')} the photos did not settle. Not determined does not mean missing."
+                   + (f" {check['visits_attribute_unresolved']} of them were seen in a photo and still have an attribute left open."
+                      if check.get("visits_attribute_unresolved") else ""),
             COMPARE: f"On no city list. Compare each with nearby records before adding anything.{unsettled}"}
     shown = [a for a in ORDER if actions.get(a)]
     steps = "\n".join(f"<li><b>{actions[a]}</b><span><strong>{a}</strong>{e(what[a])}</span></li>" for a in shown)
@@ -318,7 +340,9 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
     <h3>{e(unknown['asset'])}</h3><dl><dt>City record</dt><dd>{e(unknown['city_record'])}</dd></dl>
     <p class="action">{ACTIONS[VISIT]}</p>{nearby_line(unknown, logo) if unknown else ""}</div></article>""" if unknown else "")
     columns = "".join(f"<tr><th scope=\"row\">{k}</th><td>{e(v)}</td></tr>" for k, v in COLUMNS)
-    tail = f"{check['no_visit']} need no site visit and {visits} {'does' if visits == 1 else 'do'}."
+    candidates = check["no_visit"]
+    tail = (f"{candidates} {'is a candidate' if candidates == 1 else 'are candidates'} for desk review and "
+            f"{visits} {'needs' if visits == 1 else 'need'} a newer photo or a field check.")
     in_area = totals.get("in_area")
     lead = (e(f"Of {in_area:,} city records in the survey's box or its photos' view, the photos reached {totals['in_view']:,}: {tail} "
               f"The other {in_area - totals['in_view']:,} had no survey photo in view. This list says nothing about them.")
@@ -334,7 +358,8 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
   <h1>{e(title)}</h1>
   <p class="meta">{' &middot; '.join(e(m) for m in meta)}</p>
   <p class="lead">{lead}</p>
-  <div class="bar" role="img" aria-label="{check['no_visit']} of {totals['in_view']} city records need no site visit"><span style="width:{share:.1f}%"></span></div>
+  <p class="meta">Candidates for desk review are records to look at on a screen first. This is not a measured count of avoided site visits.</p>
+  <div class="bar" role="img" aria-label="{check['no_visit']} of {totals['in_view']} city records are candidates for desk review"><span style="width:{share:.1f}%"></span></div>
   <div class="key"><span>{totals['seen']} seen in photo: {e(seen_how(totals))}</span><span>{totals['not_determined']} not determined</span></div>
 </header>
 

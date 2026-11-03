@@ -73,8 +73,10 @@ def test_a_row_without_a_nearby_photo_leaves_those_cells_empty():
 
 def test_the_new_cells_come_last_so_the_earlier_columns_do_not_move():
     names = [k for k, _ in asset_check.COLUMNS]
-    assert names.index("evidence_file") == len(names) - 5
-    assert names[-4:] == ["nearby_photo_link", "nearby_photo_m", "nearby_photo_by", "nearby_photo_license"]
+    assert names.index("evidence_file") == len(names) - 10
+    assert names[-9:-5] == ["nearby_photo_link", "nearby_photo_m", "nearby_photo_by", "nearby_photo_license"]
+    assert names[-5:] == ["attribute_field", "attribute_state", "attribute_note", "action_if_attribute_agrees",
+                          "visit_reason"]
 
 
 def test_the_app_gets_the_visits_with_a_photo_and_the_date_gap_with_the_counts():
@@ -97,8 +99,8 @@ def test_the_page_asks_for_no_icon_and_writes_large_counts_as_the_app_does():
 def test_the_page_says_how_many_records_in_the_box_the_photos_reached():
     reach = {**CHECK, "totals": {**TOTALS, "in_area": 40}, "unreached": [["pole", 1.0, 2.0]] * 37}
     page = asset_check.document(reach)
-    assert "Of 40 city records in the survey&#x27;s box or its photos&#x27; view, the photos reached 3: 2 need no site visit " \
-        "and 1 does." in page
+    assert "Of 40 city records in the survey&#x27;s box or its photos&#x27; view, the photos reached 3: 2 are candidates for desk review " \
+        "and 1 needs a newer photo or a field check." in page
     assert "The other 37 had no survey photo in view. This list says nothing about them." in page
 
 
@@ -147,7 +149,7 @@ def test_the_page_opens_with_the_visits_and_is_labelled_as_not_the_citys():
     page = asset_check.document(CHECK, area="Capitol Hill", km=0.94, photo_count=181)
     assert "<title>Capitol Hill Record Update List</title>" in page
     assert "It is not a Testville city document, and the city has not reviewed it." in page
-    assert "Of 3 city records in view of the photos, 2 need no site visit and 1 does." in page
+    assert "Of 3 city records in view of the photos, 2 are candidates for desk review and 1 needs a newer photo or a field check." in page
     assert "0.94 km of walked streets" in page
 
 
@@ -294,3 +296,76 @@ def test_the_survey_cost_reaches_the_page_in_the_zip(tmp_path):
     check = {**CHECK, "trust": {**CHECK["trust"], "second_looks_usd": 2.3028}}
     asset_check.write(check, tmp_path, survey_cost=3.3274)
     assert "The survey cost $3.33." in (tmp_path / "update_list.html").read_text(encoding="utf-8")
+
+
+# --- an object seen is not an attribute checked: what the table, the app and the page say about it ----------------
+
+OPEN = row(asset="Utility pole", city_record="P7", action="Visit on site", city_says="", photo_shows="",
+           attribute_field="IS_STREETLIGHT", attribute_state="unsettled",
+           attribute_note="Holds a street light: the top of the pole is cut off in the photo",
+           action_if_attribute_agrees="Update the date",
+           visit_reason="The record is there in a photo, but whether it Holds a street light is not settled. "
+                        "A newer photo or a field check is needed.")
+WITH_ATTRIBUTES = {**CHECK, "rows": [*ROWS, OPEN], "actions": {**ACTIONS, "Visit on site": 2}, "no_visit": 2,
+                   "desk_review_candidates": 2, "visits_attribute_unresolved": 1,
+                   "attribute_checks": {"required": 3, "agree": 2, "different": 0, "unsettled": 1, "not_checked": 0,
+                                        "open_by": {"unclear": 1}}}
+
+
+def test_the_table_and_the_geojson_say_which_attribute_is_open_and_why_the_row_is_a_visit():
+    csv_row = lines(asset_check.table_csv(WITH_ATTRIBUTES))[-1]
+    assert csv_row["action"] == "Visit on site" and csv_row["status"] == "Seen in photo"
+    assert (csv_row["attribute_field"], csv_row["attribute_state"]) == ("IS_STREETLIGHT", "unsettled")
+    assert "cut off" in csv_row["attribute_note"] and "newer photo or a field check" in csv_row["visit_reason"]
+    props = json.loads(asset_check.table_geojson(WITH_ATTRIBUTES))["features"][-1]["properties"]
+    assert props["attribute_state"] == "unsettled" and props["attribute_field"] == "IS_STREETLIGHT"
+    assert props["visit_reason"] == OPEN["visit_reason"] and "lat" not in props
+    assert props["action_if_attribute_agrees"] == "Update the date" and csv_row["action_if_attribute_agrees"] == "Update the date"
+
+
+def test_a_row_made_before_the_attribute_cells_has_them_empty():
+    first = lines(asset_check.table_csv(CHECK))[0]
+    cells = ("attribute_field", "attribute_state", "attribute_note", "action_if_attribute_agrees", "visit_reason")
+    assert [first[c] for c in cells] == [""] * 5
+
+
+def test_the_app_gets_the_new_counts_and_an_old_list_still_loads():
+    summary = asset_check.summary(WITH_ATTRIBUTES)
+    assert summary["desk_review_candidates"] == 2 and summary["visits_attribute_unresolved"] == 1
+    assert summary["attribute_checks"]["unsettled"] == 1 and summary["no_visit"] == 2  # the old key stays
+    assert asset_check.for_app(WITH_ATTRIBUTES)["rows"][-1]["attribute_state"] == "unsettled"
+    old = asset_check.summary(CHECK)
+    assert not {"desk_review_candidates", "attribute_checks", "visits_attribute_unresolved"} & set(old)
+
+
+def test_the_page_never_says_a_record_needs_no_site_visit():
+    for check in (CHECK, WITH_ATTRIBUTES):
+        page = asset_check.document(check)
+        assert "no site visit" not in page.lower()
+        assert "candidates for desk review" in page
+        assert "not a measured count of avoided site visits" in page
+
+
+def test_the_visit_action_says_a_newer_photo_or_a_field_check_is_needed():
+    assert "newer photo or a field check" in asset_check.ACTIONS["Visit on site"]
+    assert "site visit" not in asset_check.ACTIONS["Visit on site"]
+
+
+def test_the_page_says_how_many_seen_records_have_an_attribute_the_photos_did_not_settle():
+    page = asset_check.document(WITH_ATTRIBUTES)
+    assert "Seen in a photo is not the same as checked" in page
+    assert "1 of the 3 seen records with an attribute to check" in page
+
+
+def test_a_list_without_attribute_counts_does_not_mention_them():
+    assert "Seen in a photo is not the same as checked" not in asset_check.document(CHECK)
+
+
+def test_the_page_calls_the_comparison_a_model_agreement_prototype_not_an_independent_evaluation():
+    trust = {**CHECK["trust"], "record_check": {"asked": 20, "agree": 15, "differ": 1, "unsettled": 4, "sent_back": 1}}
+    page = asset_check.document({**CHECK, "trust": trust})
+    assert "model agreement" in page and "prototype" in page and "not an independent evaluation" in page
+
+
+def test_the_examples_never_show_a_visit_row_as_a_settled_record():
+    assert all(r["action"] != "Visit on site" for r in asset_check.examples(WITH_ATTRIBUTES))

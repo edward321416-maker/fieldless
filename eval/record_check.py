@@ -9,14 +9,20 @@ photo, about the object in the row's box. Muse Spark Open is asked only where Sp
 record differs only when both do. The records that agree with the city are counted too: they say how often the two
 models would otherwise be wrong against a list that is right.
 
+Each row ends in one of the states of eval.attribute_state (agree, different, unsettled) and says why it stayed
+unsettled. A record seen in a photo whose answer is not agree is not a record that needs no visit: eval.asset_check
+turns it into a visit, and a seen record this check never asked about into one too.
+
 Writes <run>/record_check_scan<N>.json, which eval.asset_check reads. It spends at most COST_CAP_USD of Meta credit.
 It does not change the city's records.
 """
 import argparse
 import dataclasses
 import json
+from collections import Counter
 from pathlib import Path
 
+from eval import attribute_state
 from eval.asset_check import DATE, FIX, SAME
 from eval.city_check import load_city
 from pipeline import config, second_opinion, survey_items
@@ -37,7 +43,9 @@ def jobs_for(check: dict, town: dict, layers: dict[str, dict[str, dict]]) -> lis
     jobs = []
     for row in check["rows"]:
         compare = town["items"][row["item"]].get("compare")
-        if not compare or row["action"] not in SETTLED or not row.get("box") or not row.get("evidence"):
+        # a record waiting on this very check is a visit that says what it would be if the check agreed
+        settled = row["action"] in SETTLED or row.get("action_if_attribute_agrees") in SETTLED
+        if not compare or not settled or not row.get("box") or not row.get("evidence"):
             continue
         value = {compare["yes"]: "yes", compare["no"]: "no"}.get(layers[row["item"]].get(row["city_record"], {}).get(compare["field"]))
         if value:
@@ -46,16 +54,18 @@ def jobs_for(check: dict, town: dict, layers: dict[str, dict[str, dict]]) -> lis
     return jobs
 
 
-def _said(answer: dict | None) -> str | None:
-    """A model's yes or no about something it could see; anything else settles nothing."""
-    if answer and answer.get("visible") is True and answer.get("answer") in ("yes", "no"):
-        return answer["answer"]
-    return None
+_said = attribute_state._said
 
 
 def differs(job: dict, spark: dict | None, other: dict | None) -> bool:
     said = _said(spark)
     return said is not None and said != job["city_value"] and _said(other) == said
+
+
+def _stated(row: dict) -> dict:
+    """The row with where its check ended (eval.attribute_state), so a saved check says it without being re-read."""
+    state = attribute_state.state_of(row)
+    return {**row, "state": state["state"], "reason": state["reason"]}
 
 
 def ask(api, open_model, standard, town: dict, job: dict, run_dir: Path) -> dict:
@@ -65,9 +75,9 @@ def ask(api, open_model, standard, town: dict, job: dict, run_dir: Path) -> dict
     try:
         spark = api.spark_json([image_part(photo), text_part(prompt(check, job["box"]))], "record_check", SCHEMA)
     except CostCapReached as exc:
-        return {**job, "spark": {"answer": "not_asked", "error": str(exc)}, "open": None, "differs": False}
+        return _stated({**job, "spark": {"answer": "not_asked", "error": str(exc)}, "open": None, "differs": False})
     except Exception as exc:
-        return {**job, "spark": {"answer": "error", "error": error_text(exc)}, "open": None, "differs": False}
+        return _stated({**job, "spark": {"answer": "error", "error": error_text(exc)}, "open": None, "differs": False})
     said, other = _said(spark), None
     if said and said != job["city_value"]:
         try:
@@ -77,7 +87,7 @@ def ask(api, open_model, standard, town: dict, job: dict, run_dir: Path) -> dict
     out = {**job, "spark": spark, "open": other, "differs": differs(job, spark, other)}
     if out["differs"]:
         out |= {"city_says": compare[f"says_{job['city_value']}"], "photo_shows": compare[f"says_{said}"]}
-    return out
+    return _stated(out)
 
 
 def run(jobs: list[dict], api, open_model, standard, town: dict, run_dir: Path, workers: int = WORKERS) -> list[dict]:
@@ -89,6 +99,12 @@ def summary(rows: list[dict]) -> dict:
     agree = sum(_said(r["spark"]) == r["city_value"] for r in rows)
     differ = sum(r["differs"] for r in rows)
     return {"asked": asked, "agree": agree, "differ": differ, "unsettled": len(rows) - agree - differ}
+
+
+def unsettled_by(rows: list[dict]) -> dict[str, int]:
+    """Why the records that stayed unsettled did, by reason (eval.attribute_state)."""
+    states = [attribute_state.state_of(r) for r in rows]
+    return dict(Counter(s["reason"] for s in states if s["state"] == attribute_state.UNSETTLED))
 
 
 def main(argv=None) -> dict:
@@ -119,7 +135,8 @@ def main(argv=None) -> dict:
     standard = survey_items.load("US")
     rows = run(jobs, api, open_model, standard, town, run_dir)
     result = {"scan_id": args.scan, "city": args.city, "model": config.SPARK_MODEL, "second_model": open_model.model,
-              "cost_usd": round(meter.spent_usd, 4), "summary": summary(rows), "rows": rows}
+              "cost_usd": round(meter.spent_usd, 4), "summary": summary(rows), "unsettled_by": unsettled_by(rows),
+              "rows": rows}
     path = run_dir / f"record_check_scan{args.scan}.json"
     path.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(result["summary"], ensure_ascii=False))
