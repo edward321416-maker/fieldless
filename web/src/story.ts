@@ -17,6 +17,7 @@ export const MODEL_STEPS = [
   { model: "Muse Spark Open", does: "asks again", text: "An open-weight second opinion on possible defects. When the two disagree the finding stays unclear." },
 ];
 
+// The records the photos reached that are not candidates for desk review. no_visit is the old key of that count.
 export const visitsLeft = (a: AssetCheckSummary) => a.totals.in_view - a.no_visit;
 
 // How the survey's 27 of 94 becomes the update list's 43 of 94, so the two numbers do not read as a contradiction.
@@ -27,14 +28,19 @@ export function recordFunnel(a: AssetCheckSummary): { n: number; label: string }
     { n: a.totals.in_view, label: area !== undefined ? "in the photos' view" : "city records in the photos' view" },
     { n: a.totals.seen_by.Survey ?? 0, label: "found by the survey" },
     { n: a.totals.seen, label: "seen, with second looks" },
-    { n: a.no_visit, label: "need no site visit" },
+    { n: a.no_visit, label: "candidates for desk review" },
   ];
 }
 
 export function visitLine(a: AssetCheckSummary): string {
   const visits = visitsLeft(a);
-  const unsure = visits - a.totals.not_determined;
-  return `The other ${visits} need a visit: ${a.totals.not_determined} the photos could not settle${unsure > 0 ? ` and ${unsure} were seen but not sure enough` : ""}.`;
+  const open = a.visits_attribute_unresolved ?? 0;
+  const unsure = visits - a.totals.not_determined - open;
+  const parts = [`${a.totals.not_determined} the photos could not settle`,
+    ...(open > 0 ? [`${open} were seen but a field the city keeps for them is still open`] : []),
+    ...(unsure > 0 ? [`${unsure} were seen but not sure enough`] : [])];
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+  return `The other ${visits} need a newer photo or a field check: ${list}.`;
 }
 
 // The records in the box no photo reached: the survey says nothing about them, and the page says so.
@@ -69,7 +75,7 @@ export function controlCheck(a: AssetCheckSummary): Fact | null {
   };
 }
 
-// The example with the smallest share that needs no visit: the page shows where it does worst.
+// The example with the smallest share of candidates for desk review: the page shows where it does worst.
 export function hardestExample(others: { scan: Scan; name: string }[]): { name: string; check: AssetCheckSummary } | null {
   const share = (a: AssetCheckSummary) => a.no_visit / (a.totals.in_view || 1);
   const [worst] = others.flatMap(({ scan, name }) => (scan.asset_check ? [{ name, check: scan.asset_check }] : []))
@@ -92,7 +98,7 @@ export function changeCards(check: AssetCheckSummary | undefined, name: string |
     const visits = visitsLeft(check);
     const photos = check.visits_with_photo === visits && visits > 0;
     cards.push({ title: "For the person walking", big: `${visits} of ${check.totals.in_view}`,
-      text: `records the photos reached in ${where} still need a visit${photos ? ", each with a survey photo, of the place or from nearby. See what the place looks like before you leave" : ""}. Every row is a suggestion.` });
+      text: `records the photos reached in ${where} still need a newer photo or a field check${photos ? ", each with a survey photo, of the place or from nearby. See what the place looks like before you leave" : ""}. Every row is a suggestion.` });
     const dated = check.actions[NEW_DATE] ?? 0;
     if (check.date_gap_years !== undefined && dated > 0) {
       cards.push({ title: "For the person keeping the records", big: `${check.date_gap_years} years`,
@@ -133,6 +139,10 @@ export function recordLine(row: AssetRow | undefined): string {
     const how = SEEN_HOW[row.how_seen] ? `, ${SEEN_HOW[row.how_seen]}` : "";
     return `Seen in a photo of ${row.seen_in_photo_on}${how}; the survey itself did not find it. Suggestion: ${row.action}.`;
   }
+  // there in a photo, but the city's yes or no for it is open: the row says which and why
+  if (row?.status === "Seen in photo" && row.visit_reason && row.seen_in_photo_on) {
+    return `Seen in a photo of ${row.seen_in_photo_on}; the survey itself did not find it. ${row.visit_reason}`;
+  }
   return "In the city's list and in a photo's view; not found by this survey. Check on site or in the photos.";
 }
 
@@ -145,12 +155,16 @@ export interface UpdateDot {
   tip: string;
 }
 
+// A visit dot that is there in a photo says which of the city's fields is still open: seen is not checked.
+const openAttribute = (r: AssetRow) => r.action === VISIT && r.attribute_field && (r.attribute_state === "unsettled" || r.attribute_state === "not_checked")
+  ? ` · ${r.attribute_field} ${r.attribute_state === "unsettled" ? "not settled" : "not checked"}` : "";
+
 export const dotKey = (row: AssetRow) => `${row.item} ${row.city_record}`;
 
 // The update list on the map: the city's records only, so the dots add up to the list's sentence.
 export function updateDots(rows: AssetRow[]): UpdateDot[] {
   return rows.filter((r) => r.city_record).map((r) => ({
     key: dotKey(r), item: r.item, lng: r.lng, lat: r.lat, visit: r.action === VISIT,
-    tip: `${r.asset} ${r.city_record} · ${r.action}`,
+    tip: `${r.asset} ${r.city_record} · ${r.action}${openAttribute(r)}`,
   }));
 }

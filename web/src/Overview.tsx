@@ -181,7 +181,7 @@ export default function Overview(props: Props) {
                   onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && launchAction("dispatch")}
                 >
                   <span className="workflow-badge prio-gis">City records</span>
-                  <strong>{`${scan.asset_check.no_visit} of the ${scan.asset_check.totals.in_view} city records the photos reached need no site visit`}</strong>
+                  <strong>{`${scan.asset_check.no_visit} of the ${scan.asset_check.totals.in_view} city records the photos reached are candidates for desk review`}</strong>
                   <p>A list for the city's asset team: what to correct, which dates to update, where to visit and what to compare with the list, each row with its photo where a photo settled it, as a page, a CSV and GeoJSON.</p>
                   <span className="workflow-cta">Open the update list →</span>
                 </div>
@@ -398,7 +398,7 @@ function Outcomes({ scan, issues }: { scan: Scan; issues: Issue[] }) {
   );
 }
 
-// From the city's records in view to those that need no visit, so the survey's own count and the list's read as one.
+// From the city's records in view to the candidates for desk review, so the survey's own count and the list's read as one.
 function RecordFunnel({ check }: { check: AssetCheckSummary }) {
   return (
     <div className="story-gap">
@@ -462,7 +462,7 @@ function Checks({ scan, issues, others }: { scan: Scan; issues: Issue[]; others:
   if (hard) {
     const span = photoSpan(hard.check.trust.photo_months);
     cards.push({ title: "Hardest example", big: `${hard.check.no_visit} of ${hard.check.totals.in_view}`,
-      text: `${hard.name}: city records that need no site visit${span ? `, photos of ${span}` : ""}` });
+      text: `${hard.name}: city records that are candidates for desk review${span ? `, photos of ${span}` : ""}` });
   } else if (other && list) {
     cards.push({ title: "Another example", big: `${list.found} of ${list.covered}`, text: `${other.name}: ${list.layer}`,
       how: countsOnlyNote(other.scan) ?? undefined });

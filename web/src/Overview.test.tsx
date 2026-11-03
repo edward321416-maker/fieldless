@@ -289,7 +289,7 @@ describe("a survey with an update list", () => {
       .toContain("Update list second looks cost more; see its report.");
   });
   it("offers the list in place of the two tools it stands in for", () => {
-    expect(html).toContain("43 of the 94 city records the photos reached need no site visit");
+    expect(html).toContain("43 of the 94 city records the photos reached are candidates for desk review");
     expect(html).toContain("Open the update list →");
     expect(html).not.toContain("Open Dispatch");
     expect(html).not.toContain("Open GIS Diff");
@@ -298,8 +298,8 @@ describe("a survey with an update list", () => {
     expect(html).toMatch(/>94<\/strong><span[^>]*>city records in the photos&#x27; view</);
     expect(html).toMatch(/>27<\/strong><span[^>]*>found by the survey</);
     expect(html).toMatch(/>53<\/strong><span[^>]*>seen, with second looks</);
-    expect(html).toMatch(/>43<\/strong><span[^>]*>need no site visit</);
-    expect(html).toContain("The other 51 need a visit: 41 the photos could not settle and 10 were seen but not sure enough.");
+    expect(html).toMatch(/>43<\/strong><span[^>]*>candidates for desk review</);
+    expect(html).toContain("The other 51 need a newer photo or a field check: 41 the photos could not settle and 10 were seen but not sure enough.");
     expect(html).toContain("Not settled does not mean missing.");
     expect(html).toContain("26 more objects are not on the city&#x27;s lists, 7 of them not settled.");
     expect(html).not.toContain("recorded assets"); // the first step of the walk says it
@@ -310,13 +310,13 @@ describe("a survey with an update list", () => {
     expect(html).toContain("0 of 17");
     expect(html).toContain("Hardest example");
     expect(html).toContain("9 of 94");
-    expect(html).toContain("New York: city records that need no site visit, photos of 2026-02");
+    expect(html).toContain("New York: city records that are candidates for desk review, photos of 2026-02");
   });
   it("says what changes, and for whom, from the survey's numbers", () => {
     expect(html).toContain("Know before you go");
     expect(html).toContain("For the person walking");
     expect(html).toContain("51 of 94");
-    expect(html).toContain("records the photos reached in Capitol Hill still need a visit. Every row is a suggestion.");
+    expect(html).toContain("records the photos reached in Capitol Hill still need a newer photo or a field check. Every row is a suggestion.");
     expect(html).toContain("For the next question");
     expect(html).toContain("Muse Spark added &quot;fire hydrant&quot; to a finished survey of Capitol Hill. Nobody walked the street again.");
   });

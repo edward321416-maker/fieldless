@@ -199,7 +199,7 @@ export default function ActionHub({
               onClick={() => setTab("asset")}
             >
               Update list
-              <span className="action-tab-badge">{scan.asset_check.no_visit}/{scan.asset_check.totals.in_view}</span>
+              <span className="action-tab-badge" title="Candidates for desk review out of the city records the photos reached. Not a measured count of avoided site visits.">{scan.asset_check.no_visit}/{scan.asset_check.totals.in_view}</span>
             </button>
           )}
           {!scan.asset_check && (

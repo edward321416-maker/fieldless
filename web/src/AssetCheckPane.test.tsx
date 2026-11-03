@@ -33,9 +33,11 @@ function row(over: Partial<AssetRow> = {}): AssetRow {
 describe("AssetCheckPane", () => {
   const html = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} />);
 
-  it("opens with how many places need no site visit", () => {
+  it("opens with how many records are candidates for desk review, not how many visits were avoided", () => {
     expect(html).toContain("<strong>107</strong> Seattle records in the photos&#x27; view");
-    expect(html).toContain("<strong>43</strong> need no site visit and <strong>64</strong> do");
+    expect(html).toContain("<strong>43</strong> are candidates for desk review and <strong>64</strong> need a newer photo or a field check");
+    expect(html).toContain("not a measured count of avoided site visits");
+    expect(html).not.toContain("need no site visit");
     expect(html).toContain("<strong>26</strong> more objects are not on the city&#x27;s lists, 7 of them not settled");
   });
 
@@ -43,7 +45,7 @@ describe("AssetCheckPane", () => {
     const reached = { ...summary, totals: { ...counts, in_area: 3292 } };
     const out = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={reached} findings={[]} missed={[]} />);
     expect(out).toContain("Of <strong>3,292</strong> Seattle records in the survey&#x27;s box or its photos&#x27; view, the photos reached <strong>107</strong>:");
-    expect(out).toContain("<strong>43</strong> need no site visit and <strong>64</strong> do");
+    expect(out).toContain("<strong>43</strong> are candidates for desk review and <strong>64</strong> need a newer photo or a field check");
   });
 
   it("gives every asset the same row, in columns that fit the panel", () => {
@@ -219,5 +221,51 @@ describe("rowTarget", () => {
 
   it("has nothing to show when neither is there", () => {
     expect(rowTarget(row({ evidence: null }), [finding], [])).toBeNull();
+  });
+});
+
+describe("an object seen is not an attribute checked", () => {
+  const open = row({ action: "Visit on site", attribute_field: "IS_STREETLIGHT", attribute_state: "unsettled",
+    attribute_note: "Holds a street light: the photo is too unclear, cropped or far away to answer it",
+    action_if_attribute_agrees: "Update the date",
+    visit_reason: "The record is there in a photo, but the city's 'Holds a street light' is not settled. A newer photo or a field check is needed." });
+  const html = renderToStaticMarkup(<AssetRowCard row={open} scan={scan} />);
+
+  it("keeps the row's status and dates and names the attribute that is still open", () => {
+    expect(html).toContain("Seen in photo");
+    expect(html).toContain("2019-03");
+    expect(html).toContain("IS_STREETLIGHT: unsettled");
+    expect(html).toContain("too unclear, cropped or far away");
+  });
+  it("says why it is a visit and what it would be if the attribute agreed", () => {
+    expect(html).toContain("A newer photo or a field check is needed.");
+    expect(html).toContain("If the attribute agreed");
+    expect(html).toContain("Update the date");
+  });
+  it("shows a row from before the attribute fields exactly as it was", () => {
+    const plain = renderToStaticMarkup(<AssetRowCard row={row()} scan={scan} />);
+    expect(plain).not.toContain("Attribute");
+    expect(plain).not.toContain("Why a visit");
+  });
+
+  const withAttributes: AssetCheckSummary = { ...summary, actions: { "Visit on site": 64, "Compare with the list": 26 }, desk_review_candidates: 43, visits_attribute_unresolved: 14,
+    attribute_checks: { required: 28, agree: 7, different: 1, unsettled: 14, not_checked: 6, open_by: { unclear: 14, no_check: 6 } } };
+  const pane = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={withAttributes} findings={[]} missed={[]} />);
+  it("says how many seen records have an attribute left open, and that seen is not checked", () => {
+    expect(pane).toContain("Seen in a photo is not the same as checked: 20 of the 28 seen records with an attribute to check have it open");
+    expect(pane).toContain("14 unsettled and 6 not checked");
+  });
+  it("names the visit rows as needing a newer photo or a field check", () => {
+    expect(pane).toContain("These need a newer photo or a field check.");
+    expect(pane).not.toContain("or a site visit");
+  });
+  it("does not mention attributes for a list made before them", () => {
+    const old = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={summary} findings={[]} missed={[]} />);
+    expect(old).not.toContain("not the same as checked");
+  });
+  it("calls an AI assistant's check a prototype, not an independent evaluation", () => {
+    const checked = { ...summary, trust: { ...summary.trust, findings: { n: 57, yes: 43, no: 3, unclear: 11 } } };
+    const out = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={checked} findings={[]} missed={[]} />);
+    expect(out).toContain("a prototype check by an AI assistant, not an independent evaluation");
   });
 });

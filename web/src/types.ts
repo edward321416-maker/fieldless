@@ -154,12 +154,26 @@ export interface AssetCounts {
   in_area?: number; // city records in the survey's box: those in view and those no photo reached
 }
 
+export interface AttributeCounts {
+  required: number;
+  agree: number;
+  different: number;
+  unsettled: number;
+  not_checked: number;
+  open_by: Record<string, number>; // why the open ones are open
+}
+
 export interface AssetCheckSummary {
   city: string;
-  items: (AssetCounts & { item: string; asset: string; city_list: string; actions: Record<string, number> })[];
+  items: (AssetCounts & { item: string; asset: string; city_list: string; actions: Record<string, number>;
+    attribute_checks?: AttributeCounts })[];
   totals: AssetCounts;
   actions: Record<string, number>; // rows per action
-  no_visit: number; // city records that need no site visit
+  no_visit: number; // key kept for older lists: city records that are candidates for desk review, not a measured count of avoided visits
+  desk_review_candidates?: number; // the same number under its honest name
+  // seen records whose city list has a yes or no a photo can answer: how that check ended. Seen is not checked.
+  attribute_checks?: AttributeCounts;
+  visits_attribute_unresolved?: number; // visit rows that are there in a photo but have an open attribute
   compare_unsure: number; // objects on no list that nobody could settle
   visits_with_photo?: number; // visits with a photo of their own or a survey photo from nearby
   date_gap_years?: number; // median gap between the city's date and a newer photo, on the rows that update a date
@@ -209,6 +223,12 @@ export interface AssetRow {
   box: number[] | null;
   evidence: Evidence | null;
   nearby_photo?: NearbyPhoto;
+  // where the city list has a yes or no a photo can answer: an object seen says nothing about it (eval.attribute_state)
+  attribute_field?: string;
+  attribute_state?: "agree" | "different" | "unsettled" | "not_checked";
+  attribute_note?: string;
+  action_if_attribute_agrees?: string; // a visit row waiting on its attribute: what it would suggest if that agreed
+  visit_reason?: string; // why a visit row needs a newer photo or a field check
 }
 
 export type UnreachedEntry = [string, number, number] | [string, number, number, string[]];

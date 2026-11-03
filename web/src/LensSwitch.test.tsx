@@ -13,7 +13,8 @@ describe("the map's views", () => {
   it("keys the update list's dots with the list's own numbers", () => {
     const html = render("update", { noVisit: 43, visit: 51 });
     expect(html).toContain("51 visit on site");
-    expect(html).toContain("43 no site visit");
+    expect(html).toContain("43 desk review candidates");
+    expect(html).not.toContain("no site visit");
     expect(html).not.toContain("Matched");
   });
   it("names the records no photo reached, in every view", () => {

@@ -37,7 +37,7 @@ export default function LensSwitch({ lens, onChange, update }: { lens: Lens; onC
         {lens === "update" && update && (
           <>
             <span className="hud-pill"><i className="shape shape-visit" />{update.visit} visit on site</span>
-            <span className="hud-pill"><i className="shape shape-no-visit" />{update.noVisit} no site visit</span>
+            <span className="hud-pill"><i className="shape shape-no-visit" />{update.noVisit} desk review {update.noVisit === 1 ? "candidate" : "candidates"}</span>
             {update.unreached ? <span className="hud-pill"><i className="shape shape-unreached" />{count(update.unreached)} not reached</span> : null}
           </>
         )}

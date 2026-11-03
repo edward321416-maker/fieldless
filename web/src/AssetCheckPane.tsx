@@ -64,6 +64,7 @@ export function NearbyPhotoLink({ photo }: { photo: NearbyPhoto }) {
 }
 
 export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan; onShow?: () => void }) {
+  const open = row.attribute_state === "unsettled" || row.attribute_state === "not_checked";
   const facts: [string, string][] = [
     ["City says", row.city_says],
     ["Photo shows", row.photo_shows],
@@ -73,6 +74,10 @@ export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan;
     ["How seen", row.how_seen],
     ["Photo newer than city date", row.photo_newer_than_city_date],
     ["Models unsure", row.models_unsure],
+    // an object seen is not an attribute checked: which field is still open, and what the row would be if it agreed
+    ["Attribute", row.attribute_field && row.attribute_state ? `${row.attribute_field}: ${row.attribute_state.replace("_", " ")}. ${row.attribute_note ?? ""}`.trim() : ""],
+    ["If the attribute agreed", open ? row.action_if_attribute_agrees ?? "" : ""],
+    ["Why a visit", row.visit_reason ?? ""],
   ];
   return (
     <li className="asset-row">
@@ -138,8 +143,10 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
   const secondLooks = summary.trust.second_looks_usd;
   const checked = summary.trust.findings;
   const findingsChecked = checked
-    ? `An AI assistant checked ${checked.n} findings on their photos: ${checked.yes} right, ${checked.no} wrong, ${checked.unclear} could not be told.`
+    ? `An AI assistant checked ${checked.n} findings on their photos: ${checked.yes} right, ${checked.no} wrong, ${checked.unclear} could not be told. This is a prototype check by an AI assistant, not an independent evaluation.`
     : null;
+  const attributes = summary.attribute_checks;
+  const attributesOpen = attributes ? attributes.unsettled + attributes.not_checked : 0;
 
   const show = (row: AssetRow) => {
     const target = rowTarget(row, findings, missed);
@@ -161,13 +168,21 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
           ? <>Of <strong>{count(totals.in_area)}</strong> {summary.city} records in the survey's box or its photos' view, the photos reached{" "}
             <strong>{totals.in_view}</strong>: </>
           : <>Of <strong>{totals.in_view}</strong> {summary.city} records in the photos' view, </>}
-        <strong>{summary.no_visit}</strong> need no site visit and <strong>{visits}</strong> {visits === 1 ? "does" : "do"}.
+        <strong>{summary.no_visit}</strong> {summary.no_visit === 1 ? "is a candidate" : "are candidates"} for desk review and <strong>{visits}</strong>{" "}
+        {visits === 1 ? "needs" : "need"} a newer photo or a field check.
         {objects > 0 && <> <strong>{objects}</strong> more objects are not on the city's lists{summary.compare_unsure > 0 ? `, ${summary.compare_unsure} of them not settled` : ""}.</>}
       </p>
       <p className="hint small">
-        Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records.
+        Seen: {seenHow(totals.seen_by)}. Every row is a suggestion. Nothing here changes the city's records. Candidates for desk review are
+        not a measured count of avoided site visits.
         {findingsChecked && <> {findingsChecked}</>}
       </p>
+      {attributes && (
+        <p className="hint small">
+          Seen in a photo is not the same as checked: {attributesOpen} of the {attributes.required} seen records with an attribute to check have it open
+          ({attributes.unsettled} unsettled and {attributes.not_checked} not checked). Each is a visit row that says which attribute and why.
+        </p>
+      )}
       {secondLooks !== undefined && (
         <p className="hint small">The survey cost {dollars(scan.cost_usd)}. The second looks behind this list, run separately, cost {dollars(secondLooks)} more.</p>
       )}
@@ -175,7 +190,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
       {summary.credit && <p className="hint small">{summary.credit}</p>}
       <table className="asset-table">
         <thead>
-          <tr><th scope="col">Asset</th><th scope="col">In view</th><th scope="col">No visit</th><th scope="col">Visit</th>
+          <tr><th scope="col">Asset</th><th scope="col">In view</th><th scope="col">Desk review</th><th scope="col">Photo or field check</th>
             <th scope="col">Compare</th></tr>
         </thead>
         <tbody>
@@ -209,7 +224,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
       <ul className="asset-rows">
         {shown.map((r) => <AssetRowCard key={`${r.item} ${r.city_record} ${r.evidence?.url ?? ""} ${r.lat}`} row={r} scan={scan} onShow={show(r)} />)}
       </ul>
-      {action === VISIT && <p className="hint small">Not determined does not mean missing. These need a newer photo or a site visit.</p>}
+      {action === VISIT && <p className="hint small">Not determined does not mean missing. These need a newer photo or a field check.</p>}
       {rows.length > SHOWN && (
         <button type="button" className="link-button action-more-btn" onClick={() => setExpanded((v) => !v)}>
           {expanded ? "Show fewer" : `Show all ${rows.length}`}

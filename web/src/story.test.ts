@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM } from "./benchmarks";
 import { changeCards, compareLine, controlCheck, dotKey, hardestExample, nearbyOf, photoSpan, reachCheck, reachLine, recordFunnel,
-  unreachedRecord, updateDots, visitLine } from "./story";
+  recordLine, unreachedRecord, updateDots, visitLine } from "./story";
 import type { AssetCheckSummary, AssetRow, Scan } from "./types";
 
 const check = (over: Partial<AssetCheckSummary> = {}) => ({
@@ -39,9 +39,9 @@ describe("from the city's records to the update list", () => {
     expect(recordFunnel(check({ totals })).map((s) => s.n)).toEqual([94, 0, 9, 43]);
   });
   it("says what the visits left are made of, in numbers that add up", () => {
-    expect(visitLine(check())).toBe("The other 51 need a visit: 41 the photos could not settle and 10 were seen but not sure enough.");
+    expect(visitLine(check())).toBe("The other 51 need a newer photo or a field check: 41 the photos could not settle and 10 were seen but not sure enough.");
     const totals = { ...check().totals, not_determined: 51 };
-    expect(visitLine(check({ totals }))).toBe("The other 51 need a visit: 51 the photos could not settle.");
+    expect(visitLine(check({ totals }))).toBe("The other 51 need a newer photo or a field check: 51 the photos could not settle.");
   });
   it("names the objects on no list and how many are not settled", () => {
     expect(compareLine(check())).toBe("26 more objects are not on the city's lists, 7 of them not settled.");
@@ -91,13 +91,13 @@ describe("what changes", () => {
   it("says who gains what, from the survey's own numbers", () => {
     const cards = changeCards(full, "Seattle (Ballard)", run);
     expect(cards.map((c) => c.big)).toEqual(["51 of 94", "8.2 years", "$0.61"]);
-    expect(cards[0].text).toBe("records the photos reached in Seattle (Ballard) still need a visit, each with a survey photo, of the place or from nearby. See what the place looks like before you leave. Every row is a suggestion.");
+    expect(cards[0].text).toBe("records the photos reached in Seattle (Ballard) still need a newer photo or a field check, each with a survey photo, of the place or from nearby. See what the place looks like before you leave. Every row is a suggestion.");
     expect(cards[1].text).toBe("median gap between the city's date and a newer photo, on 26 records in Seattle (Ballard). Review each from a desk; the city decides.");
     expect(cards[2].text).toBe('Muse Spark added "fire hydrant" to a finished survey of Seattle (Capitol Hill). Nobody walked the street again.');
   });
   it("promises a photo only when every visit has one", () => {
     const [first] = changeCards(check({ visits_with_photo: 50 }), "Ballard");
-    expect(first.text).toBe("records the photos reached in Ballard still need a visit. Every row is a suggestion.");
+    expect(first.text).toBe("records the photos reached in Ballard still need a newer photo or a field check. Every row is a suggestion.");
   });
   it("leaves out what the survey has no number for", () => {
     expect(changeCards(undefined, null)).toEqual([]);
@@ -138,5 +138,33 @@ describe("the update list on the map", () => {
   });
   it("keys a row the same way the map's click looks it up", () => {
     expect(updateDots([row()])[0].key).toBe(dotKey(row()));
+  });
+});
+
+describe("a record that is there but whose field the photos left open", () => {
+  const open = { attribute_checks: { required: 28, agree: 7, different: 1, unsettled: 14, not_checked: 6, open_by: { unclear: 14, no_check: 6 } },
+    visits_attribute_unresolved: 14, desk_review_candidates: 29, no_visit: 29 };
+  const reason = "The record is there in a photo, but the city's 'Holds a street light' is not settled. A newer photo or a field check is needed.";
+  it("counts the candidates for desk review, not the visits avoided", () => {
+    expect(recordFunnel(check(open)).slice(-1)[0]).toEqual({ n: 29, label: "candidates for desk review" });
+  });
+  it("splits the visits left by why the photos did not settle them, in numbers that add up", () => {
+    expect(visitLine(check(open))).toBe("The other 65 need a newer photo or a field check: 41 the photos could not settle, 14 were seen but a field "
+      + "the city keeps for them is still open and 10 were seen but not sure enough.");
+  });
+  it("says what a visit row is when the object is there and its field is open", () => {
+    const r = row({ status: "Seen in photo", seen_in_photo_on: "2026-07-01", action: "Visit on site", visit_reason: reason });
+    expect(recordLine(r)).toBe(`Seen in a photo of 2026-07-01; the survey itself did not find it. ${reason}`);
+  });
+  it("tells on the map which attribute is open on a visit dot", () => {
+    const dot = updateDots([row({ attribute_field: "IS_STREETLIGHT", attribute_state: "unsettled" })])[0];
+    expect(dot.tip).toBe("Street tree TRE-1 · Visit on site · IS_STREETLIGHT not settled");
+    expect(updateDots([row({ attribute_field: "IS_STREETLIGHT", attribute_state: "not_checked" })])[0].tip).toContain("IS_STREETLIGHT not checked");
+    expect(updateDots([row({ attribute_field: "IS_STREETLIGHT", attribute_state: "agree", action: "No change" })])[0].tip)
+      .toBe("Street tree TRE-1 · No change");
+  });
+  it("keeps the old line for a record the photos did not settle at all", () => {
+    expect(recordLine(row({ status: "Not determined" }))).toContain("Check on site or in the photos.");
+    expect(recordLine(undefined)).toContain("Check on site or in the photos.");
   });
 });
