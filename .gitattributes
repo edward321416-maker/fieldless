@@ -1,0 +1,2 @@
+# bytes are the point of these files: no line-ending conversion on any machine
+tests/fixtures/ledger_interop/* -text

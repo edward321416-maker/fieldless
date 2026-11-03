@@ -50,11 +50,16 @@ def journal_of(*records, check=CHECK, **over):
     return fx.journal(*[fx.decision(check, r, **over) for r in records])
 
 
-def reject(city, tmp_path, check, journal, fragment, out=None):
+def run(check, journal, city, out, town=fx.TOWN, **kw):
+    """ledger_apply.apply with the fixture's city file as the trusted one, unless told otherwise."""
+    return ledger_apply.apply(check, journal, city, out, town=town, **kw)
+
+
+def reject(city, tmp_path, check, journal, fragment, out=None, town=fx.TOWN):
     out = out or tmp_path / "out"
     before_in, before_parent = digest(city), sorted(p.name for p in tmp_path.iterdir())
     with pytest.raises(LedgerError) as raised:
-        ledger_apply.apply(check, journal, city, out)
+        ledger_apply.apply(check, journal, city, out, town=town)
     assert fragment in " | ".join(raised.value.problems), raised.value.problems
     assert digest(city) == before_in  # the original folder is untouched
     assert sorted(p.name for p in tmp_path.iterdir()) == before_parent  # nothing written, not even a staging folder
@@ -76,7 +81,7 @@ def retarget(check, record, **over):
 def test_a_change_is_applied_to_a_new_copy_and_the_original_folder_stays_as_it_was(city, tmp_path):
     out = tmp_path / "out"
     before = digest(city)
-    audit = ledger_apply.apply(CHECK, journal_of("P1"), city, out)
+    audit = run(CHECK, journal_of("P1"), city, out)
     assert digest(city) == before
     changed = load(out / "assets" / "poles.geojson")
     original = load(city / "assets" / "poles.geojson")
@@ -86,14 +91,15 @@ def test_a_change_is_applied_to_a_new_copy_and_the_original_folder_stays_as_it_w
     assert list(changed["features"][0]["properties"]) == list(original["features"][0]["properties"])  # key order
     assert changed["features"][0]["properties"]["NOTE"] == "caf\u00e9"
     assert (out / "assets" / "trees.geojson").read_bytes() == (city / "assets" / "trees.geojson").read_bytes()
-    assert (out / "other.geojson").read_bytes() == (city / "other.geojson").read_bytes()
+    assert (out / "litter.geojson").read_bytes() == (city / "litter.geojson").read_bytes()
+    assert not (out / "other.geojson").exists()  # only the city file's layers are copied
     assert not (out / "notes.txt").exists()  # only the layers are copied
     assert audit["applied"] == 1 and audit["changes"][0]["after"] == "NO"
 
 
 def test_the_audit_names_what_changed_who_said_so_and_what_it_does_not_mean(city, tmp_path):
     out = tmp_path / "out"
-    ledger_apply.apply(CHECK, fx.journal(fx.decision(CHECK, "P1"), fx.decision(
+    run(CHECK, fx.journal(fx.decision(CHECK, "P1"), fx.decision(
         CHECK, "TRE-90000", decision="observe", field=None, proposed_value=None),
         fx.decision(CHECK, "P3", decision="hold", field=None, proposed_value=None)), city, out)
     audit = load(out / "_ledger_review" / "audit.json")
@@ -108,7 +114,7 @@ def test_the_audit_names_what_changed_who_said_so_and_what_it_does_not_mean(city
     files = audit["files"]
     assert files["assets/poles.geojson"]["changed"] is True and files["assets/trees.geojson"]["changed"] is False
     assert files["assets/poles.geojson"]["input_sha256"] != files["assets/poles.geojson"]["output_sha256"]
-    assert files["other.geojson"]["input_sha256"] == files["other.geojson"]["output_sha256"]
+    assert files["litter.geojson"]["input_sha256"] == files["litter.geojson"]["output_sha256"]
     assert str(tmp_path) not in json.dumps(audit)  # no local path in the audit
     assert (out / "_ledger_review" / "changes.csv").read_text(encoding="utf-8").count("\n") >= 2
     assert (out / "_ledger_review" / "observations.csv").is_file()
@@ -118,9 +124,9 @@ def test_the_audit_names_what_changed_who_said_so_and_what_it_does_not_mean(city
 def test_an_observation_or_a_hold_alone_changes_no_layer(city, tmp_path):
     out = tmp_path / "out"
     obs = fx.decision(CHECK, "TRE-90000", decision="observe", field=None, proposed_value=None)
-    ledger_apply.apply(CHECK, fx.journal(obs), city, out)
-    layers = {k: v for k, v in digest(out).items() if k.endswith(".geojson")}
-    assert layers == {k: v for k, v in digest(city).items() if k.endswith(".geojson")}
+    run(CHECK, fx.journal(obs), city, out)
+    layers = {k: v for k, v in digest(out).items() if k.endswith(".geojson")}  # the city file's layers only
+    assert layers == {k: v for k, v in digest(city).items() if k.endswith(".geojson") and k != "other.geojson"}
     assert load(out / "_ledger_review" / "audit.json")["applied"] == 0
 
 
@@ -129,7 +135,7 @@ def test_numbers_other_members_and_unicode_of_a_layer_survive_the_rewrite(tmp_pa
     layers["pole"][0]["properties"].update(BIG=12345678901234567890, TINY=1e-07, KEEP=1.10, KO="\ud55c\uae00 \U0001f600")
     city = write_input(tmp_path / "city", layers)
     check = fx.make_check(layer_map=layers)
-    ledger_apply.apply(check, fx.journal(fx.decision(check, "P1")), city, tmp_path / "out")
+    run(check, fx.journal(fx.decision(check, "P1")), city, tmp_path / "out")
     changed = load(tmp_path / "out" / "assets" / "poles.geojson")
     props = changed["features"][0]["properties"]
     assert (props["BIG"], props["TINY"], props["KEEP"], props["KO"]) == (12345678901234567890, 1e-07, 1.10, "\ud55c\uae00 \U0001f600")
@@ -184,12 +190,19 @@ def test_an_unsafe_layer_name_in_a_check_never_reaches_the_filesystem(city, tmp_
     reject(city, tmp_path, check, journal_of("P1", check=check), "unsafe layer")
 
 
+def observe(check, record):
+    return fx.journal(fx.decision(check, record, decision="observe", field=None, proposed_value=None))
+
+
 def test_a_layer_file_missing_or_found_twice_is_refused(city, tmp_path):
     gone = retarget(CHECK, "P1", layer="gone.geojson")
-    reject(city, tmp_path, gone, journal_of("P1", check=gone), "no layer file")
+    reject(city, tmp_path, gone, journal_of("P1", check=gone), "not one of the city's layers")
+    # an observation alone needs no city file: its layer is then found by its name in the folder
+    gone_obs = retarget(CHECK, "TRE-90000", layer="gone.geojson")
+    reject(city, tmp_path, gone_obs, observe(gone_obs, "TRE-90000"), "no layer file", town=None)
     (city / "assets" / "copy").mkdir()
-    (city / "assets" / "copy" / "poles.geojson").write_bytes((city / "assets" / "poles.geojson").read_bytes())
-    reject(city, tmp_path, CHECK, journal_of("P1"), "more than one layer file")
+    (city / "assets" / "copy" / "trees.geojson").write_bytes((city / "assets" / "trees.geojson").read_bytes())
+    reject(city, tmp_path, CHECK, observe(CHECK, "TRE-90000"), "more than one layer file", town=None)
 
 
 def test_a_layer_that_is_not_a_feature_collection_or_has_nan_is_refused(city, tmp_path):
@@ -205,24 +218,24 @@ def test_an_existing_output_is_never_overwritten(city, tmp_path):
     out.mkdir()
     (out / "keep.txt").write_text("mine", encoding="utf-8")
     with pytest.raises(LedgerError) as raised:
-        ledger_apply.apply(CHECK, journal_of("P1"), city, out)
+        run(CHECK, journal_of("P1"), city, out)
     assert "already exists" in " ".join(raised.value.problems)
     assert [p.name for p in out.iterdir()] == ["keep.txt"] and (out / "keep.txt").read_text(encoding="utf-8") == "mine"
     empty = tmp_path / "empty"
     empty.mkdir()
     reject_existing = pytest.raises(LedgerError)
     with reject_existing:
-        ledger_apply.apply(CHECK, journal_of("P1"), city, empty)
+        run(CHECK, journal_of("P1"), city, empty)
     plain_file = tmp_path / "afile"
     plain_file.write_text("x", encoding="utf-8")
     with pytest.raises(LedgerError):
-        ledger_apply.apply(CHECK, journal_of("P1"), city, plain_file)
+        run(CHECK, journal_of("P1"), city, plain_file)
 
 
 def test_the_output_cannot_be_the_input_inside_it_or_around_it(city, tmp_path):
     for out in (city, city / "revised", tmp_path):
         with pytest.raises(LedgerError) as raised:
-            ledger_apply.apply(CHECK, journal_of("P1"), city, out)
+            run(CHECK, journal_of("P1"), city, out)
         assert "input folder" in " ".join(raised.value.problems) or "already exists" in " ".join(raised.value.problems)
     assert not (city / "revised").exists()
 
@@ -243,12 +256,16 @@ def test_a_journal_for_another_scan_writes_nothing(city, tmp_path):
     reject(city, tmp_path, CHECK, fx.journal(fx.decision(CHECK, "P1"), scan_id=99), "scan_id")
 
 
-def test_the_cli_applies_and_reports_and_a_rejection_exits_2_without_writing(city, tmp_path, capsys):
+def test_the_cli_applies_and_reports_and_a_rejection_exits_2_without_writing(city, tmp_path, capsys, monkeypatch):
     check_path, journal_path = tmp_path / "asset_check.json", tmp_path / "journal.json"
     check_path.write_text(json.dumps(CHECK), encoding="utf-8")
     journal_path.write_text(json.dumps(journal_of("P1")), encoding="utf-8")
     out = tmp_path / "revised"
     args = ["--check", str(check_path), "--journal", str(journal_path), "--input-dir", str(city), "--output-dir", str(out)]
+    assert ledger_apply.main(args) == 2  # a change is never applied without a trusted city file
+    assert "--city" in capsys.readouterr().err and not out.exists()
+    monkeypatch.setattr(ledger_apply, "load_city", lambda name: copy.deepcopy(fx.TOWN))
+    args += ["--city", "testville"]
     assert ledger_apply.main(args) == 0
     assert "1 change" in capsys.readouterr().out and (out / "_ledger_review" / "audit.json").is_file()
     assert ledger_apply.main(args) == 2  # the output now exists
@@ -269,7 +286,8 @@ def test_a_layer_that_is_a_link_out_of_the_folder_is_refused(city, tmp_path):
         os.symlink(outside, city / "assets" / "poles.geojson")
     except OSError:
         pytest.skip("symlinks need privileges here")
-    reject(city, tmp_path, CHECK, journal_of("P1"), "outside the input folder")
+    reject(city, tmp_path, CHECK, journal_of("P1"), "inside the input folder")
+    reject(city, tmp_path, CHECK, observe(CHECK, "P1"), "outside the input folder", town=None)
 
 
 def decoy(root: Path):
@@ -282,27 +300,24 @@ def decoy(root: Path):
 
 def test_a_layer_name_found_in_several_folders_needs_the_city_file_to_say_which(city, tmp_path):
     decoy(city)
-    reject(city, tmp_path, CHECK, journal_of("P1"), "more than one layer file")
+    reject(city, tmp_path, CHECK, observe(CHECK, "P1"), "more than one layer file", town=None)
     out = tmp_path / "out"
-    paths = {"poles.geojson": "assets/poles.geojson", "trees.geojson": "assets/trees.geojson"}
-    audit = ledger_apply.apply(CHECK, journal_of("P1"), city, out, layer_paths=paths)
+    audit = run(CHECK, journal_of("P1"), city, out)
     assert audit["applied"] == 1
     assert load(out / "assets" / "poles.geojson")["features"][0]["properties"]["IS_LIGHT"] == "NO"
-    assert sorted(digest(out)) == sorted(["assets/poles.geojson", "assets/trees.geojson",
+    assert sorted(digest(out)) == sorted(["assets/poles.geojson", "assets/trees.geojson", "litter.geojson",
                                           "_ledger_review/audit.json", "_ledger_review/changes.csv",
                                           "_ledger_review/journal.json", "_ledger_review/observations.csv"])
     assert not (out / "other_area").exists()  # only the city's configured layers are copied
 
 
 def test_a_layer_the_city_file_does_not_name_or_names_outside_the_folder_is_refused(city, tmp_path):
-    with pytest.raises(LedgerError) as raised:
-        ledger_apply.apply(CHECK, journal_of("P1"), city, tmp_path / "out", layer_paths={"trees.geojson": "assets/trees.geojson"})
-    assert "not one of the city's layers" in " ".join(raised.value.problems)
+    no_pole = {"items": {k: v for k, v in fx.TOWN["items"].items() if k != "pole"}}
+    reject(city, tmp_path, CHECK, journal_of("P1"), "not an item of the city file", town=no_pole)
     for bad in ("../city2/poles.geojson", "/etc/poles.geojson", "assets/../../poles.geojson", "assets/gone.geojson"):
-        with pytest.raises(LedgerError) as raised:
-            ledger_apply.apply(CHECK, journal_of("P1"), city, tmp_path / "out", layer_paths={"poles.geojson": bad})
-        assert "layer" in " ".join(raised.value.problems)
-    assert not (tmp_path / "out").exists()
+        town = copy.deepcopy(fx.TOWN)
+        town["items"]["pole"]["layer"] = bad
+        reject(city, tmp_path, CHECK, journal_of("P1"), "layer", town=town)
 
 
 def test_layer_paths_are_read_from_a_city_file_and_skip_a_basename_two_items_share():
@@ -313,14 +328,13 @@ def test_layer_paths_are_read_from_a_city_file_and_skip_a_basename_two_items_sha
 
 def test_the_cli_takes_the_city_file_to_tell_same_named_layers_apart(city, tmp_path, monkeypatch, capsys):
     decoy(city)
-    monkeypatch.setattr(ledger_apply, "load_city", lambda name: {"items": {
-        "pole": {"layer": "assets/poles.geojson"}, "tree": {"layer": "assets/trees.geojson"}, "can": {"layer": "litter.geojson"}}})
+    monkeypatch.setattr(ledger_apply, "load_city", lambda name: copy.deepcopy(fx.TOWN))
     check_path, journal_path = tmp_path / "c.json", tmp_path / "j.json"
     check_path.write_text(json.dumps(CHECK), encoding="utf-8")
     journal_path.write_text(json.dumps(journal_of("P1")), encoding="utf-8")
     base = ["--check", str(check_path), "--journal", str(journal_path), "--input-dir", str(city)]
     assert ledger_apply.main([*base, "--output-dir", str(tmp_path / "no_city")]) == 2
-    assert "more than one layer file" in capsys.readouterr().err
+    assert "--city" in capsys.readouterr().err and not (tmp_path / "no_city").exists()
     assert ledger_apply.main([*base, "--city", "testville", "--output-dir", str(tmp_path / "with_city")]) == 0
 
 
@@ -357,4 +371,96 @@ def test_a_source_made_before_positions_were_hashed_is_still_applied_on_its_prop
     del src["position_sha256"]
     src["review_key"] = ledger_review.review_key(check["scan_id"], row["item"], src["layer"], src["record_key"],
                                                  src["record_id"], src["properties_sha256"], row["evidence"], row["box"])
-    assert ledger_apply.apply(check, journal_of("P1", check=check), city, tmp_path / "out")["applied"] == 1
+    assert run(check, journal_of("P1", check=check), city, tmp_path / "out")["applied"] == 1
+
+
+# --- the whitelist comes from the city's own file, never from the downloaded check -------------------------------------
+
+def test_a_hand_edited_check_cannot_offer_a_field_the_city_file_does_not_name(city, tmp_path):
+    check = copy.deepcopy(CHECK)
+    row = fx.row_of(check, "P1")
+    row["ledger_source"]["editable_fields"]["NOTE"] = {"before": "caf\u00e9", "yes": "caf\u00e9", "no": "X", "question": "",
+                                                       "suggested": None}
+    journal = fx.journal(fx.decision(check, "P1", field="NOTE", proposed_value="X"))
+    assert ledger_review.validate_journal(check, journal)  # the journal check alone trusts the check ...
+    reject(city, tmp_path, check, journal, "configured")  # ... the application does not
+
+
+def test_a_hand_edited_check_cannot_mint_other_yes_no_values(city, tmp_path):
+    check = copy.deepcopy(CHECK)
+    fx.row_of(check, "P1")["ledger_source"]["editable_fields"]["IS_LIGHT"].update(no="BROKEN")
+    reject(city, tmp_path, check, fx.journal(fx.decision(check, "P1", proposed_value="BROKEN")), "yes/no")
+
+
+def test_a_change_aimed_through_another_id_key_or_layer_is_refused(city, tmp_path):
+    by_note = retarget(CHECK, "P1", record_key="NOTE", record_id="caf\u00e9")
+    reject(city, tmp_path, by_note, journal_of("P1", check=by_note), "record key")
+    other_layer = retarget(CHECK, "P1", layer="trees.geojson")
+    reject(city, tmp_path, other_layer, journal_of("P1", check=other_layer), "layer")
+
+
+def test_a_date_field_named_by_a_city_file_is_still_refused(city, tmp_path):
+    town = copy.deepcopy(fx.TOWN)
+    town["items"]["pole"]["compare"]["field"] = "LAST_VERIFY_DATE"
+    check = copy.deepcopy(CHECK)
+    row = fx.row_of(check, "P1")
+    row["ledger_source"]["editable_fields"] = {"LAST_VERIFY_DATE": {"before": "YES", "yes": "YES", "no": "NO", "question": "",
+                                                                   "suggested": None}}
+    reject(city, tmp_path, check, fx.journal(fx.decision(check, "P1", field="LAST_VERIFY_DATE")), "not an editable field")
+    changes = [{"item": "pole", "layer": "poles.geojson", "record_key": "UNITID", "record_id": "P1", "decision": "change",
+                "field": "LAST_VERIFY_DATE", "before": "YES", "after": "NO"}]
+    assert "protected" in " ".join(ledger_review.city_problems(changes, town))
+
+
+def test_a_package_with_changes_needs_the_trusted_city_file(city, tmp_path):
+    reject(city, tmp_path, CHECK, journal_of("P1"), "city file", town=None)
+    reject(city, tmp_path, CHECK, journal_of("P1"), "city file", town={})
+
+
+def test_observations_and_holds_alone_need_no_city_file(city, tmp_path):
+    out = tmp_path / "out"
+    journal = fx.journal(fx.decision(CHECK, "TRE-90000", decision="observe", field=None, proposed_value=None),
+                         fx.decision(CHECK, "P3", decision="hold", field=None, proposed_value=None))
+    audit = ledger_apply.apply(CHECK, journal, city, out)
+    assert (audit["applied"], audit["observed"], audit["held"]) == (0, 1, 1)
+    assert audit["whitelist"]["checked_against_city_file"] is False
+
+
+def test_the_audit_says_the_whitelist_was_the_city_files(city, tmp_path):
+    audit = run(CHECK, journal_of("P1"), city, tmp_path / "out")
+    assert audit["whitelist"] == {"checked_against_city_file": True, "city": "Testville"}
+
+
+def test_the_configured_fields_of_the_shipped_city_files_pass_and_nothing_else_does():
+    from eval.city_check import load_city
+    town = load_city("seattle-ballard")
+    ok = [{"item": "utility_pole", "layer": "poles.geojson", "record_key": "ASSET_ID", "record_id": "1", "decision": "change",
+           "field": "IS_STREETLIGHT", "before": "YES", "after": "NO"},
+          {"item": "curb_ramp_warning", "layer": "curb_ramps.geojson", "record_key": "UNITID", "record_id": "2",
+           "decision": "change", "field": "DETWARN_EXISTS", "before": "N", "after": "Y"}]
+    assert ledger_review.city_problems(ok, town) == []
+    for over, fragment in (({"field": "CONDITION"}, "configured"), ({"field": "VERIFICATION_DATE"}, "configured"),
+                           ({"after": "MAYBE"}, "yes/no"), ({"before": "MAYBE"}, "yes/no"), ({"after": "YES"}, "no change"),
+                           ({"record_key": "COMPKEY"}, "record key"), ({"layer": "street_trees.geojson"}, "layer"),
+                           ({"item": "street_tree"}, "item")):
+        assert fragment in " ".join(ledger_review.city_problems([{**ok[0], **over}], town)), over
+
+
+@pytest.mark.parametrize("name", ["../seattle", "seattle/../nyc", "C:\\x", "", "SEATTLE", "seattle.toml", "a b"])
+def test_the_cli_takes_only_the_name_of_a_shipped_city_file(city, tmp_path, capsys, name):
+    check_path, journal_path = tmp_path / "c.json", tmp_path / "j.json"
+    check_path.write_text(json.dumps(CHECK), encoding="utf-8")
+    journal_path.write_text(json.dumps(journal_of("P1")), encoding="utf-8")
+    out = tmp_path / "out"
+    assert ledger_apply.main(["--check", str(check_path), "--journal", str(journal_path), "--input-dir", str(city),
+                              "--output-dir", str(out), "--city", name]) == 2
+    assert "city" in capsys.readouterr().err and not out.exists()
+
+
+def test_a_city_file_that_is_not_shipped_is_refused_before_anything_is_written(city, tmp_path, capsys):
+    check_path, journal_path = tmp_path / "c.json", tmp_path / "j.json"
+    check_path.write_text(json.dumps(CHECK), encoding="utf-8")
+    journal_path.write_text(json.dumps(journal_of("P1")), encoding="utf-8")
+    assert ledger_apply.main(["--check", str(check_path), "--journal", str(journal_path), "--input-dir", str(city),
+                              "--output-dir", str(tmp_path / "out"), "--city", "atlantis"]) == 2
+    assert "atlantis" in capsys.readouterr().err and not (tmp_path / "out").exists()

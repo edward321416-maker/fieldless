@@ -62,17 +62,20 @@ Every row is a suggestion for the city to decide on. The list changes nothing in
 
 Open **Review for ledger** in the Update list to check the record ID, position and dated photo. Confirm that it is the same asset and that its attribute is readable, choose the actual value, and enter a reviewer name and reason. Nearby records with photos taken seconds apart need another identity check. Nothing is approved by default. The entered reviewer name is a self-declared review, not an authenticated municipal approval.
 
-The browser prepares a review journal, a source snapshot, a changes CSV and a separate observations CSV. Reviews stay in the current tab: download them before leaving. Only explicitly reviewed changes to configured yes/no attributes enter the changes CSV. Photo dates never replace official inspection or verification dates; tree observations stay observations. Uncertain identity or unreadable evidence stays on hold. The review workspace also works on the static demo without writing to its server.
+The browser prepares a review journal, a source snapshot, a changes CSV and a separate observations CSV. Reviews stay in the current tab: download them before leaving. Only explicitly reviewed changes to configured yes/no attributes enter the changes CSV. Both CSV files are UTF-8 with one leading byte-order mark (so Excel reads Korean and accented text) and every row says in its own columns that the reviewer name is self-asserted (`reviewer_assertion`), that the change is prepared and not applied to any official ledger (`application_status`), and that the date is the photo's, not an inspection date (`date_meaning`). Photo dates never replace official inspection or verification dates; tree observations stay observations. Uncertain identity or unreadable evidence stays on hold. The review workspace also works on the static demo without writing to its server.
 
 To check the review against an authorized local copy of the city's GeoJSON layers and create a **separate revised copy**, run from the repository:
 
 ```bash
 python -m eval.ledger_apply --check ledger-review-scan30-source.json \
   --journal ledger-review-scan30-journal.json \
-  --input-dir path/to/current-city-layers --output-dir path/to/new-reviewed-copy
+  --input-dir path/to/current-city-layers --output-dir path/to/new-reviewed-copy \
+  --city seattle-ballard
 ```
 
-The tool checks the source snapshot, exact record ID, original properties, position and before value before writing any changes. Missing or duplicate IDs, stale data and disallowed fields reject the package. It preserves the input files and writes an audit alongside the new copy. The city's authorized operator still decides whether and how to import that copy into the official ledger. No city API or official ledger is changed by Fieldless.
+`--city` names a city file shipped in `eval/cities` (here `seattle-ballard`). A package with changes needs it: the item, layer, id key, the one yes/no field and its two raw values are taken from that file, not from the downloaded source snapshot, so a snapshot edited to offer another field or other values is refused. A package of observations and holds alone can be applied without it.
+
+The tool checks the source snapshot, exact record ID, original properties, position and before value before writing any changes. Missing or duplicate IDs, stale data and fields the city file does not allow reject the package, and nothing is written. It preserves the input files and writes an audit alongside the new copy. A layer that has a change is written again as compact JSON: every record, key order, number and character is kept, only the white space differs, so compare layers by record (the audit lists each change) rather than by line. The city's authorized operator still decides whether and how to import that copy into the official ledger. No city API or official ledger is changed by Fieldless.
 
 ## How it works
 

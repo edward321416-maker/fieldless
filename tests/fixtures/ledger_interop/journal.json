@@ -1,0 +1,62 @@
+{
+ "schema_version": 1,
+ "scan_id": 7,
+ "decisions": [
+  {
+   "review_key": "5bb4f957c964354002e14337509574b173ee409aa1db162a3c5043809c56cafb",
+   "record_id": "P1",
+   "item": "pole",
+   "identity": "confirmed",
+   "evidence": "clear",
+   "decision": "change",
+   "field": "IS_LIGHT",
+   "proposed_value": "NO",
+   "neighbors_checked": false,
+   "reviewer": "=김검토, \"Zoë\"",
+   "note": "+사유 \"확인\", café\n=둘째 줄",
+   "reviewed_at": "2026-11-04T09:30:00.000Z"
+  },
+  {
+   "review_key": "74b817ba1f6c438704d7933f1b0a53d1b8ee8d85277983bb1561d4ba49689509",
+   "record_id": "TRE-53943",
+   "item": "tree",
+   "identity": "confirmed",
+   "evidence": "clear",
+   "decision": "observe",
+   "field": null,
+   "proposed_value": null,
+   "neighbors_checked": true,
+   "reviewer": "@이름",
+   "note": "-관측, 'quoted'",
+   "reviewed_at": "2026-11-04T09:31:00.000Z"
+  },
+  {
+   "review_key": "6e9e0a9e49c00384e288d789abd58cf04e39148542b1cb3646b36faf35f75de3",
+   "record_id": "TRE-90000",
+   "item": "tree",
+   "identity": "confirmed",
+   "evidence": "clear",
+   "decision": "observe",
+   "field": null,
+   "proposed_value": null,
+   "neighbors_checked": false,
+   "reviewer": "Zoë",
+   "note": "plain",
+   "reviewed_at": "2026-11-04T09:32:00.000Z"
+  },
+  {
+   "review_key": "f47a9dfbd2928577c633d771726a2299a377ea81cbe5c7829063335b1a2d30a9",
+   "record_id": "P3",
+   "item": "pole",
+   "identity": "uncertain",
+   "evidence": "unclear",
+   "decision": "hold",
+   "field": null,
+   "proposed_value": null,
+   "neighbors_checked": false,
+   "reviewer": "A. Tester",
+   "note": "보류",
+   "reviewed_at": "2026-11-04T09:33:00.000Z"
+  }
+ ]
+}

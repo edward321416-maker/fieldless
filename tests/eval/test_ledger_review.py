@@ -20,7 +20,9 @@ def reject(check, journal, fragment):
 
 
 def rows_of(text):
-    return list(csv.reader(io.StringIO(text, newline="")))
+    """The cells of a CSV string the way Excel or pandas read it: one leading BOM is the file's, not a cell's."""
+    assert text.startswith("\ufeff") and not text.startswith("\ufeff\ufeff")
+    return list(csv.reader(io.StringIO(text[1:], newline="")))
 
 
 def test_a_complete_change_of_the_configured_field_is_approved_with_its_raw_values():
@@ -264,11 +266,16 @@ def test_a_check_edited_to_offer_a_date_or_id_field_still_cannot_change_it(field
 
 
 CHANGE_HEADER = ["review_key", "record_id", "item", "layer", "field", "before", "after", "identity", "evidence",
-                 "neighbors_checked", "reviewer", "note", "reviewed_at", "photo_observed_on", "photo_creator",
-                 "photo_link", "photo_license", "scan_id", "record_key", "properties_sha256"]
-OBSERVATION_HEADER = ["review_key", "record_id", "item", "layer", "photo_observed_on", "photo_creator", "photo_link",
-                      "photo_license", "identity", "evidence", "neighbors_checked", "reviewer", "note", "reviewed_at",
-                      "scan_id", "record_key", "properties_sha256"]
+                 "neighbors_checked", "reviewer", "reviewer_assertion", "note", "reviewed_at", "application_status",
+                 "photo_observed_on", "date_meaning", "photo_creator", "photo_link", "photo_license", "scan_id",
+                 "record_key", "properties_sha256"]
+OBSERVATION_HEADER = ["review_key", "record_id", "item", "layer", "photo_observed_on", "date_meaning", "photo_creator",
+                      "photo_link", "photo_license", "identity", "evidence", "neighbors_checked", "reviewer",
+                      "reviewer_assertion", "note", "reviewed_at", "application_status", "scan_id", "record_key",
+                      "properties_sha256"]
+ASSERTION = "Self-asserted by the reviewer in the app; not an authenticated municipal approval."
+APPLICATION_STATUS = "Prepared only. Not applied to any official ledger."
+DATE_MEANING = "Date of the photo (an observation). Not the city's inspection or verification date."
 
 
 def test_the_csv_headers_are_the_ones_the_app_writes_in_the_same_order():
@@ -278,8 +285,39 @@ def test_the_csv_headers_are_the_ones_the_app_writes_in_the_same_order():
     header, row = rows_of(ledger_review.observations_csv(CHECK, fx.journal(obs)))
     cells = dict(zip(header, row))
     assert cells["evidence"] == "clear" and cells["photo_creator"] == "photographer"
-    text = ledger_review.changes_csv(CHECK, fx.journal())
-    assert text.endswith("\r\n") and "\ufeff" not in text
+    assert ledger_review.changes_csv(CHECK, fx.journal()).endswith("\r\n")
+
+
+def test_both_files_carry_the_same_fixed_statements_on_every_row():
+    obs = fx.decision(CHECK, "TRE-90000", decision="observe", field=None, proposed_value=None)
+    for text in (ledger_review.changes_csv(CHECK, fx.journal(fx.decision(CHECK, "P1"))),
+                 ledger_review.observations_csv(CHECK, fx.journal(obs))):
+        header, row = rows_of(text)
+        cells = dict(zip(header, row))
+        assert (cells["reviewer_assertion"], cells["application_status"], cells["date_meaning"]) == (
+            ASSERTION, APPLICATION_STATUS, DATE_MEANING)
+    assert (ledger_review.ASSERTION, ledger_review.APPLICATION_STATUS, ledger_review.DATE_MEANING) == (
+        ASSERTION, APPLICATION_STATUS, DATE_MEANING)
+
+
+def test_the_csv_string_has_exactly_one_bom_and_its_bytes_do_not_add_another():
+    obs = fx.decision(CHECK, "TRE-90000", decision="observe", field=None, proposed_value=None)
+    for text in (ledger_review.changes_csv(CHECK, fx.journal()), ledger_review.observations_csv(CHECK, fx.journal(obs))):
+        assert text.startswith("\ufeff") and text.count("\ufeff") == 1
+        data = text.encode("utf-8")
+        assert data.startswith(b"\xef\xbb\xbf") and not data.startswith(b"\xef\xbb\xbf\xef\xbb\xbf")
+        assert data.decode("utf-8-sig") == text[1:]
+
+
+def test_korean_and_accented_names_with_formulas_quotes_and_newlines_survive_utf8_sig():
+    reviewer, note = '=김검토, "Zoë"', '+사유 "확인"\n=둘째 줄, café'
+    change = fx.decision(CHECK, "P1", reviewer=reviewer, note=note)
+    data = ledger_review.changes_csv(CHECK, fx.journal(change)).encode("utf-8")
+    header, row = list(csv.reader(io.StringIO(data.decode("utf-8-sig"), newline="")))
+    cells = dict(zip(header, row))
+    assert cells["reviewer"] == "'" + reviewer and cells["note"] == "'" + note
+    [approved] = ledger_review.validate_journal(CHECK, fx.journal(change))
+    assert approved["reviewer"] == reviewer and approved["note"] == note  # the raw journal values stay exact
 
 
 @pytest.mark.parametrize("kind", ["observe", "hold"])

@@ -204,6 +204,8 @@ def add_neighbor_warnings(rows: list[dict]) -> None:
 # --- the journal ---------------------------------------------------------------------------------------------------
 
 ASSERTION = "Self-asserted by the reviewer in the app; not an authenticated municipal approval."
+APPLICATION_STATUS = "Prepared only. Not applied to any official ledger."
+DATE_MEANING = "Date of the photo (an observation). Not the city's inspection or verification date."
 IDENTITIES = ("confirmed", "uncertain", "different")
 EVIDENCES = ("clear", "unclear")
 DECISIONS = ("change", "observe", "hold")
@@ -213,13 +215,17 @@ DECISION_KEYS = {"review_key", "record_id", "item", "identity", "evidence", "dec
 OPTIONAL_KEYS = {"field", "proposed_value"}
 REVIEWER_MAX, NOTE_MAX = 200, 2000
 FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r", "\n")
-# the columns and their order are the ones the app's own files have (web/src/ledgerReview.ts)
+# The columns, their order and the three fixed statements are the ones the app's own files have
+# (web/src/ledgerReview.ts); tests/fixtures/ledger_interop holds files both sides must reproduce byte for byte.
 CHANGE_COLUMNS = ("review_key", "record_id", "item", "layer", "field", "before", "after", "identity", "evidence",
-                  "neighbors_checked", "reviewer", "note", "reviewed_at", "photo_observed_on", "photo_creator",
-                  "photo_link", "photo_license", "scan_id", "record_key", "properties_sha256")
-OBSERVATION_COLUMNS = ("review_key", "record_id", "item", "layer", "photo_observed_on", "photo_creator", "photo_link",
-                       "photo_license", "identity", "evidence", "neighbors_checked", "reviewer", "note", "reviewed_at",
-                       "scan_id", "record_key", "properties_sha256")
+                  "neighbors_checked", "reviewer", "reviewer_assertion", "note", "reviewed_at", "application_status",
+                  "photo_observed_on", "date_meaning", "photo_creator", "photo_link", "photo_license", "scan_id",
+                  "record_key", "properties_sha256")
+OBSERVATION_COLUMNS = ("review_key", "record_id", "item", "layer", "photo_observed_on", "date_meaning", "photo_creator",
+                       "photo_link", "photo_license", "identity", "evidence", "neighbors_checked", "reviewer",
+                       "reviewer_assertion", "note", "reviewed_at", "application_status", "scan_id", "record_key",
+                       "properties_sha256")
+BOM = "\ufeff"  # one, at the start of the CSV text: Excel then reads non-ASCII names and notes as UTF-8
 
 
 class LedgerError(ValueError):
@@ -354,9 +360,10 @@ def _decision(n: int, d, rows: dict, check: dict, seen: set, fields: set, proble
            "properties_sha256": src["properties_sha256"], "position_sha256": src.get("position_sha256"),
            "identity": d["identity"], "evidence": d["evidence"],
            "neighbors_checked": d["neighbors_checked"], "reviewer": d["reviewer"], "reviewer_assertion": ASSERTION,
-           "note": d["note"], "reviewed_at": d["reviewed_at"], "decision": kind}
+           "note": d["note"], "reviewed_at": d["reviewed_at"], "application_status": APPLICATION_STATUS,
+           "decision": kind}
     if kind != "hold":
-        out |= {"photo_observed_on": _photo_day(evidence), "photo_link": evidence.get("link"),
+        out |= {"photo_observed_on": _photo_day(evidence), "date_meaning": DATE_MEANING, "photo_link": evidence.get("link"),
                 "photo_creator": evidence.get("creator") or "", "photo_license": evidence.get("license") or ""}
     if kind == "change":
         out |= {"field": d["field"], "before": src["editable_fields"][d["field"]]["before"],
@@ -413,11 +420,12 @@ def cell(value) -> str:
 
 
 def to_csv(columns: tuple[str, ...], rows: list[dict]) -> str:
+    """The CSV text, with its one BOM. Encode it as plain "utf-8": a second BOM would show in the first header."""
     buf = io.StringIO(newline="")
     out = csv.writer(buf)
     out.writerow(columns)
     out.writerows([cell(row.get(c)) for c in columns] for row in rows)
-    return buf.getvalue()
+    return BOM + buf.getvalue()
 
 
 def changes_csv(check: dict, journal: dict) -> str:
@@ -428,3 +436,44 @@ def changes_csv(check: dict, journal: dict) -> str:
 def observations_csv(check: dict, journal: dict) -> str:
     """The photo observations as a table. The date is the photo's, never an inspection or verification date."""
     return to_csv(OBSERVATION_COLUMNS, observations(check, journal))
+
+
+# --- the trusted city file ------------------------------------------------------------------------------------------
+
+
+def city_problems(items: list[dict], town) -> list[str]:
+    """What a city's own file says against each approved decision: the item is one of the city's, its layer and id key are
+    the city's for that item, and a change is to the one yes/no field the city names, between its two raw values. The
+    downloaded check says what a reviewer was offered; only this says what the city allows. town: a city file as
+    eval.city_check.load_city returns it, loaded by the caller from the repository, never from a journal or a check."""
+    cfgs = town.get("items") if isinstance(town, dict) else None
+    if not isinstance(cfgs, dict) or not cfgs:
+        return ["the city file has no items"]
+    out: list[str] = []
+    for it in items:
+        label = f"record {it['record_id']} ({it['item']})"
+        cfg = cfgs.get(it["item"])
+        if not isinstance(cfg, dict):
+            out.append(f"{label}: {it['item']!r} is not an item of the city file")
+            continue
+        if layer_basename(cfg.get("layer")) != it["layer"]:
+            out.append(f"{label}: layer {it['layer']!r} is not the city file's layer for this item")
+        if cfg.get("record_field") != it["record_key"]:
+            out.append(f"{label}: record key {it['record_key']!r} is not the city file's id field")
+        if it["decision"] != "change":
+            continue
+        compare = cfg.get("compare")
+        field = it["field"]
+        if not isinstance(compare, dict) or compare.get("field") != field:
+            out.append(f"{label}: {field!r} is not the yes/no field the city file has configured")
+            continue
+        yes, no = compare.get("yes"), compare.get("no")
+        if is_protected(field, cfg):
+            out.append(f"{label}: {field!r} is a protected field (an id, a position or a date)")
+        elif not isinstance(yes, str) or not isinstance(no, str) or yes == no:
+            out.append(f"{label}: the city file does not name two different yes/no values for {field}")
+        elif it["before"] not in (yes, no) or it["after"] not in (yes, no):
+            out.append(f"{label}: the city file's yes/no values for {field} are {yes!r} and {no!r}")
+        elif it["before"] == it["after"]:
+            out.append(f"{label}: no change, the record already says {it['before']!r}")
+    return out

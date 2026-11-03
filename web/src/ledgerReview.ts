@@ -17,6 +17,13 @@ const DATE_FIELD = /date|verif|inspect|install|updated/i;
 const REVIEWER_MAX = 200;
 const NOTE_MAX = 2000;
 const JOURNAL_KEYS = ["schema_version", "scan_id", "decisions"];
+// Said on every row of both CSV files, in the words eval/ledger_review.py writes (tests/fixtures/ledger_interop proves it).
+export const ASSERTION = "Self-asserted by the reviewer in the app; not an authenticated municipal approval.";
+export const APPLICATION_STATUS = "Prepared only. Not applied to any official ledger.";
+export const DATE_MEANING = "Date of the photo (an observation). Not the city's inspection or verification date.";
+// One BOM at the start of the CSV text, so Excel reads non-ASCII names and notes as UTF-8. A Blob or a file made from the string
+// encodes it as is: nothing may add a second one.
+const BOM = "﻿";
 const SAFE_LAYER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const PHOTO_DAY = /^\d{4}-\d{2}-\d{2}/;
@@ -211,6 +218,7 @@ export function decisionProblems(row: AssetRow, d: unknown): string[] {
 
 export interface Attribution {
   photo_observed_on: string;
+  date_meaning: string;
   photo_creator: string;
   photo_link: string;
   photo_license: string;
@@ -225,8 +233,10 @@ interface Common extends Attribution {
   evidence: LedgerEvidence;
   neighbors_checked: boolean;
   reviewer: string;
+  reviewer_assertion: string;
   note: string;
   reviewed_at: string;
+  application_status: string;
     scan_id: number;
   record_key: string;
   properties_sha256: string;
@@ -285,6 +295,7 @@ export function validateJournal(rows: AssetRow[], journal: LedgerJournal, scanId
     const common = {
       review_key: source.review_key, record_id: source.record_id, item: row.item, layer: source.layer, identity: decision.identity,
       evidence: decision.evidence, neighbors_checked: decision.neighbors_checked, reviewer: decision.reviewer, note: decision.note,
+      reviewer_assertion: ASSERTION, application_status: APPLICATION_STATUS, date_meaning: DATE_MEANING,
       reviewed_at: decision.reviewed_at, photo_observed_on: photoDay(row), photo_creator: row.evidence?.creator ?? "",
       photo_link: row.evidence?.link ?? "", photo_license: row.evidence?.license ?? "", scan_id: scanId, record_key: source.record_key,
       properties_sha256: source.properties_sha256,
@@ -314,13 +325,14 @@ export function csvCell(value: unknown): string {
 
 // The columns, in the order of interface-checkpoint.md that eval/ledger_review.py writes too.
 const CHANGE_COLUMNS = ["review_key", "record_id", "item", "layer", "field", "before", "after", "identity", "evidence", "neighbors_checked",
-  "reviewer", "note", "reviewed_at", "photo_observed_on", "photo_creator", "photo_link", "photo_license", "scan_id", "record_key",
-  "properties_sha256"] as const;
-const OBSERVATION_COLUMNS = ["review_key", "record_id", "item", "layer", "photo_observed_on", "photo_creator", "photo_link", "photo_license",
-  "identity", "evidence", "neighbors_checked", "reviewer", "note", "reviewed_at", "scan_id", "record_key", "properties_sha256"] as const;
+  "reviewer", "reviewer_assertion", "note", "reviewed_at", "application_status", "photo_observed_on", "date_meaning", "photo_creator",
+  "photo_link", "photo_license", "scan_id", "record_key", "properties_sha256"] as const;
+const OBSERVATION_COLUMNS = ["review_key", "record_id", "item", "layer", "photo_observed_on", "date_meaning", "photo_creator", "photo_link",
+  "photo_license", "identity", "evidence", "neighbors_checked", "reviewer", "reviewer_assertion", "note", "reviewed_at", "application_status",
+  "scan_id", "record_key", "properties_sha256"] as const;
 
 function table(columns: readonly string[], entries: Record<string, unknown>[]): string {
-  return [columns.join(","), ...entries.map((e) => columns.map((c) => csvCell(e[c])).join(","))].map((line) => `${line}\r\n`).join("");
+  return BOM + [columns.join(","), ...entries.map((e) => columns.map((c) => csvCell(e[c])).join(","))].map((line) => `${line}\r\n`).join("");
 }
 
 function accepted(rows: AssetRow[], journal: LedgerJournal, scanId: number): JournalCheck {

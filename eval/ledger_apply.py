@@ -1,17 +1,26 @@
 """Apply a reviewer's validated ledger changes to a NEW copy of a city's GeoJSON folder.
 
-    python -m eval.ledger_apply --check asset_check_scan17.json --journal ledger_journal.json \\
-        --input-dir data/seattle --output-dir data/seattle-revised
+    python -m eval.ledger_apply --check ledger-review-scan30-source.json --journal ledger-review-scan30-journal.json \\
+        --input-dir data/seattle/ballard --output-dir data/seattle-ballard-revised --city seattle-ballard
 
---check is the Asset Check of the survey (the file eval.asset_check wrote, or the app's /asset-check JSON), --journal the
-review package the app downloaded, --input-dir the city's own GeoJSON layers the check was made from, and --output-dir a
-folder that does not exist yet. Exit 0: the folder was written. Exit 2: something was refused and nothing was written.
+--check is the Asset Check of the survey (the file eval.asset_check wrote, or the source list the app downloaded),
+--journal the review package the app downloaded, --input-dir the city's own GeoJSON layers the check was made from,
+--output-dir a folder that does not exist yet, and --city the name of a city file shipped in eval/cities. Exit 0: the
+folder was written. Exit 2: something was refused and nothing was written.
 
-Every change is checked before anything is written: the journal against the check (eval.ledger_review), then each
-change against the layer file itself: a safe layer name found once inside the input folder, the record id found exactly
+What a change may touch comes from the city file (--city), never from the downloaded check: the item, its layer, its id
+key and the one yes/no field with its two raw values. The check only says what a reviewer was offered, so a check edited
+to offer another field or other values is refused, and so is a package with changes and no --city. A package of
+observations and holds alone needs no city file. The city file is read from the repository by name; a journal or a check
+cannot bring its own.
+
+Every change is checked before anything is written: the journal against the check (eval.ledger_review), the city file,
+then each change against the layer file itself: a safe layer name found once inside the input folder, the record id found exactly
 once, all of its original properties hashing to what the export saw, and its current value being the one the export
 recorded. The copy is built in a staging folder next to the output, verified, and only then renamed into place. The
-input folder is never written; an existing output is never overwritten.
+input folder is never written; an existing output is never overwritten. A layer with a change is written again as compact
+JSON (every record, key order, number and character kept; only the white space differs), so compare layers by record, as
+audit.json lists them, not by line.
 
 The output holds the *.geojson layers (untouched ones byte for byte) and `_ledger_review/` with audit.json, the changes
 and observations CSV files and the journal. Nothing here writes to a city's system: a person at the city decides what
@@ -21,6 +30,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import uuid
@@ -32,6 +42,7 @@ from eval.city_check import load_city
 from eval.ledger_review import LedgerError
 
 REVIEW_DIR = "_ledger_review"
+CITY_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")  # the name of a file of eval/cities, nothing that is a path
 NOTICE = ("Prepared copy only. No city system was written and the original folder is unchanged. Reviewer names are "
           "self-asserted, not authenticated municipal approvals.")
 
@@ -168,11 +179,12 @@ def _dump(doc: dict) -> bytes:
     return (json.dumps(doc, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
 
 
-def apply(check: dict, journal: dict, input_dir, output_dir, now: datetime | None = None,
-          layer_paths: dict | None = None) -> dict:
+def apply(check: dict, journal: dict, input_dir, output_dir, now: datetime | None = None, town: dict | None = None) -> dict:
     """Validate everything, then write the revised copy. Returns the audit. Raises LedgerError (nothing written).
-    layer_paths: a city file's layers by file name (see layer_paths()), to tell same-named layers of different folders
-    apart and to copy only the city's layers; without it every *.geojson under the folder is a candidate."""
+    town: the trusted city file, as eval.city_check.load_city returns it for a file of eval/cities. A package with changes
+    needs it; its layers also tell same-named layers of different folders apart and are the only ones copied. Without
+    it (observations and holds alone) every *.geojson under the folder is a candidate. This function cannot tell
+    whether the caller's mapping is the repository's: only the CLI loads it by name."""
     root, out = Path(input_dir).resolve(), Path(output_dir).resolve()
     problems: list[str] = []
     if not root.is_dir():
@@ -189,11 +201,18 @@ def apply(check: dict, journal: dict, input_dir, output_dir, now: datetime | Non
         raise LedgerError(problems + err.problems) from None
     if problems:
         raise LedgerError(problems)
-    rewritten, landed = _plan(reviewed, root, layer_paths, problems)
+    items = [*reviewed["changes"], *reviewed["observations"]]
+    if town is not None:
+        problems += ledger_review.city_problems(items, town)
+    elif reviewed["changes"]:
+        problems.append("a package with changes needs the city file (--city NAME, a file of eval/cities): the downloaded "
+                        "check's own list of editable fields is not trusted")
+    paths = layer_paths(town) if isinstance(town, dict) and isinstance(town.get("items"), dict) else None
+    rewritten, landed = _plan(reviewed, root, paths, problems)
     if problems:
         raise LedgerError(problems)
 
-    inputs = {p.relative_to(root).as_posix(): _sha(p.read_bytes()) for p in _layer_files(root, layer_paths)
+    inputs = {p.relative_to(root).as_posix(): _sha(p.read_bytes()) for p in _layer_files(root, paths)
               if _inside(p.resolve(), root)}
     stage = out.parent / f".{out.name}.staging-{uuid.uuid4().hex[:8]}"
     try:
@@ -214,6 +233,7 @@ def apply(check: dict, journal: dict, input_dir, output_dir, now: datetime | Non
                  "scan_id": journal["scan_id"], "journal_sha256": ledger_review.sha256_of(journal),
                  "applied": len(landed), "observed": len(reviewed["observations"]), "held": len(reviewed["holds"]),
                  "changes": landed, "observations": reviewed["observations"], "holds": reviewed["holds"],
+                 "whitelist": {"checked_against_city_file": town is not None, "city": (town or {}).get("city")},
                  "files": files, "notice": NOTICE}
         review_dir = stage / REVIEW_DIR
         review_dir.mkdir()
@@ -251,19 +271,31 @@ def _load(path: str, what: str):
         raise LedgerError([f"cannot read the {what} {path!r}: {err}"]) from None
 
 
+def trusted_city(name: str) -> dict:
+    """The shipped city file of that name (eval/cities/<name>.toml), or LedgerError."""
+    if not CITY_NAME.fullmatch(name):
+        raise LedgerError([f"--city takes the name of a city file shipped in eval/cities, such as seattle-ballard, "
+                           f"not {name!r}"])
+    try:
+        return load_city(name)
+    except (OSError, ValueError) as err:
+        raise LedgerError([f"the city file {name!r} could not be loaded from eval/cities ({err})"]) from None
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--check", required=True, help="the survey's Asset Check JSON")
     parser.add_argument("--journal", required=True, help="the review package JSON the app downloaded")
     parser.add_argument("--input-dir", required=True, help="the city's GeoJSON folder, left untouched")
     parser.add_argument("--output-dir", required=True, help="a new folder for the revised copy")
-    parser.add_argument("--city", help="a file in eval/cities, without .toml: its layer paths tell same-named layers apart "
+    parser.add_argument("--city", help="the trusted city file, a name in eval/cities without .toml (for example "
+                                       "seattle-ballard). Required when the package has changes: it, not the check, says "
+                                       "which field and values may change. Its layer paths tell same-named layers apart "
                                        "and only its layers are copied")
     args = parser.parse_args(argv)
     try:
-        paths = layer_paths(load_city(args.city)) if args.city else None
-        audit = apply(_load(args.check, "check"), _load(args.journal, "journal"), args.input_dir, args.output_dir,
-                      layer_paths=paths)
+        town = trusted_city(args.city) if args.city is not None else None
+        audit = apply(_load(args.check, "check"), _load(args.journal, "journal"), args.input_dir, args.output_dir, town=town)
     except LedgerError as err:
         print("REFUSED, nothing was written:", file=sys.stderr)
         for problem in err.problems:
