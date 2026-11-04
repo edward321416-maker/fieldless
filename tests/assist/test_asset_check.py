@@ -73,12 +73,12 @@ def test_a_row_without_a_nearby_photo_leaves_those_cells_empty():
 
 def test_the_new_cells_come_last_so_the_earlier_columns_do_not_move():
     names = [k for k, _ in asset_check.COLUMNS]
-    assert names.index("evidence_file") == len(names) - 16
-    assert names[-15:-11] == ["nearby_photo_link", "nearby_photo_m", "nearby_photo_by", "nearby_photo_license"]
-    assert names[-11:-6] == ["attribute_field", "attribute_state", "attribute_note", "action_if_attribute_agrees",
+    assert names.index("evidence_file") == len(names) - 17
+    assert names[-16:-12] == ["nearby_photo_link", "nearby_photo_m", "nearby_photo_by", "nearby_photo_license"]
+    assert names[-12:-7] == ["attribute_field", "attribute_state", "attribute_note", "action_if_attribute_agrees",
                              "visit_reason"]
-    assert names[-6:] == ["identity_state", "identity_reason", "competing_record_ids", "evidence_quality",
-                          "evidence_quality_reason", "action_before_quality_gate"]
+    assert names[-7:] == ["identity_state", "identity_reason", "competing_record_ids", "evidence_quality",
+                          "evidence_quality_reason", "action_before_quality_gate", "action_label"]
 
 
 def test_the_app_gets_the_visits_with_a_photo_and_the_date_gap_with_the_counts():
@@ -164,7 +164,7 @@ def test_the_table_starts_with_what_to_do():
 
 def test_each_action_with_rows_has_its_line_and_none_without():
     page = asset_check.document(CHECK)
-    assert 'id="next"' in page and "Update the date" in page and "Visit on site" in page
+    assert 'id="next"' in page and "Review newer photo evidence" in page and "Visit on site" in page
     assert "Compare with the list" in page and "Correct the record" not in page
 
 
@@ -178,7 +178,7 @@ def test_a_record_to_correct_shows_both_sides_first():
     rows = [row(asset="Curb ramp", action="Correct the record", city_says="No light", photo_shows="A light"), *ROWS]
     check = {**CHECK, "rows": rows, "actions": {**ACTIONS, "Correct the record": 1}}
     page = asset_check.document(check)
-    assert page.index("Correct the record") < page.index("Update the date")
+    assert page.index("Correct the record") < page.index("Review newer photo evidence")
     assert asset_check.examples(check)[0]["action"] == "Correct the record"
     assert "No light" in page and "A light" in page
 
@@ -444,3 +444,24 @@ def test_the_page_never_counts_an_overlap_twice():
 
 def test_a_list_with_no_gate_says_nothing_about_one():
     assert "Held before counting" not in asset_check.document(CHECK)
+
+
+# --- the date action is called Review newer photo evidence for people; the machine value stays ------------------------
+
+def test_people_read_review_newer_photo_evidence_and_machines_still_read_the_old_action():
+    table = lines(asset_check.table_csv(CHECK))
+    assert table[0]["action"] == "Update the date" and table[0]["action_label"] == "Review newer photo evidence"
+    assert [r["action_label"] for r in table[1:]] == ["No change", "Visit on site", "Compare with the list"]
+    props = json.loads(asset_check.table_geojson(CHECK))["features"][0]["properties"]
+    assert props["action"] == "Update the date" and props["action_label"] == "Review newer photo evidence"
+    assert asset_check.label_of("Correct the record") == "Correct the record"
+
+
+def test_the_page_never_shows_the_old_name_of_the_date_action():
+    page = asset_check.document(WITH_ATTRIBUTES)
+    body = page.split("<main>", 1)[1]
+    visible = body.replace("action_if_attribute_agrees", "")  # a machine column name, described below
+    assert "Review newer photo evidence" in visible
+    for old in ("<strong>Update the date</strong>", ">Update the date<", "chip seen\">Update the date"):
+        assert old not in visible
+    assert "Update the date" not in page.split('<section aria-labelledby="file">')[0]

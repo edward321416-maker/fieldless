@@ -77,7 +77,9 @@ COLUMNS = (("action", "What the city could do with this row"),
                                 "from (not independent ground truth), else not_reviewed: no audit looked at it, which says nothing about its quality"),
            ("evidence_quality_reason", "Why the evidence is unclear, or that the source has not been reviewed"),
            ("action_before_quality_gate", "Where the identity or audit gate moved the row to Visit on site: the action the "
-                                          "models' answers alone gave it. The models' answers are not changed"))
+                                          "models' answers alone gave it. The models' answers are not changed"),
+           ("action_label", "The action as a person reads it. The date action's stored value is Update the date; it is "
+                            "called Review newer photo evidence because a photo date is an observation, not the city's date"))
 ROOT = Path(__file__).resolve().parent.parent
 LOGOS = (ROOT / "web" / "public" / "mapillary-logo.png", ROOT / "web" / "dist" / "mapillary-logo.png")
 ACTIONS = {FIX: "Look at the photo, then correct the record if it holds.",
@@ -86,6 +88,11 @@ ACTIONS = {FIX: "Look at the photo, then correct the record if it holds.",
            VISIT: "The photos do not settle this. It needs a newer photo or a field check.",
            COMPARE: "Compare with nearby records, then decide."}
 ORDER = (FIX, DATE, SAME, VISIT, COMPARE)
+LABELS = {DATE: "Review newer photo evidence"}  # what a person reads; the stored action values stay as they were
+
+
+def label_of(action: str) -> str:
+    return LABELS.get(action, action)
 
 CSS = """
 :root { --paper: #fff; --ink: #1b2430; --muted: #566273; --rule: #d9dde3; --panel: #f1f3f5; --accent: #1d4ed8;
@@ -142,6 +149,7 @@ def table_rows(check: dict) -> list[dict]:
         out.append({**{k: row.get(k, "") for k, _ in COLUMNS}, "photo_url": ev.get("link", ""),
                     "photo_by": ev.get("creator") or "", "license": ev.get("license", ""),
                     "evidence_file": f"evidence/{ev['image']}" if ev.get("image") else "",
+                    "action_label": label_of(row.get("action", "")),
                     "competing_record_ids": "; ".join(row.get("competing_record_ids") or []),
                     "action_before_quality_gate": (row.get("quality_gate") or {}).get("action_before", ""),
                     "nearby_photo_link": near.get("link", ""), "nearby_photo_m": near.get("dist_m", ""),
@@ -234,7 +242,7 @@ def _card(row: dict, logo: str, photo_base: str) -> str:
     return f"""<article class="card">
   <figure><img src="{e(photo_base + ev['image'])}" alt="Street photo: {e(row['asset'])}" loading="lazy">{mark}</figure>
   <div class="body">
-    <span class="chip {kind}">{e(row['action'])}</span>
+    <span class="chip {kind}">{e(label_of(row['action']))}</span>
     <h3>{e(row['asset'])}</h3>
     <dl>{facts}</dl>
     <p class="action">{e(ACTIONS[row['action']])}</p>
@@ -364,8 +372,8 @@ def document(check: dict, area: str | None = None, km: float | None = None, phot
                       if check.get("visits_attribute_unresolved") else ""),
             COMPARE: f"On no city list. Compare each with nearby records before adding anything.{unsettled}"}
     shown = [a for a in ORDER if actions.get(a)]
-    steps = "\n".join(f"<li><b>{actions[a]}</b><span><strong>{a}</strong>{e(what[a])}</span></li>" for a in shown)
-    heads = "".join(f'<th scope="col">{a}</th>' for a in shown)
+    steps = "\n".join(f"<li><b>{actions[a]}</b><span><strong>{label_of(a)}</strong>{e(what[a])}</span></li>" for a in shown)
+    heads = "".join(f'<th scope="col">{label_of(a)}</th>' for a in shown)
     table = "\n".join(
         f'<tr><th scope="row">{e(i["asset"])}<small>{e(i["city_list"])}</small></th><td>{i["in_view"]}</td>'
         + "".join(f'<td>{i["actions"].get(a) or "&ndash;"}</td>' for a in shown) + "</tr>"
