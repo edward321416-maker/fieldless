@@ -18,6 +18,19 @@ const row = (over: Partial<AssetRow> = {}) => ({
   item: "street_tree", asset: "Street tree", action: "Visit on site", city_record: "TRE-1", lat: 47.6, lng: -122.3, ...over,
 }) as AssetRow;
 
+describe("review-list check reasons", () => {
+  it("uses the exclusive gate breakdown instead of calling identity holds model uncertainty", () => {
+    const gated = { ...check({ no_visit: 29 }), quality_gate: { visit_causes: { primary: {
+      not_determined: 41, models_unsure: 10, identity_unresolved: 4, audit_hold: 2, attribute_open: 8,
+    } } } };
+    const text = visitLine(gated);
+    expect(text).toContain("The other 65");
+    expect(text).toContain("4 need a desk check of the facility's identity");
+    expect(text).toContain("2 have photo details held as unclear by an AI visual audit");
+    expect(text).toContain("8 were seen but a field the city keeps for them is still open");
+  });
+});
+
 describe("the problem's facts", () => {
   it("each links its source, but for the builder's own job", () => {
     expect(PROBLEM.filter((f) => !f.source).map((f) => f.title)).toEqual(["One district's street lights"]);

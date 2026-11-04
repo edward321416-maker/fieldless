@@ -33,8 +33,24 @@ export function recordFunnel(a: AssetCheckSummary): { n: number; label: string }
   ];
 }
 
-export function visitLine(a: AssetCheckSummary): string {
+export function visitLine(a: AssetCheckSummary & { quality_gate?: { visit_causes?: { primary?: Record<string, number> } } }): string {
   const visits = visitsLeft(a);
+  const primary = a.quality_gate?.visit_causes?.primary;
+  const wording: Record<string, string> = {
+    not_determined: "the photos could not settle",
+    models_unsure: "were seen but not sure enough",
+    identity_unresolved: "need a desk check of the facility's identity",
+    audit_hold: "have photo details held as unclear by an AI visual audit",
+    attribute_open: "were seen but a field the city keeps for them is still open",
+  };
+  if (primary && Object.entries(primary).every(([k, v]) => Object.prototype.hasOwnProperty.call(wording, k) && Number.isInteger(v) && v >= 0)
+    && Object.values(primary).reduce((sum, n) => sum + n, 0) === visits) {
+    const parts = Object.entries(wording).filter(([k]) => (primary[k] ?? 0) > 0).map(([k, words]) => `${primary[k]} ${words}`);
+    if (parts.length) {
+      const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+      return `The other ${visits} need a newer photo or a field check: ${list}.`;
+    }
+  }
   const open = a.visits_attribute_unresolved ?? 0;
   const unsure = visits - a.totals.not_determined - open;
   const parts = [`${a.totals.not_determined} the photos could not settle`,
