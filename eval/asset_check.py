@@ -338,14 +338,21 @@ def apply_identity_gate(rows: list[dict], pairs: dict[str, list[dict]]) -> None:
                         **({"attribute_state": row["attribute_state"], "attribute_note": row["attribute_note"]}
                            if "attribute_state" in row else {})}}
                 row["quality_gate"] = {**gate, "causes": ["identity_unresolved", *gate["causes"]]}
-                row.update(action=VISIT, city_says="", photo_shows="",
-                           visit_reason=f"{reason} {evidence_quality.NEXT_STEP} Until then it is not a candidate for "
+                row.update(action=VISIT,
+                           visit_reason=f"{row.get('visit_reason', '')} {reason} {evidence_quality.NEXT_STEP} Until then it is not a candidate for "
                                         "desk review.")
             else:
                 row["visit_reason"] = f"{row.get('visit_reason', '')} {reason} {evidence_quality.NEXT_STEP}".strip()
                 if gate:
                     row["quality_gate"] = {**gate, "causes": ["identity_unresolved", *gate["causes"]]}
             row.pop("action_if_attribute_agrees", None)  # an unresolved identity is no conditional candidate either
+        if row.get("quality_gate"):
+            # Keep the original comparison readable in the UI and tabular exports;
+            # the new action and gate reasons say why it remains unconfirmed.
+            original = row["quality_gate"]["model_answer"]
+            for field in ("city_says", "photo_shows"):
+                if field in original:
+                    row[field] = original[field]
         if row["action"] == VISIT:
             causes = {*base, *(["identity_unresolved"] if near else [])}
             row["visit_causes"] = [c for c in VISIT_PRIORITY if c in causes]

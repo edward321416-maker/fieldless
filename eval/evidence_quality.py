@@ -138,11 +138,11 @@ def find_hold(row: dict, policy: dict, attribute: dict | None, field: str | None
 
 
 def identity_reason(record: str, near: list[dict]) -> str:
-    """Why the photos cannot tell this record from the others near it, in words."""
+    """Why the nearby records require a conservative identity check."""
     others = ", ".join(f"{n['record_id']} ({n['metres']:.1f} m, {n['seconds']:.0f} s)" for n in near)
     return (f"Identity not settled: {record} is within {ledger_review.NEIGHBOR_M:g} m by the city's positions and "
-            f"{ledger_review.NEIGHBOR_S:g} s in photo time of {others}, so the photos cannot tell which record this "
-            "is. They may be two different objects or one object recorded twice; both records stay on the list and "
+            f"{ledger_review.NEIGHBOR_S:g} s in photo time of {others}, so it has not been established which record this "
+            "photo shows. Proximity alone does not prove a mismatch or a duplicate. They may be different objects; both records stay on the list and "
             "nothing is merged.")
 
 

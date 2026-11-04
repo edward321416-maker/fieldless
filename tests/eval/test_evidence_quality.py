@@ -28,6 +28,18 @@ def empty_policy():
             "audit": {"id": "test-audit", "date": "2026-11-04"}, "holds": []}
 
 
+def test_an_identity_held_correction_still_shows_the_original_comparison():
+    layers = fx.layers()
+    layers["pole"][1]["geometry"]["coordinates"] = [layers["pole"][0]["geometry"]["coordinates"][0],
+                                                    layers["pole"][0]["geometry"]["coordinates"][1] + .00005]
+    differs = {("pole", "P1"): {"city_says": "Holds a street light", "photo_shows": "Holds no street light"}}
+    row = fx.row_of(build(layer_map=layers, attributes=agreed(), differs=differs), "P1")
+    assert row["action"] == VISIT
+    assert row["city_says"] == "Holds a street light"
+    assert row["photo_shows"] == "Holds no street light"
+    assert row["quality_gate"]["action_before"] == asset_check.FIX
+
+
 def held(check, record, reason="The detail cannot be read at this size.", **over):
     """A policy that holds the exact source `record` has in `check`."""
     hold = evidence_quality.make_hold(fx.row_of(check, record), "IS_LIGHT", reason, "agree", fx.SCAN, **over)
@@ -46,7 +58,8 @@ def test_the_tree_pair_stays_two_records_and_neither_is_a_settled_candidate():
         assert mine["action"] == VISIT
         assert "identity" in mine["identity_reason"].lower() and theirs in mine["identity_reason"]
         assert "new photo" in mine["visit_reason"] and "identity" in mine["visit_reason"].lower()
-        assert mine["city_says"] == mine["photo_shows"] == ""
+        assert mine["city_says"] == mine["quality_gate"]["model_answer"]["city_says"]
+        assert mine["photo_shows"] == mine["quality_gate"]["model_answer"]["photo_shows"]
         assert "nothing is merged" in mine["identity_reason"]
 
 
@@ -264,6 +277,7 @@ def test_a_hold_and_an_identity_warning_on_one_row_count_once():
     check = build(layer_map=layer_map, attributes=agreed(), policy=held(base, "P1"))
     row = fx.row_of(check, "P1")
     assert row["quality_gate"]["causes"] == ["identity_unresolved", "audit_hold"]
+    assert "AI visual audit" in row["visit_reason"] and "Identity not settled" in row["visit_reason"]
     assert row["quality_gate"]["action_before"] == DATE
     gate = check["quality_gate"]
     assert gate["moved_out_of_candidates"] == 4  # P1 is one row, moved once, however many grounds it has
