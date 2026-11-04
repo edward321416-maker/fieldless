@@ -3,9 +3,12 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { NOW, row, source, treeRow } from "./ledgerFixtures";
 import { EMPTY_DRAFT, type Draft } from "./ledgerReview";
 import LedgerReviewPane, {
-  LedgerReviewView, initialReviewState, journalOf, reviewReducer, runDownload, type ReviewState, type SessionUi,
+  LedgerReviewView, captureOlder, initialReviewState, olderFile, journalOf, reviewReducer, runDownload, type ReviewState, type SessionUi,
 } from "./LedgerReviewPane";
 import { planImport } from "./ledgerImport";
+import { createRecoveryStore, emptyState, serializeRecovery, RECOVERY_PREFIX, type RecoveryStorage } from "./ledgerRecovery";
+import { startSession, syncRecovery } from "./ledgerSession";
+import { reviewSignature } from "./ledgerReview";
 import type { AssetRow, Scan } from "./types";
 
 const scan = { id: 17, items: [{ id: "curb_ramp", target: "curb ramp", map_icon: "ramp", kind: "check", inventory: true },
@@ -556,5 +559,50 @@ describe("the handoff", () => {
 
   it("offers no package before a decision is recorded", () => {
     expect(render()).toMatch(/<button[^>]*disabled[^>]*>Download review package<\/button>/);
+  });
+});
+
+describe("the older saved work link keeps pointing at the older copy (review finding A-7)", () => {
+  class Mem implements RecoveryStorage {
+    data = new Map<string, string>();
+    get length() { return this.data.size; }
+    key(i: number) { return [...this.data.keys()][i] ?? null; }
+    getItem(k: string) { return this.data.get(k) ?? null; }
+    setItem(k: string, v: string) { this.data.set(k, v); }
+    removeItem(k: string) { this.data.delete(k); }
+  }
+  const work = (note: string) => run([{ type: "reviewer", value: "A. Reviewer" }, { type: "draft", key: rkOf(ramp), patch: { ...CHANGE, note } }]);
+
+  it("downloads the old saved text after new work replaced it in the browser, and restores no decision from it", () => {
+    const mem = new Mem();
+    const store = createRecoveryStore(() => mem, () => NOW);
+    // work saved on an older version of the list: stale for this one
+    const oldText = serializeRecovery(17, "OLD-SIGNATURE", { ...emptyState(), reviewer: "Old Reviewer", drafts: { [rkOf(ramp)]: { ...CHANGE, note: "OLD note" } } }, NOW);
+    mem.data.set(`${RECOVERY_PREFIX}17`, oldText);
+    const signature = reviewSignature(17, rows);
+    const begin = startSession(store, 17, signature, rows, "", null);
+    expect(begin.notices.some((n) => n.older)).toBe(true);
+    const older = captureOlder(store, 17, begin.notices); // what the session does at its start
+
+    // the reviewer types new work: the browser's copy is replaced
+    const mine = work("NEW note");
+    syncRecovery(store, 17, signature, mine, begin.owns);
+    expect(store.raw(17)).not.toBe(oldText);
+    expect(JSON.parse(store.raw(17)!).drafts[rkOf(ramp)].note).toBe("NEW note");
+
+    const file = olderFile(17, older);
+    expect(file).not.toBeNull();
+    expect(file!.text).toBe(oldText);
+    expect(file!.name).toBe("ledger-review-scan17-older-saved-work.json");
+    // nothing from the old file came back as work or as a recorded decision
+    expect(begin.state.decisions).toEqual({});
+    expect(begin.state.drafts).toEqual({});
+    expect(Object.keys(mine.decisions)).toEqual([]);
+  });
+
+  it("captures nothing when the notice does not point at an older copy, so no link claims one", () => {
+    const store = createRecoveryStore(() => new Mem(), () => NOW);
+    expect(captureOlder(store, 17, [{ id: "restored", tone: "info", text: "Back." }])).toBeNull();
+    expect(olderFile(17, null)).toBeNull();
   });
 });

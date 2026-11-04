@@ -530,6 +530,16 @@ export default function LedgerReviewPane(props: PaneProps) {
   return <Session key={reviewSignature(props.scan.id, props.check.rows)} {...props} />;
 }
 
+// The saved text a notice offers for download ("the older saved work"), read when the session starts, before any new work can replace
+// it in the browser. Null when no notice points at an older copy.
+export function captureOlder(store: Pick<typeof recoveryStore, "raw">, scanId: number, notices: Notice[]): string | null {
+  return notices.some((n) => n.older) ? store.raw(scanId) : null;
+}
+
+export function olderFile(scanId: number, text: string | null): ExportFile | null {
+  return text === null ? null : { name: `ledger-review-scan${scanId}-older-saved-work.json`, mime: "application/json", text };
+}
+
 function Session(props: PaneProps) {
   const ledger = useContext(LedgerReviewContext);
   const { scan, check } = props;
@@ -543,6 +553,8 @@ function Session(props: PaneProps) {
       state: reviewReducer(previous?.signature === signature ? previous.state : begin.state, action) }));
   } : localDispatch;
 
+  // Kept for this session: the first new edit replaces the browser's copy, and the link must still give the older one.
+  const [older] = useState(() => captureOlder(recoveryStore, scan.id, begin.notices));
   const owns = useRef(begin.owns);
   const force = useRef(false);
   const reading = useRef(0);
@@ -592,7 +604,7 @@ function Session(props: PaneProps) {
   }, [props.initialAction]);
 
   const ui: SessionUi = {
-    notices, problem, plan, askingClear,
+    notices: older === null ? notices.map((n) => (n.older ? { ...n, older: false } : n)) : notices, problem, plan, askingClear,
     onFile: (file) => {
       reading.current += 1;
       const mine = reading.current; // a slower, earlier file must not replace the plan of the one chosen last
@@ -607,8 +619,8 @@ function Session(props: PaneProps) {
       dispatch({ type: "replace", state: { ...state } }); // a new state object is what triggers the save
     },
     onDownloadOlder: () => {
-      const text = recoveryStore.raw(scan.id);
-      if (text !== null) saveFile({ name: `ledger-review-scan${scan.id}-older-saved-work.json`, mime: "application/json", text });
+      const file = olderFile(scan.id, older);
+      if (file) saveFile(file);
     },
     onConfirmImport: () => {
       if (!plan || !plan.ok) return;
