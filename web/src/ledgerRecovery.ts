@@ -141,9 +141,10 @@ export function browserStorage(): RecoveryStorage | null {
 }
 
 export type LoadResult = { status: "none" } | { status: "unavailable" } | ParseResult;
+export type SaveReason = "full" | "unavailable" | "conflict";
 export type SaveResult =
   | { ok: true; persistent: boolean; evicted: number[] }
-  | { ok: false; persistent: false; reason: "full" | "unavailable"; evicted: number[] };
+  | { ok: false; persistent: false; reason: SaveReason; evicted: number[] };
 
 function failure(error: unknown): "full" | "unavailable" {
   const e = error as { name?: string; code?: number } | null;
@@ -154,6 +155,8 @@ export function createRecoveryStore(getStorage: () => RecoveryStorage | null, no
   // A copy for this page only, used when the browser cannot keep one: moving to another scan and back still finds the work.
   const memory = new Map<number, string>();
   const unsynced = new Set<number>();
+  // The stored text of each scan as this page last read or wrote it. Another tab that saved since is a conflict, not something to overwrite.
+  const known = new Map<number, string | null>();
   const storage = (): RecoveryStorage | null => {
     try {
       return getStorage();
@@ -162,6 +165,16 @@ export function createRecoveryStore(getStorage: () => RecoveryStorage | null, no
     }
   };
   const keyOf = (scanId: number) => `${RECOVERY_PREFIX}${scanId}`;
+  // undefined: the browser cannot be read
+  const stored = (scanId: number): string | null | undefined => {
+    const st = storage();
+    if (!st) return undefined;
+    try {
+      return st.getItem(keyOf(scanId));
+    } catch {
+      return undefined;
+    }
+  };
 
   function entries(): { scanId: number; savedAt: string }[] {
     const found = new Map<number, string>();
@@ -197,6 +210,7 @@ export function createRecoveryStore(getStorage: () => RecoveryStorage | null, no
     if (!st) return true;
     try {
       st.removeItem(keyOf(scanId));
+      known.set(scanId, null);
       return true;
     } catch {
       return false;
@@ -206,42 +220,41 @@ export function createRecoveryStore(getStorage: () => RecoveryStorage | null, no
   return {
     entries,
 
+    // The stored text of one scan exactly as it is, for a person who wants to keep what new work is about to replace.
+    raw(scanId: number): string | null {
+      return stored(scanId) ?? memory.get(scanId) ?? null;
+    },
+
     load(scanId: number, signature: string, rows: AssetRow[]): LoadResult {
-      const st = storage();
-      let text: string | null = null;
-      let readable = Boolean(st);
-      if (st) {
-        try {
-          text = st.getItem(keyOf(scanId));
-        } catch {
-          readable = false;
-        }
-      }
-      if (text === null && (!readable || unsynced.has(scanId))) text = memory.get(scanId) ?? null;
+      const text0 = stored(scanId);
+      const readable = text0 !== undefined;
+      if (readable) known.set(scanId, text0);
+      // Work this page could not write is newer than whatever the browser still has.
+      const text = unsynced.has(scanId) || (!readable && memory.has(scanId)) ? memory.get(scanId) ?? text0 ?? null : text0 ?? null;
       if (text === null) return readable ? { status: "none" } : { status: "unavailable" };
       return parseRecovery(text, scanId, signature, rows);
     },
 
-    // Keeps the work, or removes the entry when there is no work left. Never throws: a failure is the result.
-    save(scanId: number, signature: string, state: RecoverableState): SaveResult {
+    // Keeps the work, or removes the entry when there is no work left. Never throws: a failure is the result. A write goes first and
+    // older scans are dropped only after it succeeded; work another tab saved since this page looked is never overwritten unless asked.
+    save(scanId: number, signature: string, state: RecoverableState, options: { force?: boolean } = {}): SaveResult {
       const st = storage();
+      const current = stored(scanId);
+      const seen = known.get(scanId);
+      const changedElsewhere = current !== undefined && (seen === undefined ? current !== null : current !== seen);
       if (!hasMeaningfulWork(state)) {
-        const removed = removeOne(scanId);
+        const leave = changedElsewhere; // not this page's to delete
+        const removed = leave ? true : removeOne(scanId);
         return { ok: true, persistent: Boolean(st) && removed, evicted: [] };
       }
       const text = serializeRecovery(scanId, signature, state, now());
-      const evicted: number[] = [];
-      const others = entries().filter((e) => e.scanId !== scanId).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
-      while (others.length + 1 > RECOVERY_LIMIT) {
-        const old = others.shift()!;
-        if (removeOne(old.scanId)) evicted.push(old.scanId);
-      }
       memory.set(scanId, text);
-      const fail = (reason: "full" | "unavailable"): SaveResult => {
+      const fail = (reason: SaveReason): SaveResult => {
         unsynced.add(scanId);
-        return { ok: false, persistent: false, reason, evicted };
+        return { ok: false, persistent: false, reason, evicted: [] };
       };
       if (!st) return fail("unavailable");
+      if (changedElsewhere && !options.force && seen !== undefined) return fail("conflict");
       if (text.length > RECOVERY_MAX_CHARS) return fail("full");
       try {
         st.setItem(keyOf(scanId), text);
@@ -249,6 +262,13 @@ export function createRecoveryStore(getStorage: () => RecoveryStorage | null, no
         return fail(failure(error));
       }
       unsynced.delete(scanId);
+      known.set(scanId, text);
+      const evicted: number[] = [];
+      const others = entries().filter((e) => e.scanId !== scanId).sort((a, b) => a.savedAt.localeCompare(b.savedAt));
+      while (others.length + 1 > RECOVERY_LIMIT) {
+        const old = others.shift()!;
+        if (removeOne(old.scanId)) evicted.push(old.scanId);
+      }
       return { ok: true, persistent: true, evicted };
     },
 

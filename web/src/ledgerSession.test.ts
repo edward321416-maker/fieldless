@@ -61,6 +61,8 @@ describe("starting a session", () => {
     expect(s.state).toEqual(emptyState());
     expect(s.notices[0].text).toMatch(/unavailable for this version/i);
     expect(s.notices[0].text).toMatch(/import/i);
+    expect(s.notices[0].text).toMatch(/replace/i); // new work here takes its place
+    expect(s.notices[0].older).toBe(true); // and it can be downloaded first
     expect(s.notices[0].tone).toBe("warn");
     expect(s.owns).toBe(false);
     expect(m.data.size).toBe(1);
@@ -72,6 +74,7 @@ describe("starting a session", () => {
     const s = startSession(make(m), SCAN, sig, rows, "", null);
     expect(s.state).toEqual(emptyState());
     expect(s.notices[0].text).toMatch(/could not be read/i);
+    expect(s.notices[0].older).toBe(true);
     expect(s.owns).toBe(false);
   });
 
@@ -147,6 +150,20 @@ describe("keeping work as it changes", () => {
     const st = make();
     for (const id of [1, 2, 3, 4]) st.save(id, `s${id}`, worked());
     expect(syncRecovery(st, 5, "s5", worked(), true).evicted).toHaveLength(1);
+  });
+});
+
+describe("two tabs", () => {
+  it("reports a conflict as a problem, and writes over the other tab only when told to", () => {
+    const m = new Mem();
+    const a = make(m);
+    const b = make(m);
+    b.load(SCAN, sig, rows);
+    a.load(SCAN, sig, rows);
+    a.save(SCAN, sig, worked());
+    expect(syncRecovery(b, SCAN, sig, { ...worked(), reviewer: "B" }, true).problem).toBe("conflict");
+    expect(syncRecovery(b, SCAN, sig, { ...worked(), reviewer: "B" }, true, true).problem).toBe("");
+    expect(needsLeaveWarning(worked(), "conflict")).toBe(true);
   });
 });
 

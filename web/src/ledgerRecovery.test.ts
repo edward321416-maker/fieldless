@@ -261,3 +261,103 @@ describe("clearing saved work", () => {
     expect(st.load(SCAN, sig, rows)).toMatchObject({ status: expect.stringMatching(/none|unavailable/) });
   });
 });
+
+describe("the newest work wins", () => {
+  it("restores the newer work kept in memory when the latest write failed after an earlier success", () => {
+    const { s, store: st } = store();
+    st.save(SCAN, sig, work({ drafts: { [rkTree]: { ...EMPTY_DRAFT, note: "v1 older" } }, decisions: {} }));
+    s!.failWrites = "full";
+    expect(st.save(SCAN, sig, work({ drafts: { [rkTree]: { ...EMPTY_DRAFT, note: "v2 newer" } }, decisions: {} })).ok).toBe(false);
+    const got = st.load(SCAN, sig, rows);
+    expect(got.status).toBe("restored");
+    if (got.status === "restored") expect(got.state.drafts[rkTree].note).toBe("v2 newer");
+  });
+
+  it("goes back to the disk copy once a later write succeeds", () => {
+    const { s, store: st } = store();
+    st.save(SCAN, sig, work({ reviewer: "one" }));
+    s!.failWrites = "full";
+    st.save(SCAN, sig, work({ reviewer: "two" }));
+    s!.failWrites = null;
+    st.save(SCAN, sig, work({ reviewer: "three" }));
+    const got = st.load(SCAN, sig, rows);
+    if (got.status === "restored") expect(got.state.reviewer).toBe("three");
+    expect(got.status).toBe("restored");
+  });
+});
+
+describe("a failed write deletes nothing", () => {
+  const fill = () => {
+    let t = 0;
+    const s = new FakeStorage();
+    const st = createRecoveryStore(() => s, () => new Date(Date.UTC(2026, 10, 4, 12, 0, t++)).toISOString());
+    for (const id of [1, 2, 3, 4]) st.save(id, `s${id}`, work());
+    return { s, st };
+  };
+
+  it("keeps the older scans when the fifth cannot be written", () => {
+    const { s, st } = fill();
+    s.failWrites = "full";
+    const r = st.save(5, "s5", work());
+    expect(r).toMatchObject({ ok: false, evicted: [] });
+    expect([...s.data.keys()].sort()).toEqual([1, 2, 3, 4].map((id) => `${RECOVERY_PREFIX}${id}`)); // what was saved is all still there
+    expect(st.load(5, "s5", rows).status).not.toBe("none"); // and the fifth is kept for this page
+  });
+
+  it("drops the oldest only after the fifth is written", () => {
+    const { st } = fill();
+    expect(st.save(5, "s5", work())).toMatchObject({ ok: true, evicted: [1] });
+    expect(st.entries().map((e) => e.scanId).sort()).toEqual([2, 3, 4, 5]);
+  });
+});
+
+describe("another tab on the same storage", () => {
+  const two = () => {
+    const s = new FakeStorage();
+    return { s, a: createRecoveryStore(() => s, () => NOW), b: createRecoveryStore(() => s, () => NOW) };
+  };
+
+  it("is not overwritten by a tab that opened earlier and has nothing", () => {
+    const { s, a, b } = two();
+    b.load(SCAN, sig, rows); // tab B opened before A saved anything
+    a.load(SCAN, sig, rows);
+    a.save(SCAN, sig, work());
+    b.save(SCAN, sig, emptyState()); // B's page has no work: it must not delete A's
+    expect(s.data.size).toBe(1);
+    expect(a.load(SCAN, sig, rows).status).toBe("restored");
+  });
+
+  it("reports a conflict instead of overwriting work it has not seen", () => {
+    const { s, a, b } = two();
+    b.load(SCAN, sig, rows);
+    a.load(SCAN, sig, rows);
+    a.save(SCAN, sig, work());
+    const before = [...s.data.values()][0];
+    expect(b.save(SCAN, sig, work({ reviewer: "B" }))).toMatchObject({ ok: false, reason: "conflict", persistent: false });
+    expect([...s.data.values()][0]).toBe(before);
+  });
+
+  it("overwrites on purpose when asked", () => {
+    const { s, a, b } = two();
+    b.load(SCAN, sig, rows);
+    a.save(SCAN, sig, work());
+    expect(b.save(SCAN, sig, work({ reviewer: "B" }), { force: true })).toMatchObject({ ok: true });
+    expect(JSON.parse([...s.data.values()][0]).reviewer).toBe("B");
+  });
+
+  it("keeps saving its own work without a conflict", () => {
+    const { a } = two();
+    a.load(SCAN, sig, rows);
+    expect(a.save(SCAN, sig, work({ reviewer: "1" })).ok).toBe(true);
+    expect(a.save(SCAN, sig, work({ reviewer: "2" })).ok).toBe(true);
+  });
+});
+
+describe("the older file that new work would replace", () => {
+  it("can be read back as it was stored, whatever is wrong with it", () => {
+    const { s, store: st } = store();
+    s!.data.set(`${RECOVERY_PREFIX}${SCAN}`, "{broken");
+    expect(st.raw(SCAN)).toBe("{broken");
+    expect(store().store.raw(SCAN)).toBeNull();
+  });
+});

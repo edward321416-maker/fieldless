@@ -4,13 +4,15 @@ import { DEFAULT_QUEUE } from "./ledgerQuery";
 import { emptyState, hasMeaningfulWork, type RecoverableState, type recoveryStore } from "./ledgerRecovery";
 import type { AssetRow } from "./types";
 
-export type RecoveryStoreLike = Pick<typeof recoveryStore, "load" | "save" | "clear" | "clearAll" | "entries">;
-export type StorageProblem = "" | "full" | "unavailable";
+export type RecoveryStoreLike = Pick<typeof recoveryStore, "load" | "save" | "clear" | "clearAll" | "entries" | "raw">;
+export type StorageProblem = "" | "full" | "unavailable" | "conflict";
 
 export interface Notice {
   id: string;
   tone: "info" | "warn";
   text: string;
+  // The notice is about a saved file this version could not use: it can be downloaded before new work replaces it.
+  older?: boolean;
 }
 
 export interface Start {
@@ -44,10 +46,10 @@ function begin(loaded: ReturnType<RecoveryStoreLike["load"]>, fresh: () => Recov
     case "stale":
       return { state: fresh(), problem, owns: false, notices: [{ id: "stale", tone: "warn",
         text: `Work saved in this browser on ${when(loaded.savedAt)} was made on an older version of this list, so it is unavailable for this version and was not restored. `
-          + "If you downloaded a journal or a package then, use Import to bring its decisions back where they still apply." }] };
+          + "New work here will replace it, so download it first if you want to keep it. If you downloaded a journal or a package then, use Import to bring its decisions back where they still apply.", older: true }] };
     case "corrupt":
       return { state: fresh(), problem, owns: false, notices: [{ id: "corrupt", tone: "warn",
-        text: `Work saved in this browser for this scan could not be read (${loaded.detail}), so nothing was restored. It stays there until you clear it or start new work here.` }] };
+        text: `Work saved in this browser for this scan could not be read (${loaded.detail}), so nothing was restored. New work here will replace it, so download it first if you want to keep it.`, older: true }] };
     case "unavailable":
       return { state: fresh(), problem, owns: true, notices: [{ id: "unavailable", tone: "warn",
         text: "This browser cannot keep saved work (storage is unavailable or blocked). Your work lasts only while this page is open. Download the files to keep it." }] };
@@ -63,10 +65,11 @@ export interface Synced {
 }
 
 // Called after every change. Never throws: a store that fails is a result the page shows.
-export function syncRecovery(store: RecoveryStoreLike, scanId: number, signature: string, state: RecoverableState, owns: boolean): Synced {
+export function syncRecovery(store: RecoveryStoreLike, scanId: number, signature: string, state: RecoverableState, owns: boolean,
+  force = false): Synced {
   const meaningful = hasMeaningfulWork(state);
   if (!meaningful && !owns) return { owns, problem: "", evicted: [] };
-  const saved = store.save(scanId, signature, state);
+  const saved = store.save(scanId, signature, state, { force });
   if (!meaningful) return { owns, problem: "", evicted: [] };
   return { owns: true, problem: saved.ok ? "" : saved.reason, evicted: saved.evicted };
 }

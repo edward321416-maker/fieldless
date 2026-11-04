@@ -23,7 +23,7 @@ function render(state: ReviewState = initialReviewState(), list: AssetRow[] = ro
     ui={ui ? { ...QUIET, ...ui } : undefined} />);
 }
 const NOOP = () => {};
-const QUIET: SessionUi = { notices: [], problem: "", plan: null, askingClear: false, onFile: NOOP, onConfirmImport: NOOP, onCancelImport: NOOP, onAskClear: NOOP,
+const QUIET: SessionUi = { onOverwrite: NOOP, onDownloadOlder: NOOP, notices: [], problem: "", plan: null, askingClear: false, onFile: NOOP, onConfirmImport: NOOP, onCancelImport: NOOP, onAskClear: NOOP,
   onKeepSaved: NOOP, onClear: NOOP };
 const rkOf = (r: AssetRow) => r.ledger_source!.review_key;
 function run(actions: Parameters<typeof reviewReducer>[1][], from = initialReviewState()): ReviewState {
@@ -442,6 +442,19 @@ describe("saved work, notices and import", () => {
     }
     expect(render(initialReviewState(), rows, undefined, { problem: "full" })).toMatch(/full/i);
     expect(render()).not.toMatch(/could not be saved/i);
+  });
+
+  it("says when another tab saved over this scan, and offers to keep this tab's work instead", () => {
+    const html = render(initialReviewState(), rows, undefined, { problem: "conflict" });
+    expect(html).toMatch(/role="alert"[^>]*>[^<]*another tab/i);
+    expect(html).toMatch(/<button[^>]*>Save this tab&#x27;s work over it<\/button>/);
+    expect(render()).not.toContain("Save this tab");
+  });
+
+  it("offers to download an older saved file before new work replaces it", () => {
+    const html = render(initialReviewState(), rows, undefined, { notices: [{ id: "stale", tone: "warn", text: "Old.", older: true }] });
+    expect(html).toMatch(/<button[^>]*>Download the older saved work<\/button>/);
+    expect(render(initialReviewState(), rows, undefined, { notices: [{ id: "restored", tone: "info", text: "Back." }] })).not.toContain("older saved work");
   });
 
   it("says where the work is kept and what is in it", () => {

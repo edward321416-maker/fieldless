@@ -2,7 +2,7 @@ import { useContext, useEffect, useReducer, useRef, useState, type Dispatch } fr
 import LedgerHandoff from "./LedgerHandoff";
 import { LedgerReviewContext } from "./LedgerReviewContext";
 import { colourOf } from "./items";
-import { IMPORT_MAX_CHARS, applyImport, planImport, type ImportPlan } from "./ledgerImport";
+import { IMPORT_MAX_CHARS, applyImport, lossOf, planImport, type ImportPlan } from "./ledgerImport";
 import { readReviewPackage } from "./ledgerPackage";
 import { DEFAULT_QUEUE, FILTERS, FILTER_LABELS, QUERY_MAX, filterCounts, itemsOf, isFilter, queueRows, type QueueSettings } from "./ledgerQuery";
 import { emptyState, hasMeaningfulWork, recoveryStore, type RecoverableState } from "./ledgerRecovery";
@@ -125,10 +125,12 @@ export interface SessionUi {
   onAskClear: () => void;
   onKeepSaved: () => void;
   onClear: (everything: boolean) => void;
+  onOverwrite: () => void;
+  onDownloadOlder: () => void;
 }
 
 const NOOP = () => {};
-const NO_UI: SessionUi = { notices: [], problem: "", plan: null, askingClear: false, onFile: NOOP, onConfirmImport: NOOP, onCancelImport: NOOP,
+const NO_UI: SessionUi = { onOverwrite: NOOP, onDownloadOlder: NOOP, notices: [], problem: "", plan: null, askingClear: false, onFile: NOOP, onConfirmImport: NOOP, onCancelImport: NOOP,
   onAskClear: NOOP, onKeepSaved: NOOP, onClear: NOOP };
 const PREVIEW_LINES = 30;
 
@@ -143,13 +145,30 @@ interface ViewProps {
   ui?: SessionUi;
 }
 
+const PROBLEM_TEXT: Record<Exclude<StorageProblem, "">, string> = {
+  full: "its storage is full",
+  unavailable: "storage is unavailable or blocked",
+  conflict: "",
+};
+
 function Notices({ ui }: { ui: SessionUi }) {
   return (
     <>
-      {ui.notices.map((n) => <p key={n.id} role="status" className={`ledger-notice ledger-notice-${n.tone}`}>{n.text}</p>)}
-      {ui.problem && (
+      {ui.notices.map((n) => (
+        <p key={n.id} role="status" className={`ledger-notice ledger-notice-${n.tone}`}>
+          {n.text}
+          {n.older && <> <button type="button" className="link-button" onClick={ui.onDownloadOlder}>Download the older saved work</button></>}
+        </p>
+      ))}
+      {ui.problem === "conflict" && (
         <p role="alert" className="ledger-alert">
-          {`Your work could not be saved in this browser (${ui.problem === "full" ? "its storage is full" : "storage is unavailable or blocked"}). It lasts only while this page is open. Download the files to keep it.`}
+          {"Another tab saved work for this scan after this page opened, so this tab's changes were not saved over it. Reload to see the other tab's work, or keep this tab's. "}
+          <button type="button" className="link-button" onClick={ui.onOverwrite}>Save this tab&apos;s work over it</button>
+        </p>
+      )}
+      {ui.problem && ui.problem !== "conflict" && (
+        <p role="alert" className="ledger-alert">
+          {`Your work could not be saved in this browser (${PROBLEM_TEXT[ui.problem]}). It lasts only while this page is open. Download the files to keep it.`}
         </p>
       )}
     </>
@@ -525,6 +544,8 @@ function Session(props: PaneProps) {
   } : localDispatch;
 
   const owns = useRef(begin.owns);
+  const force = useRef(false);
+  const reading = useRef(0);
   const [stored, setStored] = useState<StorageProblem>(begin.problem);
   const [notices, setNotices] = useState<Notice[]>(begin.notices);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
@@ -540,7 +561,8 @@ function Session(props: PaneProps) {
   // Keep the work as it changes. A failure is shown, never thrown.
   const meaningful = hasMeaningfulWork(state);
   useEffect(() => {
-    const synced = syncRecovery(recoveryStore, scan.id, signature, state, owns.current);
+    const synced = syncRecovery(recoveryStore, scan.id, signature, state, owns.current, force.current);
+    force.current = false;
     owns.current = synced.owns;
     setStored(meaningful ? synced.problem : begin.problem);
     if (synced.evicted.length > 0) {
@@ -572,14 +594,29 @@ function Session(props: PaneProps) {
   const ui: SessionUi = {
     notices, problem, plan, askingClear,
     onFile: (file) => {
+      reading.current += 1;
+      const mine = reading.current; // a slower, earlier file must not replace the plan of the one chosen last
       if (file.size > IMPORT_MAX_CHARS) return setPlan({ ok: false, errors: ["The file is far larger than a review."] });
       file.text().then(
-        (text) => setPlan(planImport(text, { scanId: scan.id, rows: check.rows, current: state, readPackage: readReviewPackage })),
-        () => setPlan({ ok: false, errors: ["The file could not be read."] }),
+        (text) => mine === reading.current && setPlan(planImport(text, { scanId: scan.id, rows: check.rows, current: state, readPackage: readReviewPackage })),
+        () => mine === reading.current && setPlan({ ok: false, errors: ["The file could not be read."] }),
       );
+    },
+    onOverwrite: () => {
+      force.current = true;
+      dispatch({ type: "replace", state: { ...state } }); // a new state object is what triggers the save
+    },
+    onDownloadOlder: () => {
+      const text = recoveryStore.raw(scan.id);
+      if (text !== null) saveFile({ name: `ledger-review-scan${scan.id}-older-saved-work.json`, mime: "application/json", text });
     },
     onConfirmImport: () => {
       if (!plan || !plan.ok) return;
+      const now = lossOf(state);
+      if (now.decisions !== plan.replaces.decisions || now.drafts !== plan.replaces.drafts) {
+        setPlan({ ...plan, replaces: now }); // the work changed since the preview: show what replacing would lose now, and ask again
+        return;
+      }
       dispatch({ type: "replace", state: applyImport(plan, state, check.rows) });
       setPlan(null);
       setNotices((all) => all.filter((n) => n.id !== "restored")); // what came back from storage was replaced

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IMPORT_MAX_CHARS, applyImport, planImport, type ImportPlan } from "./ledgerImport";
+import { IMPORT_MAX_CHARS, applyImport, lossOf, planImport, type ImportPlan } from "./ledgerImport";
 import { NOW, row, source, treeRow } from "./ledgerFixtures";
 import { DEFAULT_QUEUE } from "./ledgerQuery";
 import { buildReviewPackage, readReviewPackage } from "./ledgerPackage";
@@ -81,6 +81,12 @@ describe("importing a journal", () => {
     expect(plan(text(journal(noNeighbors))).ok).toBe(false);
     const p = plan(text(journal({ ...decide(ramp, CHANGE), approved: true } as LedgerDecision)));
     expect(p.ok).toBe(false);
+  });
+
+  it("rejects a journal with no decisions: it would only wipe the current work", () => {
+    const p = plan(text(journal()));
+    expect(p.ok).toBe(false);
+    if (!p.ok) expect(p.errors.join(" ")).toMatch(/no decisions/i);
   });
 
   it("rejects a repeated record and a journal with a key the contract does not have", () => {
@@ -244,5 +250,13 @@ describe("the package module of the handoff", () => {
     const edited = JSON.parse(made());
     edited.journal.decisions[0].evidence = "unclear";
     expect(real(JSON.stringify(edited)).ok).toBe(false);
+  });
+});
+
+describe("what is lost is counted from the work as it is", () => {
+  it("is the decisions and the drafts no decision stands for", () => {
+    const mine: RecoverableState = { ...emptyState(), decisions: { [rk(ramp)]: decide(ramp, CHANGE) }, drafts: { [rk(ramp)]: CHANGE, [rk(tree)]: { ...EMPTY_DRAFT, note: "x" } } };
+    expect(lossOf(mine)).toEqual({ decisions: 1, drafts: 1 });
+    expect(lossOf(emptyState())).toEqual({ decisions: 0, drafts: 0 });
   });
 });

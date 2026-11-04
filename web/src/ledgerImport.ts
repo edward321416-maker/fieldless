@@ -44,7 +44,7 @@ const NOTES = [
 ];
 
 // What replacing would lose: the decisions recorded now, and the drafts no decision stands for.
-function loss(current: RecoverableState): { decisions: number; drafts: number } {
+export function lossOf(current: RecoverableState): { decisions: number; drafts: number } {
   const decisions = Object.keys(current.decisions).length;
   if (!hasMeaningfulWork(current)) return { decisions: 0, drafts: 0 };
   const drafts = Object.entries(current.drafts).filter(([key, d]) => !Object.prototype.hasOwnProperty.call(current.decisions, key)
@@ -80,6 +80,7 @@ export function planImport(text: string, ctx: ImportContext): ImportPlan {
   }
   const checked = validateJournal(ctx.rows, journal as LedgerJournal, ctx.scanId);
   if (!checked.ok) return reject(...checked.errors);
+  if ((journal as LedgerJournal).decisions.length === 0) return reject("The file holds no decisions, so there is nothing to import. Your current work is unchanged.");
 
   const byKey = new Map(reviewableRows(ctx.rows).map((r) => [sourceOf(r)!.review_key, r]));
   const lines: PreviewLine[] = (journal as LedgerJournal).decisions.map((d) => {
@@ -92,7 +93,7 @@ export function planImport(text: string, ctx: ImportContext): ImportPlan {
   });
   return { ok: true, kind, journal: journal as LedgerJournal, check: checked,
     counts: { changes: checked.changes.length, observations: checked.observations.length, holds: checked.holds.length },
-    lines, replaces: loss(ctx.current), notes: NOTES };
+    lines, replaces: lossOf(ctx.current), notes: NOTES };
 }
 
 function draftOf(d: LedgerDecision): Draft {
