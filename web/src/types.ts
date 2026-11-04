@@ -276,6 +276,13 @@ export interface AssetRow {
   attribute_note?: string;
   action_if_attribute_agrees?: string; // a visit row waiting on its attribute: what it would suggest if that agreed
   visit_reason?: string; // why a visit row needs a newer photo or a field check
+  // Evidence quality gate (spec 2026-11-04 B). Optional: older lists have none. "not_flagged" and "not_reviewed" mean nobody has
+  // looked or nothing was found, never that the identity or the photo was verified.
+  identity_state?: "unresolved" | "not_flagged";
+  identity_reason?: string;
+  competing_record_ids?: string[];
+  evidence_quality?: "unclear" | "not_reviewed";
+  evidence_quality_reason?: string;
 }
 
 export type UnreachedEntry = [string, number, number] | [string, number, number, string[]];

@@ -9,13 +9,16 @@ export type { LedgerChoice, LedgerDecision, LedgerEvidence, LedgerIdentity, Ledg
 
 const DECISION_KEYS = ["review_key", "record_id", "item", "identity", "evidence", "decision", "field", "proposed_value",
   "neighbors_checked", "reviewer", "note", "reviewed_at"];
-const IDENTITIES: string[] = ["confirmed", "uncertain", "different"];
-const EVIDENCES: string[] = ["clear", "unclear"];
-const CHOICES: string[] = ["change", "observe", "hold"];
+export const IDENTITIES: string[] = ["confirmed", "uncertain", "different"];
+export const EVIDENCES: string[] = ["clear", "unclear"];
+export const CHOICES: string[] = ["change", "observe", "hold"];
+// A name that would reach the prototype if it were ever used as an object key. Nothing from a file or a list may be one.
+const DANGEROUS_KEYS = ["__proto__", "constructor", "prototype"];
+export const isDangerousKey = (key: string) => DANGEROUS_KEYS.includes(key);
 // An official inspection or verification date is the city's own statement: a photo never edits it.
 const DATE_FIELD = /date|verif|inspect|install|updated/i;
-const REVIEWER_MAX = 200;
-const NOTE_MAX = 2000;
+export const REVIEWER_MAX = 200;
+export const NOTE_MAX = 2000;
 const JOURNAL_KEYS = ["schema_version", "scan_id", "decisions"];
 // Said on every row of both CSV files, in the words eval/ledger_review.py writes (tests/fixtures/ledger_interop proves it).
 export const ASSERTION = "Self-asserted by the reviewer in the app; not an authenticated municipal approval.";
@@ -28,9 +31,9 @@ const SAFE_LAYER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const PHOTO_DAY = /^\d{4}-\d{2}-\d{2}/;
 
-const isText = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
+export const isText = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
 export const has = (o: object, key: string) => Object.prototype.hasOwnProperty.call(o, key);
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 // The source snapshot of a row, or null when there is none or it is not the version 1 contract. A row with none cannot be reviewed.
 export function sourceOf(row: AssetRow): LedgerSource | null {
@@ -39,6 +42,7 @@ export function sourceOf(row: AssetRow): LedgerSource | null {
   if (![s.layer, s.record_key, s.record_id, s.properties_sha256, s.review_key].every(isText)) return null;
   if (!SAFE_LAYER.test(s.layer as string) || (s.layer as string).includes("..")) return null;
   if (!isRecord(s.editable_fields) || !Array.isArray(s.identity_warnings) || !s.identity_warnings.every((w) => typeof w === "string")) return null;
+  if (isDangerousKey(s.review_key as string) || Object.keys(s.editable_fields).some(isDangerousKey)) return null;
   for (const f of Object.values(s.editable_fields)) {
     if (!isRecord(f) || typeof f.yes !== "string" || typeof f.no !== "string" || typeof f.question !== "string") return null;
   }
@@ -58,11 +62,32 @@ export function reviewableRows(rows: AssetRow[]): AssetRow[] {
   });
 }
 
-// Changes when the scan or any record's snapshot changes, so a review made on one never carries over to another.
+// A short fingerprint of text (cyrb53). It only notices a change; it protects nothing against anyone who wants to forge one.
+function fingerprint(text: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+// What the list says about a row beyond its source snapshot: its suggested action, the identity and clarity states with their reasons, the
+// records it could be and the neighbouring-record warnings. When any of it changes, work saved before is not for this version of the row.
+function classification(row: AssetRow, source: LedgerSource): string {
+  return fingerprint(JSON.stringify([row.action, row.identity_state ?? null, row.identity_reason ?? "", row.competing_record_ids ?? [],
+    row.evidence_quality ?? null, row.evidence_quality_reason ?? "", source.identity_warnings]));
+}
+
+// Changes when the scan, any record's snapshot or its classification changes, so a review made on one never carries over to another.
 export function reviewSignature(scanId: number, rows: AssetRow[]): string {
   return [String(scanId), ...reviewableRows(rows).map((r) => {
     const s = sourceOf(r)!;
-    return `${s.review_key}:${s.properties_sha256}:${s.record_id}`;
+    return `${s.review_key}:${s.properties_sha256}:${s.record_id}:${classification(r, s)}`;
   })].join("|");
 }
 

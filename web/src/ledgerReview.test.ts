@@ -385,3 +385,37 @@ describe("a different scan or source", () => {
     expect(reviewSignature(17, [changed, a[1]])).not.toBe(reviewSignature(17, a));
   });
 });
+
+describe("a changed classification of the same source", () => {
+  const base = () => [row(), treeRow()];
+  const sig = (r: Parameters<typeof row>[0]) => reviewSignature(17, [row(r), treeRow()]);
+
+  it("has a different signature, so a stored approval cannot be reused for a row that is now classified differently", () => {
+    const was = reviewSignature(17, base());
+    for (const change of [
+      { identity_state: "unresolved" as const },
+      { identity_state: "not_flagged" as const },
+      { identity_reason: "Two records 3 m apart." },
+      { competing_record_ids: ["TRE-1"] },
+      { evidence_quality: "unclear" as const },
+      { evidence_quality: "not_reviewed" as const },
+      { evidence_quality_reason: "An AI visual audit could not tell." },
+      { action: "Visit on site" },
+    ]) expect(sig(change), JSON.stringify(change)).not.toBe(was);
+  });
+
+  it("has a different signature when the neighbouring-record warnings of the source change", () => {
+    const was = reviewSignature(17, base());
+    const warned = [row({}, source({ identity_warnings: ["RAMP-13 is 2 m away and was photographed 1 s apart."] })), treeRow()];
+    expect(reviewSignature(17, warned)).not.toBe(was);
+  });
+
+  it("is the same for the same rows, and does not depend on the order of the fields it reads", () => {
+    expect(sig({ competing_record_ids: ["A", "B"], identity_state: "unresolved" })).toBe(sig({ identity_state: "unresolved", competing_record_ids: ["A", "B"] }));
+    expect(sig({ competing_record_ids: ["A", "B"] })).not.toBe(sig({ competing_record_ids: ["B", "A"] }));
+  });
+
+  it("stays the signature of a list that has none of these fields, whatever else is on a row", () => {
+    expect(sig({ city_location: "2 Main St" })).toBe(reviewSignature(17, base()));
+  });
+});

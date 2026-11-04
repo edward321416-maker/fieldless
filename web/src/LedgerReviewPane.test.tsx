@@ -3,13 +3,14 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { NOW, row, source, treeRow } from "./ledgerFixtures";
 import { EMPTY_DRAFT, type Draft } from "./ledgerReview";
 import LedgerReviewPane, {
-  LedgerReviewView, initialReviewState, journalOf, reviewReducer, runDownload, type ReviewState,
+  LedgerReviewView, initialReviewState, journalOf, reviewReducer, runDownload, type ReviewState, type SessionUi,
 } from "./LedgerReviewPane";
+import { planImport } from "./ledgerImport";
 import type { AssetRow, Scan } from "./types";
 
 const scan = { id: 17, items: [{ id: "curb_ramp", target: "curb ramp", map_icon: "ramp", kind: "check", inventory: true },
   { id: "street_tree", target: "street tree", map_icon: "tree", kind: "check", inventory: true }] } as unknown as Scan;
-const ramp = row();
+const ramp = row({ action: "Correct the record" });
 const tree = treeRow(53943, ["TRE-53948 is 3 m away and was photographed 2 s apart."]);
 const old = row({ city_record: "OLD-1" }, null);
 const rows: AssetRow[] = [ramp, tree, old];
@@ -17,9 +18,14 @@ const chk = (list: AssetRow[] = rows) => ({ scan_id: 17, city: "Seattle", totals
 const CHANGE: Draft = { ...EMPTY_DRAFT, identity: "confirmed", evidence: "clear", decision: "change",
   field: "HAS_DETECTABLE_WARNING", proposed: "Yes", note: "The panel is visible." };
 
-function render(state: ReviewState = initialReviewState(), list: AssetRow[] = rows, showFor?: (r: AssetRow) => (() => void) | undefined) {
-  return renderToStaticMarkup(<LedgerReviewView scan={scan} city="Seattle" check={chk(list)} state={state} dispatch={() => {}} showFor={showFor} save={() => {}} />);
+function render(state: ReviewState = initialReviewState(), list: AssetRow[] = rows, showFor?: (r: AssetRow) => (() => void) | undefined, ui?: Partial<SessionUi>) {
+  return renderToStaticMarkup(<LedgerReviewView scan={scan} city="Seattle" check={chk(list)} state={state} dispatch={() => {}} showFor={showFor} save={() => {}}
+    ui={ui ? { ...QUIET, ...ui } : undefined} />);
 }
+const NOOP = () => {};
+const QUIET: SessionUi = { notices: [], problem: "", plan: null, askingClear: false, onFile: NOOP, onConfirmImport: NOOP, onCancelImport: NOOP, onAskClear: NOOP,
+  onKeepSaved: NOOP, onClear: NOOP };
+const rkOf = (r: AssetRow) => r.ledger_source!.review_key;
 function run(actions: Parameters<typeof reviewReducer>[1][], from = initialReviewState()): ReviewState {
   return actions.reduce(reviewReducer, from);
 }
@@ -57,7 +63,7 @@ describe("the review pane, before anyone has chosen anything", () => {
 
   it("has no answer chosen and nothing approved", () => {
     expect(html).not.toMatch(/checked=""/);
-    expect(html).not.toMatch(/selected=""/);
+    expect(html.slice(html.indexOf("ledger-card"))).not.toMatch(/selected=""/);
     expect(html).toContain("Not reviewed");
     expect(html).toMatch(/<dt>Changes<\/dt><dd>0<\/dd>/);
     expect(html).toMatch(/<dt>Observations<\/dt><dd>0<\/dd>/);
@@ -107,7 +113,7 @@ describe("a list with no source snapshots", () => {
 });
 
 describe("a record with nothing a photo can change", () => {
-  const state = run([{ type: "go", index: 1, count: 2 }]);
+  const state = run([{ type: "select", key: rkOf(tree) }]);
   const html = render(state);
 
   it("shows the neighbouring-record warning and a box to confirm it was checked", () => {
@@ -183,9 +189,16 @@ describe("recording decisions", () => {
     expect(run([{ type: "remove", key: ramp.ledger_source!.review_key }], recordRamp()).decisions).toEqual({});
   });
 
-  it("goes only to rows that exist", () => {
-    expect(run([{ type: "go", index: 5, count: 2 }]).index).toBe(1);
-    expect(run([{ type: "go", index: -3, count: 2 }]).index).toBe(0);
+  it("selects a row by its review key, not by its place in the list", () => {
+    expect(run([{ type: "select", key: rkOf(tree) }]).selected).toBe(rkOf(tree));
+    const html = render(run([{ type: "select", key: rkOf(tree) }]), [tree, ramp]);
+    expect(html).toContain("TRE-53943");
+    expect(html).toMatch(/Row \d of 2/);
+  });
+
+  it("shows the first row of the queue when the selected row is not in it", () => {
+    const html = render(run([{ type: "select", key: "rk-gone" }]));
+    expect(html).toContain("RAMP-12");
   });
 });
 
@@ -309,5 +322,226 @@ describe("the layout at 390px", () => {
 
   it("has no fixed width wider than a phone", () => {
     for (const m of block(".ledger-").matchAll(/(?<!max-|min-)width:\s*(\d+)px/g)) expect(Number(m[1])).toBeLessThanOrEqual(360);
+  });
+});
+
+describe("finding a record", () => {
+  const many: AssetRow[] = Array.from({ length: 93 }, (_, i) => row({ city_record: `CBR-${30000 + i}`, city_location: `${i} Pine St` },
+    source({ record_id: `CBR-${30000 + i}`, record_key: `fid:${i}`, review_key: `rk-${30000 + i}-` + "d".repeat(20) })));
+  const fix = row({ action: "Correct the record", city_record: "CBR-39290", city_location: "9290 Pine St" },
+    source({ record_id: "CBR-39290", record_key: "fid:39290", review_key: "rk-39290-" + "d".repeat(20) }));
+  const all = [...many, fix];
+
+  it("opens the correction first in a list of 94 rows, not after 93 Next", () => {
+    const html = render(initialReviewState(), all);
+    expect(html).toContain("CBR-39290");
+    expect(html).toMatch(/Row 1 of 94/);
+  });
+
+  it("opens a record by its ID", () => {
+    const html = render(run([{ type: "queue", patch: { query: "cbr-30041" } }]), all);
+    expect(html).toContain("CBR-30041");
+    expect(html).toMatch(/Row 1 of 1/);
+  });
+
+  it("opens the record that was typed even while an action is chosen elsewhere, and says it searched the whole list", () => {
+    const html = render(run([{ type: "queue", patch: { action: "No change", query: "CBR-39290" } }]), all);
+    expect(html).toContain("CBR-39290");
+    expect(html).toMatch(/whole list/i);
+  });
+
+  it("says nothing matched and offers to clear the search", () => {
+    const html = render(run([{ type: "queue", patch: { query: "zzz" } }]), all);
+    expect(html).toMatch(/No record matches/i);
+    expect(html).toContain("Clear search and filters");
+    expect(html).not.toContain("Record decision");
+  });
+
+  it("offers the search, the item, the state and the whole-list control as native, labelled fields", () => {
+    const html = render();
+    expect(html).toMatch(/<input[^>]*id="ledger-search"/);
+    expect(html).toMatch(/<label[^>]*for="ledger-search"/);
+    expect(html).toMatch(/<select[^>]*id="ledger-item"/);
+    expect(html).toMatch(/<select[^>]*id="ledger-state"/);
+    for (const label of ["All", "Candidates", "Corrections", "Identity doubt", "Unclear", "On hold", "Not reviewed"]) expect(html).toContain(label);
+  });
+
+  it("shows how many rows each state holds", () => {
+    expect(render()).toMatch(/Identity doubt \(1\)/);
+    expect(render()).toMatch(/Corrections \(1\)/);
+  });
+
+  it("keeps the action chosen elsewhere as a scope, with the whole list one button away", () => {
+    const html = render(run([{ type: "queue", patch: { action: "Update the date" } }]));
+    expect(html).toContain("Review newer photo evidence");
+    expect(html).toContain("Show the whole list");
+    expect(html).toMatch(/Row 1 of 1/);
+    expect(render()).not.toContain("Show the whole list");
+  });
+
+  it("filters never move a decision: a hidden decision stays in the counts and in the files", () => {
+    const s = run([{ type: "queue", patch: { filter: "unreviewed" } }], recordRamp());
+    expect(render(s)).toMatch(/<dt>Changes<\/dt><dd>1<\/dd>/);
+    expect(journalOf(rows, 17, s).decisions).toHaveLength(1);
+    expect(render(s)).not.toContain("RAMP-12</h4>");
+  });
+
+  it("resets the selection when the search changes, so the best match is shown", () => {
+    const s = run([{ type: "select", key: rkOf(tree) }, { type: "queue", patch: { query: "RAMP" } }]);
+    expect(s.selected).toBe("");
+    expect(s.queue.query).toBe("RAMP");
+  });
+});
+
+describe("what the list says about identity and photo clarity", () => {
+  const quality = (over: Partial<AssetRow>) => render(initialReviewState(), [row({ action: "Visit on site", ...over })]);
+
+  it("shows an unresolved identity with its reason and the other records it could be", () => {
+    const html = quality({ identity_state: "unresolved", identity_reason: "Two tree records 3 m apart were photographed 2 s apart.", competing_record_ids: ["TRE-53948", "TRE-53949"] });
+    expect(html).toContain("Two tree records 3 m apart");
+    expect(html).toContain("TRE-53948");
+    expect(html).toContain("TRE-53949");
+    expect(html).toMatch(/not settled/i);
+  });
+
+  it("shows unclear photo evidence with its reason", () => {
+    const html = quality({ evidence_quality: "unclear", evidence_quality_reason: "An AI visual audit could not tell the ramp apart." });
+    expect(html).toContain("An AI visual audit could not tell the ramp apart.");
+    expect(html).toMatch(/not clear/i);
+  });
+
+  it("never reads not_flagged or not_reviewed as verified", () => {
+    const html = quality({ identity_state: "not_flagged", evidence_quality: "not_reviewed" });
+    expect(html).toMatch(/does not verify|not a verification|not verified/i);
+    expect(html).toMatch(/not been reviewed/i);
+    expect(html).not.toMatch(/identity (is )?verified|verified identity|photo is clear/i);
+  });
+
+  it("says nothing when the list has no quality fields", () => {
+    expect(render()).not.toMatch(/Identity not settled|Photo clarity/);
+  });
+
+  it("does not add an approval rule of its own: the existing confirmations still decide", () => {
+    const s = run([{ type: "reviewer", value: "A" }, { type: "draft", key: rkOf(ramp), patch: { ...CHANGE, identity: "uncertain" } },
+      { type: "record", row: ramp, now: NOW }]);
+    expect(s.decisions).toEqual({});
+  });
+});
+
+describe("saved work, notices and import", () => {
+  it("shows what was restored or could not be", () => {
+    const html = render(initialReviewState(), rows, undefined, { notices: [{ id: "stale", tone: "warn", text: "Old work is unavailable for this version." }] });
+    expect(html).toContain("Old work is unavailable for this version.");
+  });
+
+  it("warns, where it can be seen, when this browser cannot keep the work", () => {
+    for (const problem of ["full", "unavailable"] as const) {
+      const html = render(initialReviewState(), rows, undefined, { problem });
+      expect(html).toMatch(/role="alert"[^>]*>[^<]*(could not be saved|cannot save|not saved)/i);
+      expect(html).toMatch(/<button[^>]*>Download source list/); // manual export stays
+    }
+    expect(render(initialReviewState(), rows, undefined, { problem: "full" })).toMatch(/full/i);
+    expect(render()).not.toMatch(/could not be saved/i);
+  });
+
+  it("says where the work is kept and what is in it", () => {
+    const html = render();
+    expect(html).toMatch(/saved in this browser/i);
+    expect(html).toMatch(/reviewer name/i);
+    expect(html).toMatch(/notes/i);
+    expect(html).toMatch(/not sent/i);
+  });
+
+  it("offers an explicit clear, and asks before it removes anything", () => {
+    expect(render()).toMatch(/<button[^>]*>Clear saved work…<\/button>/);
+    const html = render(initialReviewState(), rows, undefined, { askingClear: true });
+    expect(html).toContain("Clear this scan");
+    expect(html).toContain("Clear all scans");
+    expect(html).toContain("Keep my work");
+  });
+
+  it("offers import of a journal or a package, and says what a journal lacks", () => {
+    const html = render();
+    expect(html).toMatch(/<input[^>]*type="file"[^>]*id="ledger-import"|<input[^>]*id="ledger-import"[^>]*type="file"/);
+    expect(html).toMatch(/<label[^>]*for="ledger-import"/);
+    expect(html).toMatch(/journal or review package/i);
+  });
+
+  it("previews an import before anything is replaced, and says what would be lost", () => {
+    const made = journalOf(rows, 17, recordRamp());
+    const plan = planImport(JSON.stringify(made), { scanId: 17, rows, current: { ...initialReviewState(), drafts: { x: { ...EMPTY_DRAFT, note: "n" } }, decisions: {} } });
+    const html = render(recordRamp(), rows, undefined, { plan });
+    expect(html).toContain("Import preview");
+    expect(html).toContain("HAS_DETECTABLE_WARNING");
+    expect(html).toMatch(/<button[^>]*>Replace my work with this file<\/button>/);
+    expect(html).toMatch(/<button[^>]*>Cancel<\/button>/);
+    expect(html).toMatch(/replace/i);
+  });
+
+  it("explains a rejected file and says the current work is untouched", () => {
+    const plan = planImport("{broken", { scanId: 17, rows, current: initialReviewState() });
+    const html = render(recordRamp(), rows, undefined, { plan });
+    expect(html).toMatch(/role="alert"/);
+    expect(html).toContain("not readable JSON");
+    expect(html).toMatch(/current work is unchanged|nothing was imported/i);
+    expect(html).not.toContain("Replace my work with this file");
+  });
+
+  it("replaces the whole state in one step, or not at all", () => {
+    const next = { ...initialReviewState(), reviewer: "Z" };
+    expect(run([{ type: "replace", state: next }], recordRamp())).toBe(next);
+  });
+});
+
+describe("a pane that opens on an action", () => {
+  it("starts in that action's rows, with nothing recorded", () => {
+    const html = renderToStaticMarkup(<LedgerReviewPane scan={scan} city="Seattle" check={chk()} initialAction="Update the date" />);
+    expect(html).toContain("Show the whole list");
+    expect(html).toContain("TRE-53943");
+    expect(html).toMatch(/<dt>Changes<\/dt><dd>0<\/dd>/);
+  });
+});
+
+describe("the shared action button", () => {
+  let css = "";
+  beforeAll(async () => {
+    // @ts-expect-error node:fs has no types here
+    const { readFileSync } = await import("node:fs");
+    css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+  });
+
+  it("keeps its blue hover where a button is also matched by the plain button hover rule", () => {
+    // button:hover:not(:disabled) is more specific than .action-export-btn:hover and used to turn the white label light on light.
+    expect(css).toMatch(/\.action-export-btn:hover:not\(:disabled\)\s*\{[^}]*background:\s*#1e40af/);
+    expect(css).toMatch(/\.action-export-btn:hover:not\(:disabled\)\s*\{[^}]*color:\s*#fff/);
+    expect(css).toMatch(/\.action-export-btn:disabled:hover\s*\{[^}]*background:\s*#1d4ed8/);
+  });
+});
+
+describe("the layout of the new controls", () => {
+  let css = "";
+  beforeAll(async () => {
+    // @ts-expect-error node:fs has no types here
+    const { readFileSync } = await import("node:fs");
+    css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+  });
+  it("stacks the queue controls at 390px and lets the preview wrap", () => {
+    expect(css).toMatch(/\.ledger-queue[^{]*\{[^}]*min-width:\s*0/);
+    expect(css).toMatch(/@media \(max-width: 480px\)\s*\{[\s\S]*\.ledger-queue/);
+    expect(css).toMatch(/\.ledger-preview[^{]*\{[^}]*overflow-wrap:\s*anywhere/);
+  });
+});
+
+describe("the handoff", () => {
+  it("is part of the files to keep, with the recorded decisions in its preview and the package to download", () => {
+    const html = render(recordRamp());
+    expect(html).toContain("Handoff package");
+    expect(html).toContain("HAS_DETECTABLE_WARNING");
+    expect(html).toMatch(/<button[^>]*>Download review package<\/button>/);
+    expect(html).toContain("docs/ledger-workflow.md");
+  });
+
+  it("offers no package before a decision is recorded", () => {
+    expect(render()).toMatch(/<button[^>]*disabled[^>]*>Download review package<\/button>/);
   });
 });

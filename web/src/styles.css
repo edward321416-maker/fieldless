@@ -1751,6 +1751,16 @@ kbd {
 .action-export-btn:hover {
   background: #1e40af;
 }
+/* button:hover:not(:disabled) is more specific than .action-export-btn:hover, so on a <button> it won the background and left a white label on a light one. */
+.action-export-btn:hover:not(:disabled) {
+  background: #1e40af;
+  border-color: #1e40af;
+  color: #fff;
+}
+.action-export-btn:disabled:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
 .gis-diff-pills {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2405,4 +2415,77 @@ kbd {
 .ledger-entry .action-export-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Review for ledger: finding records, saved work, import preview */
+.ledger-queue {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+.ledger-queue .ledger-field {
+  margin-bottom: 4px;
+}
+.ledger-scope {
+  font-size: 14px;
+}
+.ledger-notice,
+.ledger-alert {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.ledger-notice-info {
+  border: 1px solid var(--accent-border);
+  background: var(--bg);
+}
+.ledger-notice-warn,
+.ledger-alert {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+}
+.ledger-alert {
+  border-color: var(--red);
+  font-weight: 600;
+}
+.ledger-saved,
+.ledger-import,
+.ledger-empty {
+  min-width: 0;
+  margin-bottom: 10px;
+}
+.ledger-clear,
+.ledger-preview {
+  min-width: 0;
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  overflow-wrap: anywhere;
+}
+.ledger-preview ul {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+.ledger-import label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ledger-import input[type="file"] {
+  max-width: 100%;
+  min-height: 44px;
+}
+@media (max-width: 480px) {
+  .ledger-queue {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ledger-clear .ledger-download,
+  .ledger-preview .ledger-download,
+  .ledger-preview .action-export-btn {
+    flex: 1 1 100%;
+  }
 }

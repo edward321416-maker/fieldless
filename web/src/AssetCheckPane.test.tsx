@@ -54,8 +54,9 @@ describe("AssetCheckPane", () => {
   });
 
   it("has one filter per action with rows, and opens on a list of several assets", () => {
-    for (const label of ["Update the date", "No change", "Visit on site", "Compare with the list"]) expect(html).toContain(label);
-    expect(html).toContain('aria-pressed="true"><strong>26</strong><span>Update the date</span>');
+    for (const label of ["Review newer photo evidence", "No change", "Visit on site", "Compare with the list"]) expect(html).toContain(label);
+    expect(html).not.toContain("Update the date"); // the stored key is not a name to show
+    expect(html).toContain('aria-pressed="true"><strong>26</strong><span>Review newer photo evidence</span>');
     expect(html).toContain("<strong>64</strong><span>Visit on site</span>"); // the same number as the sentence above
   });
 
@@ -145,7 +146,8 @@ describe("the urls", () => {
 describe("AssetRowCard", () => {
   it("says what to do and shows both sides of a change", () => {
     const html = renderToStaticMarkup(<ul><AssetRowCard row={row()} scan={scan} /></ul>);
-    expect(html).toContain("Update the date");
+    expect(html).toContain("Review newer photo evidence");
+    expect(html).not.toContain("Update the date");
     expect(html).toContain("City says</dt><dd>LAST_VERIFY_DATE 2019-03");
     expect(html).toContain("Photo shows</dt><dd>Seen in a photo of 2025-07-11");
   });
@@ -275,5 +277,35 @@ describe("an object seen is not an attribute checked", () => {
     const checked = { ...summary, trust: { ...summary.trust, findings: { n: 57, yes: 43, no: 3, unclear: 11 } } };
     const out = renderToStaticMarkup(<AssetCheckPane scan={scan} summary={checked} findings={[]} missed={[]} />);
     expect(out).toContain("a prototype check by an AI assistant, not an independent evaluation");
+  });
+});
+
+describe("what a row says about identity and photo clarity", () => {
+  const card = (over: Partial<AssetRow>) => renderToStaticMarkup(<ul><AssetRowCard row={row({ action: "Visit on site", ...over })} scan={scan} /></ul>);
+
+  it("shows an identity that is not settled, why, and the other records it could be", () => {
+    const html = card({ identity_state: "unresolved", identity_reason: "Two tree records 3 m apart were photographed 2 s apart.", competing_record_ids: ["TRE-2"] });
+    expect(html).toContain("Identity</dt><dd>Not settled");
+    expect(html).toContain("Two tree records 3 m apart");
+    expect(html).toContain("TRE-2");
+  });
+
+  it("shows unclear photo evidence with its reason", () => {
+    const html = card({ evidence_quality: "unclear", evidence_quality_reason: "An AI visual audit could not tell the ramp apart." });
+    expect(html).toContain("Photo clarity</dt><dd>Not clear");
+    expect(html).toContain("An AI visual audit could not tell the ramp apart.");
+  });
+
+  it("does not read not_flagged or not_reviewed as checked", () => {
+    const html = card({ identity_state: "not_flagged", evidence_quality: "not_reviewed" });
+    expect(html).toMatch(/Identity<\/dt><dd>No concern flagged \(not a verification\)/);
+    expect(html).toMatch(/Photo clarity<\/dt><dd>Not reviewed \(not the same as clear\)/);
+    expect(html).not.toMatch(/verified|confirmed/i);
+  });
+
+  it("shows nothing for a list made before these fields", () => {
+    const html = card({});
+    expect(html).not.toContain("Identity</dt>");
+    expect(html).not.toContain("Photo clarity</dt>");
   });
 });

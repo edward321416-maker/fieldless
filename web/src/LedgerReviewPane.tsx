@@ -1,30 +1,35 @@
-import { useContext, useReducer, type Dispatch } from "react";
+import { useContext, useEffect, useReducer, useRef, useState, type Dispatch } from "react";
+import LedgerHandoff from "./LedgerHandoff";
 import { LedgerReviewContext } from "./LedgerReviewContext";
 import { colourOf } from "./items";
+import { IMPORT_MAX_CHARS, applyImport, planImport, type ImportPlan } from "./ledgerImport";
+import { readReviewPackage } from "./ledgerPackage";
+import { DEFAULT_QUEUE, FILTERS, FILTER_LABELS, QUERY_MAX, filterCounts, itemsOf, isFilter, queueRows, type QueueSettings } from "./ledgerQuery";
+import { emptyState, hasMeaningfulWork, recoveryStore, type RecoverableState } from "./ledgerRecovery";
 import {
   EMPTY_DRAFT, buildJournal, decisionFromDraft, draftProblems, editableNames, exportFiles, has, photoDay, proposalChoices, reviewSignature,
   reviewableRows, sourceFile, sourceOf, validateJournal, type Draft, type ExportFile, type LedgerCheck,
 } from "./ledgerReview";
+import { clearSaved, needsLeaveWarning, startSession, syncRecovery, type Notice, type StorageProblem } from "./ledgerSession";
 import { EvidencePhoto, PhotoCredit } from "./Photo";
+import { actionLabel } from "./reviewLabels";
 import type { AssetRow, LedgerDecision, LedgerJournal, Scan } from "./types";
 
-export interface ReviewState {
-  reviewer: string;
-  drafts: Record<string, Draft>; // by the source's review key
-  decisions: Record<string, LedgerDecision>;
-  index: number;
-}
+// What a review is made of: the reviewer's words and choices, and where they are in the list. All of it can be saved and restored.
+export type ReviewState = RecoverableState;
 
 export type ReviewAction =
   | { type: "reviewer"; value: string }
   | { type: "draft"; key: string; patch: Partial<Draft> }
   | { type: "record"; row: AssetRow; now: string }
   | { type: "remove"; key: string }
-  | { type: "go"; index: number; count: number };
+  | { type: "select"; key: string }
+  | { type: "queue"; patch: Partial<QueueSettings> }
+  | { type: "replace"; state: ReviewState };
 
 // Nothing is chosen and nothing is recorded: a review begins empty.
 export function initialReviewState(): ReviewState {
-  return { reviewer: "", drafts: {}, decisions: {}, index: 0 };
+  return emptyState();
 }
 
 export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
@@ -46,8 +51,15 @@ export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewS
       const { [action.key]: _dropped, ...decisions } = state.decisions;
       return { ...state, decisions };
     }
-    case "go":
-      return { ...state, index: Math.max(0, Math.min(action.index, action.count - 1)) };
+    case "select":
+      return { ...state, selected: action.key };
+    case "queue": {
+      // A new search or filter starts at the best match: the place held before is not kept.
+      const patch = action.patch.query === undefined ? action.patch : { ...action.patch, query: action.patch.query.slice(0, QUERY_MAX) };
+      return { ...state, selected: "", queue: { ...state.queue, ...patch } };
+    }
+    case "replace":
+      return action.state;
   }
 }
 
@@ -101,6 +113,25 @@ function Choice({ name, value, label, checked, disabled, onPick }: { name: strin
   );
 }
 
+// What the page needs from its session: the notices, the browser's storage problem, a pending import and the actions on them.
+export interface SessionUi {
+  notices: Notice[];
+  problem: StorageProblem;
+  plan: ImportPlan | null;
+  askingClear: boolean;
+  onFile: (file: File) => void;
+  onConfirmImport: () => void;
+  onCancelImport: () => void;
+  onAskClear: () => void;
+  onKeepSaved: () => void;
+  onClear: (everything: boolean) => void;
+}
+
+const NOOP = () => {};
+const NO_UI: SessionUi = { notices: [], problem: "", plan: null, askingClear: false, onFile: NOOP, onConfirmImport: NOOP, onCancelImport: NOOP,
+  onAskClear: NOOP, onKeepSaved: NOOP, onClear: NOOP };
+const PREVIEW_LINES = 30;
+
 interface ViewProps {
   scan: Scan;
   city: string;
@@ -109,11 +140,98 @@ interface ViewProps {
   dispatch: Dispatch<ReviewAction>;
   showFor?: (row: AssetRow) => (() => void) | undefined;
   save: (file: ExportFile) => void;
+  ui?: SessionUi;
+}
+
+function Notices({ ui }: { ui: SessionUi }) {
+  return (
+    <>
+      {ui.notices.map((n) => <p key={n.id} role="status" className={`ledger-notice ledger-notice-${n.tone}`}>{n.text}</p>)}
+      {ui.problem && (
+        <p role="alert" className="ledger-alert">
+          {`Your work could not be saved in this browser (${ui.problem === "full" ? "its storage is full" : "storage is unavailable or blocked"}). It lasts only while this page is open. Download the files to keep it.`}
+        </p>
+      )}
+    </>
+  );
+}
+
+function SavedWork({ ui }: { ui: SessionUi }) {
+  return (
+    <div className="ledger-saved">
+      <p className="hint small">
+        Your work is saved in this browser while you review: the reviewer name, your notes, drafts and recorded decisions. Notes and names are not sent to a
+        server, and anyone who can open this browser profile can read them. Download the files to keep a copy or to move to another browser.
+      </p>
+      {ui.askingClear ? (
+        <div className="ledger-clear" role="group" aria-label="Clear saved work">
+          <p>This removes the saved reviewer name, drafts and decisions from this browser and empties the review on screen. Download the files first if you need them.</p>
+          <div className="ledger-actions">
+            <button type="button" className="ledger-download" onClick={() => ui.onClear(false)}>Clear this scan</button>
+            <button type="button" className="ledger-download" onClick={() => ui.onClear(true)}>Clear all scans</button>
+            <button type="button" className="ledger-download" onClick={ui.onKeepSaved}>Keep my work</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="link-button" onClick={ui.onAskClear}>Clear saved work…</button>
+      )}
+    </div>
+  );
+}
+
+function ImportBox({ ui }: { ui: SessionUi }) {
+  const { plan } = ui;
+  return (
+    <div className="ledger-import">
+      <label htmlFor="ledger-import">Import a journal or review package (.json)</label>
+      <input id="ledger-import" type="file" accept=".json,application/json"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) ui.onFile(file);
+        }} />
+      <p className="hint small">
+        A file is checked against this exact list before anything changes, and you see a preview first. A journal holds recorded decisions only, never drafts.
+      </p>
+      {plan && !plan.ok && (
+        <div className="ledger-preview" role="alert">
+          <h4>Import rejected</h4>
+          <ul>{plan.errors.slice(0, 10).map((e) => <li key={e}>{e}</li>)}</ul>
+          <p>Nothing was imported and your current work is unchanged.</p>
+          <button type="button" className="ledger-download" onClick={ui.onCancelImport}>Dismiss</button>
+        </div>
+      )}
+      {plan && plan.ok && (
+        <section className="ledger-preview" aria-labelledby="ledger-preview-title">
+          <h4 id="ledger-preview-title">Import preview</h4>
+          <p>
+            {`${plan.kind === "package" ? "Review package" : "Journal"} for this scan: ${plan.counts.changes} changes, ${plan.counts.observations} observations, ${plan.counts.holds} holds.`}
+          </p>
+          <ul>
+            {plan.lines.slice(0, PREVIEW_LINES).map((l) => <li key={l.key}>{l.text}</li>)}
+            {plan.lines.length > PREVIEW_LINES && <li>{`and ${plan.lines.length - PREVIEW_LINES} more`}</li>}
+          </ul>
+          {plan.replaces.decisions + plan.replaces.drafts > 0 && (
+            <p role="alert">
+              {`Replacing discards what you have now: ${plan.replaces.decisions} recorded ${plan.replaces.decisions === 1 ? "decision" : "decisions"} and ${plan.replaces.drafts} ${plan.replaces.drafts === 1 ? "draft" : "drafts"} that no decision stands for. Cancel keeps it.`}
+            </p>
+          )}
+          {plan.notes.map((n) => <p key={n} className="hint small">{n}</p>)}
+          <div className="ledger-actions">
+            <button type="button" className="action-export-btn" onClick={ui.onConfirmImport}>
+              {plan.replaces.decisions + plan.replaces.drafts > 0 ? "Replace my work with this file" : "Import this file"}
+            </button>
+            <button type="button" className="ledger-download" onClick={ui.onCancelImport}>Cancel</button>
+          </div>
+        </section>
+      )}
+    </div>
+  );
 }
 
 // The review for the ledger: one record at a time, with its photo, and the files to keep. It changes nothing but this
-// page's own memory: no request is made and no city record is touched.
-export function LedgerReviewView({ scan, city, check: list, state, dispatch, showFor, save }: ViewProps) {
+// page's own memory and this browser's saved copy: no request is made and no city record is touched.
+export function LedgerReviewView({ scan, city, check: list, state, dispatch, showFor, save, ui = NO_UI }: ViewProps) {
   const rows = list.rows;
   const queue = reviewableRows(rows);
   const without = rows.filter((r) => r.city_record && !queue.includes(r)).length;
@@ -121,13 +239,19 @@ export function LedgerReviewView({ scan, city, check: list, state, dispatch, sho
   const check = validateJournal(rows, journal, scan.id);
   const keyOf = (r: AssetRow) => sourceOf(r)!.review_key;
   const reviewed = queue.filter((r) => state.decisions[keyOf(r)]).length;
-  const index = Math.min(state.index, Math.max(0, queue.length - 1));
-  const current = queue[index];
+  const q = state.queue;
+  const visible = queueRows(queue, state.decisions, q);
+  const current = visible.find((r) => keyOf(r) === state.selected) ?? visible[0];
+  const at = current ? visible.indexOf(current) : -1;
+  const items = itemsOf(queue);
+  const counts = filterCounts(queue, state.decisions);
+  const search = q.query.trim() !== "";
+  const go = (r: AssetRow | undefined) => r && dispatch({ type: "select", key: keyOf(r) });
+  const nextOpen = visible.find((r, i) => i > at && !state.decisions[keyOf(r)]);
   const files = (kind: DownloadKind, enabled: boolean, label: string) => (
     <button key={kind} type="button" className="ledger-download" disabled={!enabled}
       onClick={() => runDownload(kind, list, scan.id, state, save)}>{label}</button>
   );
-  const nextOpen = queue.findIndex((r, i) => i > index && !state.decisions[keyOf(r)]);
   const status = (
     <p className="ledger-status">
       <strong>Prepared changes · not applied.</strong> Nothing is sent to a server and no {city} record is changed. The files you download
@@ -138,9 +262,10 @@ export function LedgerReviewView({ scan, city, check: list, state, dispatch, sho
     <section className="ledger-review" aria-labelledby="ledger-review-title">
       <h3 id="ledger-review-title">Review for ledger</h3>
       {status}
+      <Notices ui={ui} />
+      <SavedWork ui={ui} />
       <p className="hint small">
-        Your review is kept only on this page. Download the files to keep it: reloading the page or opening another scan clears it. The
-        reviewer name is typed by you. It is not a verified municipal approval.
+        The reviewer name is typed by you. It is not a verified municipal approval.
       </p>
       {without > 0 && (
         <p className="hint small">{without} {without === 1 ? "record has" : "records have"} no source snapshot (an older list), so {without === 1 ? "it" : "they"} cannot be reviewed for the ledger.</p>
@@ -160,14 +285,53 @@ export function LedgerReviewView({ scan, city, check: list, state, dispatch, sho
             <input id="ledger-reviewer" type="text" autoComplete="off" maxLength={200} value={state.reviewer}
               onChange={(e) => dispatch({ type: "reviewer", value: e.target.value })} />
           </div>
-          <div className="ledger-nav">
-            <button type="button" disabled={index === 0} onClick={() => dispatch({ type: "go", index: index - 1, count: queue.length })}>Previous</button>
-            <span>Row {index + 1} of {queue.length}</span>
-            <button type="button" disabled={index >= queue.length - 1} onClick={() => dispatch({ type: "go", index: index + 1, count: queue.length })}>Next</button>
-            <button type="button" disabled={nextOpen < 0} onClick={() => dispatch({ type: "go", index: nextOpen, count: queue.length })}>Next not reviewed</button>
+          <div className="ledger-queue">
+            <div className="ledger-field">
+              <label htmlFor="ledger-search">Find a record (ID or place)</label>
+              <input id="ledger-search" type="search" autoComplete="off" maxLength={QUERY_MAX} value={q.query}
+                onChange={(e) => dispatch({ type: "queue", patch: { query: e.target.value } })} />
+            </div>
+            {items.length > 1 && (
+              <div className="ledger-field">
+                <label htmlFor="ledger-item">Item</label>
+                <select id="ledger-item" value={q.item} onChange={(e) => dispatch({ type: "queue", patch: { item: e.target.value } })}>
+                  <option value="">All items</option>
+                  {items.map((i) => <option key={i.item} value={i.item}>{i.asset}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="ledger-field">
+              <label htmlFor="ledger-state">Show</label>
+              <select id="ledger-state" value={q.filter}
+                onChange={(e) => isFilter(e.target.value) && dispatch({ type: "queue", patch: { filter: e.target.value } })}>
+                {FILTERS.map((f) => <option key={f} value={f}>{`${FILTER_LABELS[f]} (${counts[f]})`}</option>)}
+              </select>
+            </div>
           </div>
-          <RecordCard key={keyOf(current)} row={current} uid={`ledger-${index}`} scan={scan} state={state} dispatch={dispatch}
-            onShow={showFor?.(current)} />
+          {q.action && (
+            <p className="ledger-scope">
+              {search ? "Searching the whole list. " : `Showing only the “${actionLabel(q.action)}” rows. `}
+              <button type="button" className="link-button" onClick={() => dispatch({ type: "queue", patch: { action: "" } })}>Show the whole list</button>
+            </p>
+          )}
+          <p className="hint small">Rows that correct the record come first, then identity or attribute doubt, then other candidates.</p>
+          {current ? (
+            <>
+              <div className="ledger-nav">
+                <button type="button" disabled={at <= 0} onClick={() => go(visible[at - 1])}>Previous</button>
+                <span>{`Row ${at + 1} of ${visible.length}${visible.length < queue.length ? ` (${queue.length} in the whole list)` : ""}`}</span>
+                <button type="button" disabled={at >= visible.length - 1} onClick={() => go(visible[at + 1])}>Next</button>
+                <button type="button" disabled={!nextOpen} onClick={() => go(nextOpen)}>Next not reviewed</button>
+              </div>
+              <RecordCard key={keyOf(current)} row={current} uid="ledger-card" scan={scan} state={state} dispatch={dispatch}
+                onShow={showFor?.(current)} />
+            </>
+          ) : (
+            <div className="ledger-empty" role="status">
+              <p>No record matches. Decisions you recorded stay in your files even when a filter hides them.</p>
+              <button type="button" className="ledger-download" onClick={() => dispatch({ type: "queue", patch: { ...DEFAULT_QUEUE } })}>Clear search and filters</button>
+            </div>
+          )}
           <div className="ledger-export">
             <h4>Files to keep</h4>
             {!check.ok && <p className="hint small" role="alert">The journal is not valid: {check.errors.join(" ")}</p>}
@@ -181,10 +345,39 @@ export function LedgerReviewView({ scan, city, check: list, state, dispatch, sho
               The journal is checked against this exact list: download both and keep them together. The journal holds every decision, the holds too. The changes file holds only recorded changes, the observations file only
               photo observations. A hold appears in neither.
             </p>
+            <ImportBox ui={ui} />
           </div>
+          {check.ok && <LedgerHandoff check={list} journal={journal} scanId={scan.id} />}
         </>
       )}
     </section>
+  );
+}
+
+// What the list says about who this photo shows and how clear it is. "Not flagged" and "not reviewed" mean no one looked or nothing was found:
+// they are never shown as a check that passed.
+export function QualityNotes({ row }: { row: AssetRow }) {
+  const others = row.competing_record_ids ?? [];
+  return (
+    <>
+      {row.identity_state === "unresolved" && (
+        <div className="ledger-warning" role="note">
+          <strong>Identity not settled</strong>
+          <p>{row.identity_reason || "The list could not tell which record this photo shows."}</p>
+          {others.length > 0 && <p>Other records it could be: {others.join(", ")}.</p>}
+          <p className="hint small">A desk identity check or a new photo may settle it.</p>
+        </div>
+      )}
+      {row.identity_state !== "unresolved" && others.length > 0 && <p className="hint small">Other records it could be: {others.join(", ")}.</p>}
+      {row.identity_state === "not_flagged" && <p className="hint small">No identity concern was flagged. That does not verify the identity.</p>}
+      {row.evidence_quality === "unclear" && (
+        <div className="ledger-warning" role="note">
+          <strong>Photo clarity: not clear</strong>
+          {row.evidence_quality_reason && <p>{row.evidence_quality_reason}</p>}
+        </div>
+      )}
+      {row.evidence_quality === "not_reviewed" && <p className="hint small">The clarity of this photo has not been reviewed. That is not the same as clear.</p>}
+    </>
   );
 }
 
@@ -217,6 +410,7 @@ function RecordCard({ row, uid, scan, state, dispatch, onShow }: { row: AssetRow
         {onShow && <button type="button" className="link-button" onClick={onShow}>Show on the map</button>}
       </header>
       <dl className="ledger-facts">
+        <div><dt>Suggested action</dt><dd>{actionLabel(row.action)}</dd></div>
         <div><dt>City says</dt><dd>{row.city_says}</dd></div>
         <div><dt>Photo shows</dt><dd>{row.photo_shows}</dd></div>
         <div><dt>City date</dt><dd>{row.city_date || "none"}</dd></div>
@@ -226,6 +420,7 @@ function RecordCard({ row, uid, scan, state, dispatch, onShow }: { row: AssetRow
         ))}
       </dl>
       <p className="hint small">The photo day is when the picture was taken. It is not an inspection date, and nothing here changes the city's dates.</p>
+      <QualityNotes row={row} />
       <p className="ledger-state" aria-live="polite">
         {recorded
           ? <>Recorded: {recorded.decision}{recorded.field ? ` ${recorded.field} ${String(source.editable_fields[recorded.field].before)} → ${recorded.proposed_value}` : ""} (by {recorded.reviewer})</>
@@ -307,21 +502,101 @@ interface PaneProps {
   city: string;
   check: LedgerCheck;
   showFor?: (row: AssetRow) => (() => void) | undefined;
+  // The action the list was showing when the review was opened. The whole list is one button away.
+  initialAction?: string;
 }
 
-// A review belongs to one scan and one set of source snapshots: when either changes it starts again, empty.
-export default function LedgerReviewPane({ scan, city, check, showFor }: PaneProps) {
-  return <Session key={reviewSignature(scan.id, check.rows)} scan={scan} city={city} check={check} showFor={showFor} />;
+// A review belongs to one scan and one set of source snapshots: when either changes it starts again, from what was saved for that version.
+export default function LedgerReviewPane(props: PaneProps) {
+  return <Session key={reviewSignature(props.scan.id, props.check.rows)} {...props} />;
 }
 
 function Session(props: PaneProps) {
   const ledger = useContext(LedgerReviewContext);
-  const [localState, localDispatch] = useReducer(reviewReducer, undefined, initialReviewState);
-  const signature = reviewSignature(props.scan.id, props.check.rows);
+  const { scan, check } = props;
+  const signature = reviewSignature(scan.id, check.rows);
+  const [begin] = useState(() => startSession(recoveryStore, scan.id, signature, check.rows, props.initialAction ?? "",
+    ledger?.session?.signature === signature ? ledger.session.state : null));
+  const [localState, localDispatch] = useReducer(reviewReducer, begin.state);
   const state = ledger?.session?.signature === signature ? ledger.session.state : localState;
   const dispatch: Dispatch<ReviewAction> = ledger ? (action) => {
-    ledger.setSession((previous) => ({ scanId: props.scan.id, signature, open: true,
-      state: reviewReducer(previous?.signature === signature ? previous.state : initialReviewState(), action) }));
+    ledger.setSession((previous) => ({ scanId: scan.id, signature, open: true,
+      state: reviewReducer(previous?.signature === signature ? previous.state : begin.state, action) }));
   } : localDispatch;
-  return <LedgerReviewView {...props} state={state} dispatch={dispatch} save={saveFile} />;
+
+  const owns = useRef(begin.owns);
+  const [stored, setStored] = useState<StorageProblem>(begin.problem);
+  const [notices, setNotices] = useState<Notice[]>(begin.notices);
+  const [plan, setPlan] = useState<ImportPlan | null>(null);
+  const [askingClear, setAskingClear] = useState(false);
+  const say = (notice: Notice) => setNotices((all) => [...all.filter((n) => n.id !== notice.id), notice]);
+
+  // The page's memory outlives opening a map inspector: put this review there on arrival.
+  useEffect(() => {
+    ledger?.setSession((previous) => previous?.signature === signature ? { ...previous, open: true }
+      : { scanId: scan.id, signature, open: true, state: begin.state });
+  }, []);
+
+  // Keep the work as it changes. A failure is shown, never thrown.
+  const meaningful = hasMeaningfulWork(state);
+  useEffect(() => {
+    const synced = syncRecovery(recoveryStore, scan.id, signature, state, owns.current);
+    owns.current = synced.owns;
+    setStored(meaningful ? synced.problem : begin.problem);
+    if (synced.evicted.length > 0) {
+      setNotices((all) => [...all.filter((n) => n.id !== "evicted"), { id: "evicted", tone: "warn",
+        text: `Saved work for ${synced.evicted.length === 1 ? "scan" : "scans"} ${synced.evicted.join(", ")} was removed to make room: this browser keeps four scans.` }]);
+    }
+  }, [state]);
+
+  // A prompt before leaving only for work the browser could not keep.
+  const problem = meaningful ? stored : "";
+  useEffect(() => {
+    if (!needsLeaveWarning(state, problem)) return undefined;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [meaningful, problem]);
+
+  // The list was opened on one action; choosing another one in the list moves the review there too.
+  const firstAction = useRef(props.initialAction);
+  useEffect(() => {
+    if (props.initialAction === firstAction.current) return;
+    firstAction.current = props.initialAction;
+    dispatch({ type: "queue", patch: { action: props.initialAction ?? "" } });
+  }, [props.initialAction]);
+
+  const ui: SessionUi = {
+    notices, problem, plan, askingClear,
+    onFile: (file) => {
+      if (file.size > IMPORT_MAX_CHARS) return setPlan({ ok: false, errors: ["The file is far larger than a review."] });
+      file.text().then(
+        (text) => setPlan(planImport(text, { scanId: scan.id, rows: check.rows, current: state, readPackage: readReviewPackage })),
+        () => setPlan({ ok: false, errors: ["The file could not be read."] }),
+      );
+    },
+    onConfirmImport: () => {
+      if (!plan || !plan.ok) return;
+      dispatch({ type: "replace", state: applyImport(plan, state, check.rows) });
+      setPlan(null);
+      say({ id: "imported", tone: "info", text: `Imported ${plan.journal.decisions.length} ${plan.journal.decisions.length === 1 ? "decision" : "decisions"}. They are the reviewer's own word, not a municipal approval.` });
+    },
+    onCancelImport: () => setPlan(null),
+    onAskClear: () => setAskingClear(true),
+    onKeepSaved: () => setAskingClear(false),
+    onClear: (everything) => {
+      const done = clearSaved(recoveryStore, scan.id, everything);
+      owns.current = true;
+      setAskingClear(false);
+      setNotices((all) => all.filter((n) => n.id === "unavailable")); // what they said was about the saved work that is gone now
+      dispatch({ type: "replace", state: { ...emptyState(), queue: { ...state.queue } } });
+      say({ id: "cleared", tone: done.ok ? "info" : "warn",
+        text: done.ok ? `Saved work for ${everything ? "all scans" : "this scan"} was cleared from this browser, and the review on screen is empty.`
+          : "The browser would not remove the saved work. Clear this site's data in the browser settings." });
+    },
+  };
+  return <LedgerReviewView {...props} state={state} dispatch={dispatch} save={saveFile} ui={ui} />;
 }

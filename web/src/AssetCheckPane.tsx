@@ -4,10 +4,11 @@ import type { MissedRecord } from "./cityMatch";
 import { count, dollars, photoMonth } from "./format";
 import { colourOf, type Finding } from "./items";
 import type { Lens } from "./LensSwitch";
-import LedgerReviewPane, { initialReviewState } from "./LedgerReviewPane";
+import LedgerReviewPane from "./LedgerReviewPane";
 import { LedgerReviewContext } from "./LedgerReviewContext";
-import { reviewSignature } from "./ledgerReview";
+import { recoveryStore } from "./ledgerRecovery";
 import { EvidencePhoto, MapillaryMark, PhotoCredit } from "./Photo";
+import { actionLabel } from "./reviewLabels";
 import type { AssetCheck, AssetCheckSummary, AssetRow, NearbyPhoto, Scan } from "./types";
 
 const ACTIONS = ["Correct the record", "Update the date", "No change", "Visit on site", "Compare with the list"];
@@ -81,6 +82,13 @@ export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan;
     ["Attribute", row.attribute_field && row.attribute_state ? `${row.attribute_field}: ${row.attribute_state.replace("_", " ")}. ${row.attribute_note ?? ""}`.trim() : ""],
     ["If the attribute agreed", open ? row.action_if_attribute_agrees ?? "" : ""],
     ["Why a visit", row.visit_reason ?? ""],
+    // not_flagged and not_reviewed are the absence of a finding, never a check that passed
+    ["Identity", row.identity_state === "unresolved"
+      ? `Not settled. ${row.identity_reason ?? ""}${row.competing_record_ids?.length ? ` Other records it could be: ${row.competing_record_ids.join(", ")}.` : ""}`.trim()
+      : row.identity_state === "not_flagged" ? "No concern flagged (not a verification)" : ""],
+    ["Photo clarity", row.evidence_quality === "unclear"
+      ? `Not clear. ${row.evidence_quality_reason ?? ""}`.trim()
+      : row.evidence_quality === "not_reviewed" ? "Not reviewed (not the same as clear)" : ""],
   ];
   return (
     <li className="asset-row">
@@ -90,7 +98,7 @@ export function AssetRowCard({ row, scan, onShow }: { row: AssetRow; scan: Scan;
       )}
       <div className="asset-row-body">
         <div className="action-card-badge-line">
-          <span className="action-prio-tag prio-gis">{row.action}</span>
+          <span className="action-prio-tag prio-gis">{actionLabel(row.action)}</span>
           <span className="action-card-category">{row.asset}</span>
         </div>
         <strong className="action-card-heading">{row.city_record || "No city record"}</strong>
@@ -141,6 +149,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
     };
   }, [scan.id]);
 
+  const saved = useMemo(() => recoveryStore.entries().some((e) => e.scanId === scan.id), [scan.id, reviewing]);
   const rows = useMemo(() => orderRows((check?.rows ?? []).filter((r) => r.action === action)), [check, action]);
   const shown = expanded ? rows : rows.slice(0, SHOWN);
   const { totals } = summary;
@@ -217,7 +226,7 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
               setExpanded(false);
             }}>
             <strong>{summary.actions[a]}</strong>
-            <span>{a}</span>
+            <span>{actionLabel(a)}</span>
           </button>
         ))}
       </div>
@@ -231,15 +240,13 @@ export default function AssetCheckPane({ scan, summary, findings, missed, onPick
           onClick={() => {
             const next = !reviewing;
             setReviewing(next);
-            if (ledger && check) {
-              const signature = reviewSignature(scan.id, check.rows);
-              ledger.setSession((previous) => ({ scanId: scan.id, signature, open: next,
-                state: previous?.signature === signature ? previous.state : initialReviewState() }));
-            }
+            // The review puts itself in the page's memory when it opens; closing only marks it closed.
+            if (!next) ledger?.setSession((previous) => previous && previous.scanId === scan.id ? { ...previous, open: false } : previous);
           }}>Review for ledger</button>
         <p className="hint small">Check each record against its photo and prepare change files for the city's ledger. Nothing is applied here.</p>
+        {!reviewing && saved && <p className="hint small">Work you saved in this browser for this scan is waiting. Open the review to continue it.</p>}
       </div>
-      {reviewing && check && <LedgerReviewPane scan={scan} city={summary.city} check={check} showFor={show} />}
+      {reviewing && check && <LedgerReviewPane scan={scan} city={summary.city} check={check} showFor={show} initialAction={action} />}
       {failed && <p className="hint small">The rows could not be loaded. The report and the table still have them.</p>}
       <ul className="asset-rows" hidden={reviewing}>
         {shown.map((r) => <AssetRowCard key={`${r.item} ${r.city_record} ${r.evidence?.url ?? ""} ${r.lat}`} row={r} scan={scan} onShow={show(r)} />)}
