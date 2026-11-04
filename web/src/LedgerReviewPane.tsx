@@ -582,6 +582,7 @@ function Session(props: PaneProps) {
       if (!plan || !plan.ok) return;
       dispatch({ type: "replace", state: applyImport(plan, state, check.rows) });
       setPlan(null);
+      setNotices((all) => all.filter((n) => n.id !== "restored")); // what came back from storage was replaced
       say({ id: "imported", tone: "info", text: `Imported ${plan.journal.decisions.length} ${plan.journal.decisions.length === 1 ? "decision" : "decisions"}. They are the reviewer's own word, not a municipal approval.` });
     },
     onCancelImport: () => setPlan(null),
