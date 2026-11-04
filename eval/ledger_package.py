@@ -107,8 +107,12 @@ def _no_constant(name):
 
 
 def _no_duplicates(pairs):
-    keys = [k for k, _ in pairs]
-    dup = sorted({k for k in keys if keys.count(k) > 1})
+    seen, repeated = set(), set()
+    for key, _ in pairs:
+        if key in seen:
+            repeated.add(key)
+        seen.add(key)
+    dup = sorted(repeated)
     if dup:
         raise ValueError(f"duplicate key {dup[0]!r}")
     return dict(pairs)
