@@ -218,19 +218,20 @@ def test_results_take_ballard_then_new_york_then_capitol_hill():
     assert starts == sorted(starts)
     ballard, new_york, capitol = results[starts[0]:starts[1]], results[starts[1]:starts[2]], results[starts[2]:]
     for fact in ("2026-05-18 to 2026-07-01", "199 photos over 0.92 km", "five photo checks", "10.3 min", "676 model calls",
-                 "$3.33 ($3.60 per km)", "29 are desk-review candidates (1 correction, 25 date reviews, 3 with no change proposed)",
-                 "65 need more evidence", "26 more objects are not on the city's lists, 7 of them not settled",
+                 "$3.33 ($3.60 per km)", "18 are desk-review candidates (1 correction, 14 newer-photo reviews, 3 with no change proposed)",
+                 "76 need more evidence or an identity check", "26 more objects are not on the city's lists, 7 of them not settled",
                  "53 of the 94 were seen in photos (27 by the survey, 9 on a second look, 17 on a second look in panoramas",
                  "41 are not determined", "27 of 94 (poles 10/22, street trees 11/45, litter cans 1/2, curb ramps 5/25, "
                  "pay stations 0/0)", "0 of 17 (survey photos) and 1 of 10 (panoramas", "agreed with the city on 7, differed "
                  "on 1 and left 14 not determined", "of 57 recorded findings, 43 right, 3 wrong and 11 could not be told"):
         assert fact in ballard, fact
     for fact in ("2026-02-02 to 2026-02-09", "181 photos over 0.70 km", "7.9 min", "641 model calls", "$2.97 ($4.24 per km)",
+                 "5 are desk-review candidates", "74 need more evidence or an identity check",
                  "9 of 79 (street trees 4/29, litter cans 0/4, pay stations 3/7, curb ramps 2/39; no usable pole list)",
                  "of 63 recorded findings, 52 right (83%), 1 wrong and 10 could not be told"):
         assert fact in new_york, fact
     for fact in ("from 2022", "an older example", "181 photos over 0.94 km", "7.0 min", "$4.21 ($4.48 per km)",
-                 "44 are desk-review candidates and 63 need more evidence", "45 of 107", "73 of 86 recorded findings right"):
+                 "28 are desk-review candidates and 79 need more evidence", "45 of 107", "73 of 86 recorded findings right"):
         assert fact in capitol, fact
     differs = next(l for l in results.splitlines() if l.startswith("- **What differs.**"))
     assert "newer survey photos" in differs and "lower cost per km" in differs
