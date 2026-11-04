@@ -179,8 +179,8 @@ def test_the_images_are_the_update_list_and_the_agent_and_both_are_there():
 def test_the_update_list_uses_the_words_on_its_screens():
     text = readme()
     screens = "".join((ROOT / "web" / "src" / name).read_text(encoding="utf-8")
-                      for name in ("AssetCheckPane.tsx", "ActionHub.tsx"))
-    for label in ("Update list", "Correct the record", "Update the date", "No change", "Visit on site",
+                      for name in ("AssetCheckPane.tsx", "ActionHub.tsx", "reviewLabels.ts"))
+    for label in ("Update list", "Correct the record", "Review newer photo evidence", "No change", "Visit on site",
                   "Compare with the list", "Open the report", "Table (.csv)", "Table (.geojson)", "Show on the map"):
         assert label in text and label in screens, label
     # the files and the page the server names the same way
