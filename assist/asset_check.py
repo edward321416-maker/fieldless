@@ -33,7 +33,7 @@ FIX, DATE, SAME, VISIT, COMPARE = ("Correct the record", "Update the date", "No 
 SUMMARY_FIELDS = ("city", "items", "totals", "actions", "no_visit", "compare_unsure", "left_out", "trust")
 # a list made before they existed has none of them
 LATER_FIELDS = ("credit", "visits_with_photo", "date_gap_years", "desk_review_candidates", "attribute_checks",
-                "visits_attribute_unresolved")
+                "visits_attribute_unresolved", "quality_gate")
 COLUMNS = (("action", "What the city could do with this row"),
            ("asset", "What the object is"),
            ("city_list", "The city list the record is on"),
@@ -68,7 +68,16 @@ COLUMNS = (("action", "What the city could do with this row"),
            ("attribute_note", "The city's side of that field and why it is still open, where it is"),
            ("action_if_attribute_agrees", "Where a record is there in a photo but its field is open: what this row would "
                                           "suggest if the field agreed with the photo, so its date is not lost"),
-           ("visit_reason", "Why a Visit on site row needs a newer photo or a field check"))
+           ("visit_reason", "Why a Visit on site row needs a newer photo or a field check"),
+           ("identity_state", "unresolved where a close record of the same item cannot be told apart by the photos "
+                              "(both stay on the list, nothing is merged), else not_flagged: nothing was found, which does not say the identity is settled"),
+           ("identity_reason", "Why the identity is unresolved, and that a desk identity check or a new photo may resolve it"),
+           ("competing_record_ids", "The close records of the same item an unresolved identity is with, separated by ;"),
+           ("evidence_quality", "unclear where an AI visual audit judged this exact source too unclear to read the field "
+                                "from (not independent ground truth), else not_reviewed: no audit looked at it, which says nothing about its quality"),
+           ("evidence_quality_reason", "Why the evidence is unclear, or that the source has not been reviewed"),
+           ("action_before_quality_gate", "Where the identity or audit gate moved the row to Visit on site: the action the "
+                                          "models' answers alone gave it. The models' answers are not changed"))
 ROOT = Path(__file__).resolve().parent.parent
 LOGOS = (ROOT / "web" / "public" / "mapillary-logo.png", ROOT / "web" / "dist" / "mapillary-logo.png")
 ACTIONS = {FIX: "Look at the photo, then correct the record if it holds.",
@@ -133,6 +142,8 @@ def table_rows(check: dict) -> list[dict]:
         out.append({**{k: row.get(k, "") for k, _ in COLUMNS}, "photo_url": ev.get("link", ""),
                     "photo_by": ev.get("creator") or "", "license": ev.get("license", ""),
                     "evidence_file": f"evidence/{ev['image']}" if ev.get("image") else "",
+                    "competing_record_ids": "; ".join(row.get("competing_record_ids") or []),
+                    "action_before_quality_gate": (row.get("quality_gate") or {}).get("action_before", ""),
                     "nearby_photo_link": near.get("link", ""), "nearby_photo_m": near.get("dist_m", ""),
                     "nearby_photo_by": near.get("creator") or "", "nearby_photo_license": near.get("license", "")})
     return out
@@ -247,6 +258,30 @@ def _dollars(usd: float) -> str:
     return f"${usd:.2f}"
 
 
+def _held_line(gate: dict | None) -> str:
+    """What the identity and audit gates held back from the candidates, from the numbers the check counted once."""
+    if not gate:
+        return ""
+    moved, by, ident = gate["moved_out_of_candidates"], gate["by_cause"], gate["identity"]
+    if not (moved or ident["unresolved_rows"] or gate["evidence_quality"]["unclear"]):
+        return ""
+    both = by["identity_and_hold"]
+    if moved:
+        text = (f"{_count(moved, 'city record')} that would have been candidates for desk review {'was' if moved == 1 else 'were'} "
+                f"not counted as one: {by['identity_only'] + both} whose identity the photos cannot settle and "
+                f"{by['hold_only'] + both} held by an AI visual audit (not independent ground truth)"
+                + (f", {both} of them on both grounds. " if both else ". "))
+    else:
+        text = "No record that would have been a candidate was held back. "
+    if ident["unresolved_rows"]:
+        text += (f"{_count(ident['unresolved_rows'], 'record')} in {_count(len(ident['groups']), 'group')} of close records "
+                 f"of the same item ({ident['already_visit']} of them already a visit) have an unresolved identity: "
+                 "a desk identity check or a new photo may resolve it. Both records of a close pair stay on the list; "
+                 "none is merged or called a duplicate. ")
+    text += "A source no audit looked at is simply not reviewed; that says nothing good or bad about it."
+    return f"<strong>Held before counting.</strong> {text}"
+
+
 def _trust(check: dict, survey_cost: float | None = None) -> list[str]:
     trust, totals = check["trust"], check["totals"]
     lines = [f"<strong>Photo dates.</strong> The seen records are from photos taken in {_months(trust['photo_months'])}. "
@@ -257,6 +292,8 @@ def _trust(check: dict, survey_cost: float | None = None) -> list[str]:
     if totals.get("seen_unsure"):
         lines.append(f"<strong>Models unsure.</strong> The models were unsure of {totals['seen_unsure']} of the "
                      f"{totals['seen']} seen records. Those rows say so in the table.")
+    if held := _held_line(check.get("quality_gate")):
+        lines.append(held)
     lines.append("<strong>Candidates for desk review.</strong> A record is a candidate here when the models were sure of "
                  "it, the AI assistant's check, where there was one, agreed, it was there on the photo's date, and, "
                  "where its city list has a yes or no a photo can answer, that check was settled: either agreement "

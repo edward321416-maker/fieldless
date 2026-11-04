@@ -169,17 +169,18 @@ def seconds_of(value) -> float | None:
     return None
 
 
-def neighbor_warnings(rows: list[dict]) -> dict[str, list[str]]:
-    """For rows that carry a LedgerSource: by review key, one line for each other record of the SAME item that is at
-    most NEIGHBOR_M metres away by the city's positions and photographed at most NEIGHBOR_S seconds apart. A prompt
-    to check that the reviewer is looking at the right object, not a verdict that two records are one."""
+def neighbor_pairs(rows: list[dict]) -> dict[str, list[dict]]:
+    """For rows that carry a LedgerSource: by review key, each other record of the SAME item that is at most
+    NEIGHBOR_M metres away by the city's positions and photographed at most NEIGHBOR_S seconds apart, as
+    {"record_id", "metres", "seconds"}. A prompt to check that the reviewer is looking at the right object, never a
+    verdict that two records are one."""
     found = []
     for row in rows:
         src = row.get("ledger_source")
         when = seconds_of((row.get("evidence") or {}).get("captured_at"))
         if src and when is not None and isinstance(row.get("lat"), (int, float)) and isinstance(row.get("lng"), (int, float)):
             found.append((row, src, when))
-    out = {src["review_key"]: [] for _, src, _ in found}
+    out: dict[str, list[dict]] = {src["review_key"]: [] for _, src, _ in found}
     for n, (a, src_a, when_a) in enumerate(found):
         for b, src_b, when_b in found[n + 1:]:
             if a["item"] != b["item"] or src_a["record_id"] == src_b["record_id"]:
@@ -188,17 +189,27 @@ def neighbor_warnings(rows: list[dict]) -> dict[str, list[str]]:
             gap = abs(when_a - when_b)
             if metres <= NEIGHBOR_M and gap <= NEIGHBOR_S:
                 for mine, theirs in ((src_a, src_b), (src_b, src_a)):
-                    out[mine["review_key"]].append(
-                        f"Record {theirs['record_id']} of the same item is {metres:.1f} m away and was photographed "
-                        f"{gap:.0f} s from this one: check these are two different objects.")
+                    out[mine["review_key"]].append({"record_id": theirs["record_id"], "metres": metres, "seconds": gap})
     return out
 
 
-def add_neighbor_warnings(rows: list[dict]) -> None:
-    warnings = neighbor_warnings(rows)
+def warning_line(near: dict) -> str:
+    return (f"Record {near['record_id']} of the same item is {near['metres']:.1f} m away and was photographed "
+            f"{near['seconds']:.0f} s from this one: check these are two different objects.")
+
+
+def neighbor_warnings(rows: list[dict]) -> dict[str, list[str]]:
+    """neighbor_pairs as one line each, for the reviewer to read."""
+    return {key: [warning_line(n) for n in near] for key, near in neighbor_pairs(rows).items()}
+
+
+def add_neighbor_warnings(rows: list[dict]) -> dict[str, list[dict]]:
+    """Put each row's warnings in its LedgerSource. Returns the structured pairs they were made from, by review key."""
+    pairs = neighbor_pairs(rows)
     for row in rows:
         if src := row.get("ledger_source"):
-            src["identity_warnings"] = warnings.get(src["review_key"], [])
+            src["identity_warnings"] = [warning_line(n) for n in pairs.get(src["review_key"], [])]
+    return pairs
 
 
 # --- the journal ---------------------------------------------------------------------------------------------------

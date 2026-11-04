@@ -1,0 +1,70 @@
+{
+ "schema_version": 1,
+ "policy_id": "ai-visual-audit-holds",
+ "provenance": "AI visual audit, not independent ground truth",
+ "audit": {
+  "id": "improvement-audit-2026-11-04",
+  "date": "2026-11-04",
+  "note": "A visual look by an AI assistant at the public photos of two records; not a human review and not ground truth."
+ },
+ "holds": [
+  {
+   "id": "cbr-9290-detwarn-exists",
+   "review_key": "447f0a79fa5c54526dc1282af4b8354eea3c5e9020b49dd4019cd546c70d8c60",
+   "scan_id": 30,
+   "item": "curb_ramp_warning",
+   "layer": "curb_ramps.geojson",
+   "record_key": "UNITID",
+   "record_id": "CBR-9290",
+   "field": "DETWARN_EXISTS",
+   "model_attribute_state": "agree",
+   "properties_sha256": "5b71ea8528e385b5d256cece77302279dfc0b4ecacc3c522581da4c8ab6d2a0b",
+   "position_sha256": "b60dd6a643e21e8364382838eb53fe70a808124c0455fbfb31babdc9d2bd2296",
+   "box": [
+    575,
+    646,
+    673,
+    683
+   ],
+   "photo": {
+    "link": "https://www.mapillary.com/app/?pKey=1522618125558579",
+    "captured_at": "2025-09-30T18:33:02Z",
+    "creator": "tannewt",
+    "license": "CC BY-SA 4.0"
+   },
+   "evidence_image": "scan30_look14_1522618125558579.jpg",
+   "audit_photo_sha256": "9be96a52a84d929011248db1091252234b21c63bb5e437e77dc8bea3f93947b4",
+   "reason": "A yellow surface is visible at the bottom of the ramp, but the photo does not let a reader tell raised truncated domes from a flat yellow panel at this size and angle, so it does not settle DETWARN_EXISTS. This is not a finding that the city's record is wrong.",
+   "provenance": "AI visual audit, not independent ground truth"
+  },
+  {
+   "id": "cbr-30448-detwarn-exists",
+   "review_key": "b5d1eb80091f4cba71962e21ce44f1ba8bed63453a57c4ba30db4d0e546f0c17",
+   "scan_id": 30,
+   "item": "curb_ramp_warning",
+   "layer": "curb_ramps.geojson",
+   "record_key": "UNITID",
+   "record_id": "CBR-30448",
+   "field": "DETWARN_EXISTS",
+   "model_attribute_state": "agree",
+   "properties_sha256": "443893321a6c0012074416c1b3e8261a8243377e12c51db91f101cc1fd444003",
+   "position_sha256": "1addf6ac9930727bc3d529fdb5f437f7b085de4fa8b1985ffe0bd054fef3a631",
+   "box": [
+    350,
+    370,
+    485,
+    405
+   ],
+   "photo": {
+    "link": "https://www.mapillary.com/app/?pKey=1999732747603253",
+    "captured_at": "2026-05-19T19:37:09Z",
+    "creator": "tannewt",
+    "license": "CC BY-SA 4.0"
+   },
+   "evidence_image": "scan30_look4_1999732747603253.jpg",
+   "audit_photo_sha256": "6a4539e518bee1f60a366f03aeabb3b4e20eb2985a2f4b75ceeb3107d9690e0b",
+   "reason": "A yellow surface is visible at the bottom of the ramp, but the photo does not let a reader tell raised truncated domes from a flat yellow panel at this size and angle, so it does not settle DETWARN_EXISTS. This is not a finding that the city's record is wrong.",
+   "provenance": "AI visual audit, not independent ground truth"
+  }
+ ]
+}

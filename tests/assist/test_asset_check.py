@@ -73,10 +73,12 @@ def test_a_row_without_a_nearby_photo_leaves_those_cells_empty():
 
 def test_the_new_cells_come_last_so_the_earlier_columns_do_not_move():
     names = [k for k, _ in asset_check.COLUMNS]
-    assert names.index("evidence_file") == len(names) - 10
-    assert names[-9:-5] == ["nearby_photo_link", "nearby_photo_m", "nearby_photo_by", "nearby_photo_license"]
-    assert names[-5:] == ["attribute_field", "attribute_state", "attribute_note", "action_if_attribute_agrees",
-                          "visit_reason"]
+    assert names.index("evidence_file") == len(names) - 16
+    assert names[-15:-11] == ["nearby_photo_link", "nearby_photo_m", "nearby_photo_by", "nearby_photo_license"]
+    assert names[-11:-6] == ["attribute_field", "attribute_state", "attribute_note", "action_if_attribute_agrees",
+                             "visit_reason"]
+    assert names[-6:] == ["identity_state", "identity_reason", "competing_record_ids", "evidence_quality",
+                          "evidence_quality_reason", "action_before_quality_gate"]
 
 
 def test_the_app_gets_the_visits_with_a_photo_and_the_date_gap_with_the_counts():
@@ -369,3 +371,76 @@ def test_the_page_calls_the_comparison_a_model_agreement_prototype_not_an_indepe
 
 def test_the_examples_never_show_a_visit_row_as_a_settled_record():
     assert all(r["action"] != "Visit on site" for r in asset_check.examples(WITH_ATTRIBUTES))
+
+
+# --- evidence quality before candidate counts: the same numbers on every surface ----------------------------------
+
+HELD_ID = row(asset="Street tree", city_record="TRE-1", action="Visit on site", city_says="", photo_shows="",
+              identity_state="unresolved", competing_record_ids=["TRE-2", "TRE-3"],
+              identity_reason="TRE-1 and TRE-2 are 9.8 m apart and photographed 7 s apart; the photos cannot tell which "
+                              "record this is. A desk identity check or a new photo may resolve it; nothing is merged.",
+              evidence_quality="not_reviewed", evidence_quality_reason="This source has not been reviewed.",
+              quality_gate={"action_before": "Update the date", "causes": ["identity_unresolved"], "model_answer": {}},
+              visit_reason="Identity not settled. A desk identity check or a new photo may resolve it.")
+HELD_AUDIT = row(asset="Curb ramp", city_record="CBR-1", action="Visit on site", city_says="", photo_shows="",
+                 identity_state="not_flagged", competing_record_ids=[], identity_reason="",
+                 evidence_quality="unclear", evidence_quality_reason="AI visual audit, not independent ground truth: x",
+                 attribute_state="unsettled",
+                 quality_gate={"action_before": "Update the date", "causes": ["audit_hold"], "model_answer": {}})
+GATE = {"identity": {"unresolved_rows": 3, "moved_out_of_candidates": 1, "already_visit": 2,
+                     "groups": [["TRE-1", "TRE-2", "TRE-3"]], "rule": {"max_metres": 15.0, "max_seconds": 10.0}},
+        "evidence_quality": {"unclear": 1, "not_reviewed": 4,
+                             "policy": {"policy_id": "ai-visual-audit-holds", "holds_in_policy": 2, "applied": 1,
+                                        "provenance": "AI visual audit, not independent ground truth"}},
+        "moved_out_of_candidates": 2, "candidates_before_gate": 4,
+        "by_cause": {"identity_only": 1, "hold_only": 1, "identity_and_hold": 0},
+        "visit_causes": {"primary": {"identity_unresolved": 3, "audit_hold": 1}, "overlap": {"identity_and_attribute": 0}}}
+GATED = {**CHECK, "rows": [*ROWS, HELD_ID, HELD_AUDIT], "actions": {**ACTIONS, "Visit on site": 3},
+         "desk_review_candidates": 2, "quality_gate": GATE}
+
+
+def test_the_table_and_the_geojson_carry_the_identity_and_quality_cells():
+    csv_row = next(r for r in lines(asset_check.table_csv(GATED)) if r["city_record"] == "TRE-1")
+    assert (csv_row["identity_state"], csv_row["competing_record_ids"]) == ("unresolved", "TRE-2; TRE-3")
+    assert "nothing is merged" in csv_row["identity_reason"] and csv_row["evidence_quality"] == "not_reviewed"
+    assert csv_row["action_before_quality_gate"] == "Update the date" and csv_row["action"] == "Visit on site"
+    held = next(r for r in lines(asset_check.table_csv(GATED)) if r["city_record"] == "CBR-1")
+    assert held["evidence_quality"] == "unclear" and held["identity_state"] == "not_flagged"
+    props = next(f["properties"] for f in json.loads(asset_check.table_geojson(GATED))["features"]
+                 if f["properties"]["city_record"] == "TRE-1")
+    assert props["competing_record_ids"] == "TRE-2; TRE-3" and props["identity_state"] == "unresolved"
+
+
+def test_a_row_made_before_the_quality_fields_has_them_empty():
+    first = lines(asset_check.table_csv(CHECK))[0]
+    cells = ("identity_state", "identity_reason", "competing_record_ids", "evidence_quality",
+             "evidence_quality_reason", "action_before_quality_gate")
+    assert [first[c] for c in cells] == [""] * 6  # absence of a flag says nothing; the table does not invent one
+
+
+def test_the_app_gets_the_gate_with_the_counts_and_an_old_list_still_loads():
+    assert asset_check.summary(GATED)["quality_gate"] == GATE
+    assert "quality_gate" not in asset_check.summary(CHECK)
+    assert "rows" not in asset_check.summary(GATED)
+
+
+def test_the_page_states_how_many_were_held_back_and_why_with_the_same_numbers():
+    page = asset_check.document(GATED)
+    assert "candidates for desk review" in page
+    assert "Held before counting" in page
+    assert "2 city records that would have been candidates" in page
+    assert "1 whose identity the photos cannot settle" in page and "1 held by an AI visual audit" in page
+    assert "not independent ground truth" in page
+    assert "none is merged or called a duplicate" in page
+
+
+def test_the_page_never_counts_an_overlap_twice():
+    both = {"identity_and_hold": 1, "identity_only": 1, "hold_only": 1}
+    gate = {**GATE, "by_cause": both, "moved_out_of_candidates": 3}
+    page = asset_check.document({**GATED, "quality_gate": gate})
+    assert "3 city records that would have been candidates" in page
+    assert "1 of them on both grounds" in page
+
+
+def test_a_list_with_no_gate_says_nothing_about_one():
+    assert "Held before counting" not in asset_check.document(CHECK)

@@ -23,7 +23,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from eval import attribute_state, ledger_review, precision
+from eval import attribute_state, evidence_quality, ledger_review, precision
 from eval.city import box_of
 from eval.city_check import load_city
 from eval.second_look import is_seen
@@ -46,7 +46,9 @@ REASONS = {"unclear": "the photo is too unclear, cropped or far away to answer i
            "sent_back": "an AI assistant looked at the photo and sent the difference back",
            "no_check": "the photo of this record was not asked about this field",
            "city_value_blank": "the city list has no value for this field, so there is nothing to compare",
-           "no_photo": "no photo box was kept to ask about"}
+           "no_photo": "no photo box was kept to ask about",
+           evidence_quality.HOLD_REASON: "an AI visual audit found the photo does not show this detail well enough to "
+                                         "read it (not independent ground truth)"}
 NEEDS_NEWER = "A newer photo or a field check is needed."
 CITY_POSITION = {"position_source": "City record", "position_accuracy": "City record"}
 CAMERA_POSITION = {"position_source": "Camera position of the Mapillary photo",
@@ -296,6 +298,90 @@ def visit_reason(row: dict, label: dict | None, attribute: dict | None, cfg: dic
     return f"The record is there in a photo, but {named} is not settled: {REASONS[attribute['reason']]}. {NEEDS_NEWER}"
 
 
+def visit_causes(row: dict, label: dict | None, attribute: dict | None, hold: dict | None) -> list[str]:
+    """Why a visit row is one, before the identity gate adds its own cause: the photos did not settle the record, the
+    models were not sure what the object is, an audit held the source, or the record's attribute is open."""
+    causes = ["not_determined"] if row["status"] == NOT_DETERMINED else [] if sure_of(row, label) else ["models_unsure"]
+    if hold:
+        causes.append(evidence_quality.HOLD_REASON)
+    elif attribute and attribute["state"] in attribute_state.OPEN and not causes:
+        causes.append("attribute_open")
+    return causes
+
+
+VISIT_PRIORITY = ("not_determined", "models_unsure", "identity_unresolved", evidence_quality.HOLD_REASON, "attribute_open")
+
+
+def apply_identity_gate(rows: list[dict], pairs: dict[str, list[dict]]) -> None:
+    """Mark the city-record rows of one item with their identity state, and route those whose identity the photos cannot
+    settle to Visit on site. pairs: eval.ledger_review.add_neighbor_warnings' pairs. A row that was a candidate keeps its
+    models' answer in row["quality_gate"]; one that already was a visit stays one, with the identity reason added. Both
+    rows of a pair keep their own ids, photos and answers: nothing is merged."""
+    for row in rows:
+        base = row.pop("_visit")
+        if not row["city_record"]:
+            continue
+        src = row.get("ledger_source")
+        near = sorted(pairs.get(src["review_key"], []), key=lambda n: (n["metres"], n["record_id"])) if src else []
+        if not near:
+            row.update(identity_state=evidence_quality.NOT_FLAGGED, identity_reason="", competing_record_ids=[])
+        else:
+            reason = evidence_quality.identity_reason(row["city_record"], near)
+            row.update(identity_state=evidence_quality.UNRESOLVED, identity_reason=reason,
+                       competing_record_ids=sorted({n["record_id"] for n in near}))
+            gate = row.get("quality_gate")
+            before = gate["action_before"] if gate else row["action"]
+            if before != VISIT:
+                if not gate:
+                    gate = {"action_before": before, "causes": [], "model_answer": {
+                        "city_says": row["city_says"], "photo_shows": row["photo_shows"],
+                        **({"attribute_state": row["attribute_state"], "attribute_note": row["attribute_note"]}
+                           if "attribute_state" in row else {})}}
+                row["quality_gate"] = {**gate, "causes": ["identity_unresolved", *gate["causes"]]}
+                row.update(action=VISIT, city_says="", photo_shows="",
+                           visit_reason=f"{reason} {evidence_quality.NEXT_STEP} Until then it is not a candidate for "
+                                        "desk review.")
+            else:
+                row["visit_reason"] = f"{row.get('visit_reason', '')} {reason} {evidence_quality.NEXT_STEP}".strip()
+                if gate:
+                    row["quality_gate"] = {**gate, "causes": ["identity_unresolved", *gate["causes"]]}
+            row.pop("action_if_attribute_agrees", None)  # an unresolved identity is no conditional candidate either
+        if row["action"] == VISIT:
+            causes = {*base, *(["identity_unresolved"] if near else [])}
+            row["visit_causes"] = [c for c in VISIT_PRIORITY if c in causes]
+
+
+def gate_summary(rows: list[dict], policy: dict, no_visit: int) -> dict:
+    """What the two gates did to the counts, in the numbers every surface shares. A row held on both grounds is counted
+    once; the candidates before the gates are the candidates after plus the rows moved out of them."""
+    city = [r for r in rows if r["city_record"]]
+    unresolved = [r for r in city if r["identity_state"] == evidence_quality.UNRESOLVED]
+    moved = [r for r in city if "quality_gate" in r and r["quality_gate"]["action_before"] != VISIT]
+    causes = [set(r["quality_gate"]["causes"]) for r in moved]
+    visits = [r for r in city if r["action"] == VISIT]
+    primary = Counter(next(c for c in VISIT_PRIORITY if c in r["visit_causes"]) for r in visits)
+    held = sum(r["evidence_quality"] == evidence_quality.UNCLEAR for r in city)
+    competing = {(r["item"], r["city_record"]): r["competing_record_ids"] for r in unresolved}
+    return {"identity": {"unresolved_rows": len(unresolved),
+                         "moved_out_of_candidates": sum("identity_unresolved" in c for c in causes),
+                         "already_visit": sum(r["action"] == VISIT and r["identity_state"] == evidence_quality.UNRESOLVED
+                                              and ("quality_gate" not in r or r["quality_gate"]["action_before"] == VISIT)
+                                              for r in city),
+                         "groups": evidence_quality.groups_of(competing),
+                         "rule": {"max_metres": ledger_review.NEIGHBOR_M, "max_seconds": ledger_review.NEIGHBOR_S}},
+            "evidence_quality": {"unclear": held, "not_reviewed": len(city) - held,
+                                 "policy": {"policy_id": policy["policy_id"], "provenance": policy["provenance"],
+                                            "holds_in_policy": len(policy["holds"]), "applied": held}},
+            "moved_out_of_candidates": len(moved), "candidates_before_gate": no_visit + len(moved),
+            "by_cause": {"identity_only": sum("audit_hold" not in c for c in causes),
+                         "hold_only": sum("identity_unresolved" not in c for c in causes),
+                         "identity_and_hold": sum({"identity_unresolved", "audit_hold"} <= c for c in causes)},
+            "visit_causes": {"primary": {c: primary[c] for c in VISIT_PRIORITY if primary[c]},
+                             "overlap": {"identity_and_attribute": sum(
+                                 "identity_unresolved" in r["visit_causes"] and bool(
+                                     {"audit_hold", "attribute_open"} & set(r["visit_causes"])) for r in visits)}}}
+
+
 def attribute_counts(rows: list[dict], reasons: Counter) -> dict:
     """How the attribute checks of these rows ended; reasons: why the open ones are open."""
     states = Counter(r["attribute_state"] for r in rows)
@@ -413,13 +499,18 @@ def unreached(check_file: dict, layers: dict[str, list[dict]], bbox: list[float]
 
 def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]], standard, looks: dict[str, dict],
           trust: dict, labels: dict | None = None, differs: dict | None = None,
-          nearby: dict[str, dict] | None = None, attributes: dict | None = None) -> dict:
+          nearby: dict[str, dict] | None = None, attributes: dict | None = None,
+          quality_policy: dict | None = None) -> dict:
     """data as eval.store.load_scan returns it; layers: each item's GeoJSON features; looks and trust as read_looks
     returns them, each look with its evidence; labels: the AI assistant's check of the findings (eval.precision);
     differs: the records a photo contradicts, by (item, record) (eval.record_check); nearby: as read_nearby returns it;
     attributes: where each asked record's attribute check ended, by (item, record), as read_attributes returns it.
     An item whose city file names a yes/no field a photo can answer ([items.<id>.compare]) needs that check for every
-    record it saw: a record without it is a visit, however sure the models are that the object is there."""
+    record it saw: a record without it is a visit, however sure the models are that the object is there.
+    quality_policy: the audit holds (eval.evidence_quality; the checked-in policy when none is given). Before any count
+    is made, a row whose identity the photos cannot tell from a close record of the same item, or whose exact source an
+    audit held, is a visit, with the reason, and the models' own answer kept beside it (row["quality_gate"])."""
+    policy = evidence_quality.load_policy() if quality_policy is None else evidence_quality.check_policy(quality_policy)
     rows, listed, items = [], [], []
     left_out = Counter(repeats=0, wrong=0)
     open_by, unresolved = Counter(), 0
@@ -437,24 +528,38 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
             attribute = row.pop("attribute", None)
             if attribute and differ and attribute["state"] != attribute_state.DIFFERENT:
                 attribute = {**attribute, "state": attribute_state.DIFFERENT, "reason": ""}  # the difference is there to read
+            model_attribute = attribute  # what the models and the photos settled, before any audit hold
+            hold = evidence_quality.find_hold(row, policy, attribute, (cfg.get("compare") or {}).get("field"))
+            if hold:
+                attribute = {**attribute, "state": attribute_state.UNSETTLED, "reason": evidence_quality.HOLD_REASON}
             action = action_of(row, label, differ, bool(cfg.get("verified")), attribute)
             if action is None:
                 left_out["repeats" if label.get("dup_of") is not None else "wrong"] += 1
                 continue
             extra = attribute_cells(attribute, cfg) if attribute else {}
+            if row["city_record"]:
+                extra.update(evidence_quality.quality_cells(hold))
             is_open = bool(attribute) and attribute["state"] in attribute_state.OPEN
             if is_open:
                 open_by[attribute["reason"]] += 1
                 item_open[attribute["reason"]] += 1
                 # the record check asks about the rows whose object is settled; this keeps them findable while open
-                if (waiting := action_of(row, label, None, bool(cfg.get("verified")))) != VISIT:
+                if (waiting := action_of(row, label, None, bool(cfg.get("verified")))) != VISIT and not hold:
                     extra["action_if_attribute_agrees"] = waiting
             if action == VISIT:
                 extra["visit_reason"] = visit_reason(row, label, attribute, cfg)
                 unresolved += is_open and row["status"] == SEEN and sure_of(row, label)
             ledger_review.suggest(row.get("ledger_source"), attribute)
-            kept.append({**row, "action": action, **said(row, action, differ, cfg, sure_of(row, label)), **extra})
-        ledger_review.add_neighbor_warnings(kept)
+            if hold:
+                before = action_of(row, label, differ, bool(cfg.get("verified")), model_attribute)
+                extra["quality_gate"] = {
+                    "action_before": before, "causes": [evidence_quality.HOLD_REASON],
+                    "model_answer": {"attribute_state": model_attribute["state"],
+                                     "attribute_note": attribute_cells(model_attribute, cfg)["attribute_note"],
+                                     **said(row, before, differ, cfg, sure_of(row, label))}}
+            kept.append({**row, "action": action, **said(row, action, differ, cfg, sure_of(row, label)), **extra,
+                         "_visit": visit_causes(row, label, attribute, hold) if action == VISIT else []})
+        apply_identity_gate(kept, ledger_review.add_neighbor_warnings(kept))
         listed += kept
         needing = [r for r in kept if "attribute_state" in r]
         items.append({"item": item, "asset": name, "city_list": info["layer"], **tally(found),
@@ -481,6 +586,7 @@ def build(data: dict, check_file: dict, town: dict, layers: dict[str, list[dict]
             "items": items, "totals": totals, **reach,
             "actions": dict(Counter(r["action"] for r in listed)), "no_visit": no_visit,
             "desk_review_candidates": no_visit,  # what no_visit counts, named for what it is: not a measured avoided visit
+            "quality_gate": gate_summary(listed, policy, no_visit),
             "compare_unsure": compare_unsure,
             **({"attribute_checks": attribute_counts(needing, open_by), "visits_attribute_unresolved": unresolved}
                if needing else {}),
