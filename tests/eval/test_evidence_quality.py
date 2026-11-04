@@ -346,3 +346,25 @@ def test_a_malformed_policy_is_refused_not_half_applied(mutate, problem):
 def test_the_default_policy_file_is_valid_json_in_the_repository():
     path = evidence_quality.DEFAULT_POLICY
     assert path.is_file() and json.loads(path.read_text(encoding="utf-8"))["schema_version"] == 1
+
+
+def test_every_surface_reads_the_same_gated_counts():
+    """The same built check through the CSV, the GeoJSON, the app's summary and the page: one number of candidates."""
+    import csv
+    import io
+
+    from assist import asset_check as assist_page
+    base = build(attributes=agreed())
+    check = build(attributes=agreed(), policy=held(base, "P1"))
+    table = list(csv.DictReader(io.StringIO(assist_page.table_csv(check).decode("utf-8-sig"))))
+    in_csv = sum(bool(r["city_record"]) and r["action"] != VISIT for r in table)
+    in_geojson = sum(bool(f["properties"]["city_record"]) and f["properties"]["action"] != VISIT
+                     for f in json.loads(assist_page.table_geojson(check))["features"])
+    summary = assist_page.summary(check)
+    assert in_csv == in_geojson == check["no_visit"] == summary["no_visit"] == summary["desk_review_candidates"]
+    assert summary["quality_gate"]["candidates_before_gate"] == in_csv + summary["quality_gate"]["moved_out_of_candidates"]
+    moved_in_csv = sum(r["action_before_quality_gate"] not in ("", VISIT) for r in table)
+    assert moved_in_csv == summary["quality_gate"]["moved_out_of_candidates"]
+    page = assist_page.document(check)
+    assert f"{check['no_visit']} of {check['totals']['in_view']} city records are candidates" in page
+    assert f"{summary['quality_gate']['moved_out_of_candidates']} city records that would have been candidates" in page
