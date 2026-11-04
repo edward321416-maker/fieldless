@@ -339,8 +339,8 @@ def apply_identity_gate(rows: list[dict], pairs: dict[str, list[dict]]) -> None:
                            if "attribute_state" in row else {})}}
                 row["quality_gate"] = {**gate, "causes": ["identity_unresolved", *gate["causes"]]}
                 row.update(action=VISIT,
-                           visit_reason=f"{row.get('visit_reason', '')} {reason} {evidence_quality.NEXT_STEP} Until then it is not a candidate for "
-                                        "desk review.")
+                           visit_reason=(f"{row.get('visit_reason', '')} {reason} {evidence_quality.NEXT_STEP} Until then it is not a candidate for "
+                                         "desk review.").strip())
             else:
                 row["visit_reason"] = f"{row.get('visit_reason', '')} {reason} {evidence_quality.NEXT_STEP}".strip()
                 if gate:
